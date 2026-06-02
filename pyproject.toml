@@ -1,8 +1,9 @@
 [project]
 name = "thermoprop"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Python thermodynamic property wrapper for fluids and mixtures."
 readme = "README.md"
+license = "GPL-3.0-only"
 authors = [
     { name = "Saaketh Ramoju", email = "rsaaketh@icloud.com" }
 ]
@@ -13,6 +14,11 @@ dependencies = [
     "pyromat>=2.2.6",
     "scipy>=1.17.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/saakethramoju/ThermoProp"
+Repository = "https://github.com/saakethramoju/ThermoProp"
+Issues = "https://github.com/saakethramoju/ThermoProp/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.18,<0.12.0"]
