@@ -166,6 +166,102 @@ print(fluid.dynamic_viscosity)
 print(fluid.conductivity)
 ```
 
+## Updating State Properties
+
+ThermoProp states can be updated after creation.
+
+### Real Fluid
+
+```python
+from thermoprop import Fluid
+
+water = Fluid(
+    "water",
+    pressure=101325,
+    temperature=300,
+)
+
+water.pressure = 2e5
+water.temperature = 350
+
+print(water.density)
+print(water.enthalpy)
+```
+
+You can also update state pairs directly:
+
+```python
+water.pressure_temperature = (2e5, 350)
+water.pressure_enthalpy = (2e5, 1.5e6)
+water.pressure_quality = (101325, 0.5)
+water.temperature_quality = (373.15, 1.0)
+```
+
+### Ideal Gas
+
+Ideal gases only require a thermal state such as temperature, enthalpy, or internal energy.
+
+```python
+from thermoprop import IdealGas
+
+nitrogen = IdealGas(
+    "gn2",
+    temperature=300,
+)
+
+print(nitrogen.enthalpy)
+print(nitrogen.internal_energy)
+print(nitrogen.specific_heat_cp)
+```
+
+Pressure is optional, but it is required for pressure-dependent properties such as density and entropy:
+
+```python
+nitrogen.pressure = 101325
+
+print(nitrogen.density)
+print(nitrogen.entropy)
+```
+
+You can also update ideal-gas states:
+
+```python
+nitrogen.temperature = 500
+nitrogen.pressure_temperature = (101325, 300)
+nitrogen.pressure_enthalpy = (101325, nitrogen.enthalpy)
+```
+
+## Ideal-Gas Viscosity Limitation
+
+`IdealGas.dynamic_viscosity` uses Sutherland's law.
+
+Currently, viscosity is only supported for selected pure gases, including:
+
+- Air
+- Argon
+- Carbon dioxide
+- Carbon monoxide
+- Nitrogen
+- Oxygen
+- Hydrogen
+- Water vapor
+
+Mixture viscosity is not currently supported.
+
+```python
+from thermoprop import IdealGas
+
+air = IdealGas(
+    "air",
+    pressure=101325,
+    temperature=300,
+)
+
+print(air.dynamic_viscosity)
+```
+
+If viscosity data is unavailable for a gas, ThermoProp raises `NotImplementedError`.
+
 ## Source Code
 
 GitHub:

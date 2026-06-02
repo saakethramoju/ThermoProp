@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Documented how to update Fluid and IdealGas state properties.
+- Clarified that IdealGas can be initialized from temperature alone.
+- Documented the current IdealGas viscosity limitations.
+
 ## 0.1.4
 
 - Improved README with API overview and examples.
