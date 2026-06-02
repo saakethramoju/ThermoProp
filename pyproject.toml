@@ -7,7 +7,12 @@ authors = [
     { name = "Saaketh Ramoju", email = "rsaaketh@icloud.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "coolprop>=7.2.0",
+    "numpy>=2.4.6",
+    "pyromat>=2.2.6",
+    "scipy>=1.17.1",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.18,<0.12.0"]
