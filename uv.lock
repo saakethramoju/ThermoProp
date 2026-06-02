@@ -142,7 +142,7 @@ wheels = [
 
 [[package]]
 name = "thermoprop"
-version = "0.1.0"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "coolprop" },
@@ -153,7 +153,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "coolprop", specifier = ">=7.2.0" },
+    { name = "coolprop", specifier = ">=6.8.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "pyromat", specifier = ">=2.2.6" },
     { name = "scipy", specifier = ">=1.17.1" },
