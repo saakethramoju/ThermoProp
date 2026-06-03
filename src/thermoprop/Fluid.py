@@ -221,6 +221,14 @@ class Fluid:
         self._set_state_from_named_pair(provided)
 
     # ---------------- Core ---------------- #
+    @property
+    def name(self) -> str:
+        return ", ".join(self._display_names)
+
+    @property
+    def backend(self) -> str:
+        return "CoolProp"
+
     def _build_state(self):
         """Create and configure a CoolProp AbstractState."""
         state = CP.AbstractState("HEOS", self._fluid_string)

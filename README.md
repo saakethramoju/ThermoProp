@@ -1,27 +1,29 @@
 # ThermoProp
 
 [![PyPI version](https://img.shields.io/pypi/v/thermoprop)](https://pypi.org/project/thermoprop/)
-[![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://pypi.org/project/thermoprop/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/thermoprop/)
 [![License](https://img.shields.io/pypi/l/thermoprop)](https://github.com/saakethramoju/ThermoProp)
 
-ThermoProp is a Python thermodynamic property wrapper for fluids, mixtures, and ideal gases.
+ThermoProp is a Python thermodynamic property wrapper for real fluids, mixtures, ideal gases, and liquid rocket propellants.
 
 It provides a clean interface around:
 
-- CoolProp
-- PYroMat
-- NumPy
-- SciPy
+* CoolProp
+* PYroMat
+* RocketProps
+* NumPy
+* SciPy
 
 ## Why ThermoProp?
 
-ThermoProp provides a unified API around CoolProp and PYroMat.
+ThermoProp provides a unified API around CoolProp, PYroMat, and RocketProps.
 
 Instead of remembering backend-specific syntax such as:
 
 ```python
 CP.PropsSI(...)
 pm.get(...)
+get_prop(...)
 ```
 
 users can write:
@@ -39,7 +41,7 @@ print(water.density)
 print(water.enthalpy)
 ```
 
-with a consistent interface for pure fluids, mixtures, and ideal gases.
+with a consistent interface for pure fluids, mixtures, ideal gases, and liquid rocket propellants.
 
 ## Installation
 
@@ -55,14 +57,14 @@ pip install thermoprop
 
 It supports:
 
-- Pure fluids
-- Fluid mixtures
-- Pressure-temperature states
-- Pressure-enthalpy states
-- Pressure-quality states
-- Temperature-quality states
-- Density-based states
-- Mass-fraction and mole-fraction mixtures
+* Pure fluids
+* Fluid mixtures
+* Pressure-temperature states
+* Pressure-enthalpy states
+* Pressure-quality states
+* Temperature-quality states
+* Density-based states
+* Mass-fraction and mole-fraction mixtures
 
 ### IdealGas
 
@@ -70,13 +72,34 @@ It supports:
 
 It supports:
 
-- Pure ideal gases
-- Ideal-gas mixtures
-- Temperature states
-- Enthalpy states
-- Internal-energy states
-- Pressure-density closure
-- Cp, Cv, gamma, entropy, Gibbs energy, and speed of sound
+* Pure ideal gases
+* Ideal-gas mixtures
+* Temperature states
+* Enthalpy states
+* Internal-energy states
+* Pressure-density closure
+* Cp, Cv, gamma, entropy, Gibbs energy, and speed of sound
+
+### Propellant
+
+`Propellant` is a RocketProps-based liquid rocket propellant wrapper.
+
+It supports:
+
+* Liquid rocket propellants
+* Saturated-liquid properties
+* Compressed-liquid properties
+* Density
+* Dynamic viscosity
+* Kinematic viscosity
+* Thermal conductivity
+* Surface tension
+* Vapor pressure
+* Saturation temperature
+* Heat of vaporization
+* Critical properties
+
+`Propellant` is intended for liquid propellant engineering properties. It is not a thermodynamic flash solver and does not calculate vapor-state properties, two-phase states, enthalpy, internal energy, or entropy.
 
 ## Thermodynamic Reference States
 
@@ -107,7 +130,6 @@ Most engineering calculations depend on property differences rather than absolut
 remain physically meaningful within each backend.
 
 Users combining results from multiple ThermoProp wrappers should establish a consistent thermodynamic reference basis if absolute values of enthalpy, internal energy, or entropy are required.
-
 
 ## Pure Fluid Example
 
@@ -171,6 +193,53 @@ nitrogen = IdealGas(
 print(nitrogen.density)
 print(nitrogen.specific_heat_ratio)
 print(nitrogen.speed_of_sound)
+```
+
+## Propellant Example
+
+```python
+from thermoprop import Propellant
+
+rp1 = Propellant(
+    "rp1",
+    temperature=293.15,
+)
+
+print(rp1.density)
+print(rp1.dynamic_viscosity)
+print(rp1.vapor_pressure)
+```
+
+## Compressed-Liquid Propellant Example
+
+```python
+from thermoprop import Propellant
+
+lox = Propellant(
+    "lox",
+    pressure=3e6,
+    temperature=90,
+)
+
+print(lox.density)
+print(lox.dynamic_viscosity)
+print(lox.saturation_pressure)
+```
+
+## Propellant Cavitation Margin Example
+
+```python
+from thermoprop import Propellant
+
+lox = Propellant(
+    "lox",
+    pressure=300000,
+    temperature=90,
+)
+
+margin = lox.pressure - lox.vapor_pressure
+
+print(margin)
 ```
 
 ## Common Properties
@@ -262,20 +331,68 @@ nitrogen.pressure_temperature = (101325, 300)
 nitrogen.pressure_enthalpy = (101325, nitrogen.enthalpy)
 ```
 
+### Propellant
+
+Propellants require temperature. Pressure is optional.
+
+```python
+from thermoprop import Propellant
+
+rp1 = Propellant(
+    "rp1",
+    temperature=293.15,
+)
+
+print(rp1.density)
+print(rp1.specific_heat_cp)
+```
+
+If pressure is omitted, saturated-liquid properties are used.
+
+```python
+rp1.pressure = 2e6
+
+print(rp1.density)
+print(rp1.dynamic_viscosity)
+```
+
+You can also update the propellant state pair directly:
+
+```python
+rp1.pressure_temperature = (2e6, 300)
+```
+
+## Propellant Limitations
+
+`Propellant` wraps RocketProps liquid propellant correlations.
+
+It is intended for liquid engineering properties and does not calculate:
+
+* Vapor-state properties
+* Two-phase flash states
+* Enthalpy
+* Internal energy
+* Entropy
+* Cv
+* Specific heat ratio
+* Speed of sound
+
+Unsupported properties raise `NotImplementedError`.
+
 ## Ideal-Gas Viscosity Limitation
 
 `IdealGas.dynamic_viscosity` uses Sutherland's law.
 
 Currently, viscosity is only supported for selected pure gases, including:
 
-- Air
-- Argon
-- Carbon dioxide
-- Carbon monoxide
-- Nitrogen
-- Oxygen
-- Hydrogen
-- Water vapor
+* Air
+* Argon
+* Carbon dioxide
+* Carbon monoxide
+* Nitrogen
+* Oxygen
+* Hydrogen
+* Water vapor
 
 Mixture viscosity is not currently supported.
 

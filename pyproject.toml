@@ -1,18 +1,21 @@
 [project]
 name = "thermoprop"
-version = "0.1.6"
-description = "A Python thermodynamic property wrapper for fluids and mixtures."
+version = "0.2.0"
+description = "A Python thermodynamic property wrapper for real fluids, ideal gases, and liquid rocket propellants."
 readme = "README.md"
 license = "GPL-3.0-only"
 authors = [
-    { name = "Saaketh Ramoju", email = "rsaaketh@icloud.com" }
+    { name = "Saaketh Ramoju", email = "skramoju@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 keywords = [
     "thermodynamics",
     "coolprop",
+    "pyromat",
+    "rocketprops",
     "fluids",
     "ideal-gas",
+    "propellants",
     "thermophysical-properties",
     "engineering",
     "rocket-propulsion",
@@ -31,6 +34,7 @@ dependencies = [
     "coolprop>=6.8.0",
     "numpy>=2.4.6",
     "pyromat>=2.2.6",
+    "rocketprops>=0.1.8",
     "scipy>=1.17.1",
 ]
 

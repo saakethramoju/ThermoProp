@@ -131,6 +131,13 @@ class IdealGas:
             density=density,
         )
 
+    @property
+    def name(self) -> str:
+        return ", ".join(self._display_names)
+    
+    @property
+    def backend(self) -> str:
+        return "PYroMat"
     # ---------------- Units ---------------- #
 
     @staticmethod
@@ -735,29 +742,6 @@ class IdealGas:
             )
 
         return sid, display
-
-    @classmethod
-    def add_alias(cls, alias: str, pyromat_name: str) -> None:
-        FluidRegistry.add_alias(alias, pyromat_name)
-
-    @classmethod
-    def add_aliases(cls, aliases: dict[str, str]) -> None:
-        for alias, pyromat_name in aliases.items():
-            cls.add_alias(alias, pyromat_name)
-
-    @classmethod
-    def remove_alias(cls, alias: str) -> None:
-        FluidRegistry.remove_alias(alias)
-
-    @classmethod
-    def show_aliases(cls) -> dict[str, str]:
-        aliases = FluidRegistry.aliases
-        width = max(len(alias) for alias in aliases)
-        print("IdealGas Aliases")
-        print("-" * (width + 20))
-        for alias, backend in sorted(aliases.items()):
-            print(f"{alias:<{width}} -> {backend}")
-        return dict(aliases)
 
     @staticmethod
     def get_available_gases() -> List[str]:

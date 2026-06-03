@@ -12,6 +12,7 @@ class SpeciesRecord:
     name: str
     coolprop: str | None = None
     pyromat: str | None = None  # no "ig." prefix
+    rocketprops: str | None = None
 
 
 SPECIES_DATABASE = MappingProxyType({
@@ -21,24 +22,24 @@ SPECIES_DATABASE = MappingProxyType({
     "CarbonDioxide": SpeciesRecord("CarbonDioxide", coolprop="CarbonDioxide", pyromat="CO2"),
     "CarbonMonoxide": SpeciesRecord("CarbonMonoxide", coolprop="CarbonMonoxide", pyromat="CO"),
     "Helium": SpeciesRecord("Helium", coolprop="Helium", pyromat="He"),
-    "Hydrogen": SpeciesRecord("Hydrogen", coolprop="Hydrogen", pyromat="H2"),
-    "Methane": SpeciesRecord("Methane", coolprop="Methane", pyromat="CH4"),
+    "Hydrogen": SpeciesRecord("Hydrogen", coolprop="Hydrogen", pyromat="H2", rocketprops="PH2"),
+    "Methane": SpeciesRecord("Methane", coolprop="Methane", pyromat="CH4", rocketprops="Methane"),
     "Nitrogen": SpeciesRecord("Nitrogen", coolprop="Nitrogen", pyromat="N2"),
-    "Oxygen": SpeciesRecord("Oxygen", coolprop="Oxygen", pyromat="O2"),
-    "Water": SpeciesRecord("Water", coolprop="Water", pyromat="H2O"),
+    "Oxygen": SpeciesRecord("Oxygen", coolprop="Oxygen", pyromat="O2", rocketprops="LOX"),
+    "Water": SpeciesRecord("Water", coolprop="Water", pyromat="H2O", rocketprops="Water"),
 
     # ---------- Common fluids with PYroMat mappings ----------
-    "Ammonia": SpeciesRecord("Ammonia", coolprop="Ammonia", pyromat="NH3"),
+    "Ammonia": SpeciesRecord("Ammonia", coolprop="Ammonia", pyromat="NH3", rocketprops="NH3"),
     "Ethane": SpeciesRecord("Ethane", coolprop="Ethane", pyromat="C2H6"),
     "Ethylene": SpeciesRecord("Ethylene", coolprop="Ethylene", pyromat="C2H4"),
-    "n-Propane": SpeciesRecord("n-Propane", coolprop="n-Propane", pyromat="C3H8"),
+    "n-Propane": SpeciesRecord("n-Propane", coolprop="n-Propane", pyromat="C3H8", rocketprops="Propane"),
     "n-Butane": SpeciesRecord("n-Butane", coolprop="n-Butane", pyromat="C4H10"),
     "IsoButane": SpeciesRecord("IsoButane", coolprop="IsoButane", pyromat=None),
     "Benzene": SpeciesRecord("Benzene", coolprop="Benzene", pyromat="C6H6"),
     "Toluene": SpeciesRecord("Toluene", coolprop="Toluene", pyromat="C7H8"),
-    "Methanol": SpeciesRecord("Methanol", coolprop="Methanol", pyromat="CH4O"),
-    "Ethanol": SpeciesRecord("Ethanol", coolprop="Ethanol", pyromat="C2H6O"),
-    "NitrousOxide": SpeciesRecord("NitrousOxide", coolprop="NitrousOxide", pyromat="N2O"),
+    "Methanol": SpeciesRecord("Methanol", coolprop="Methanol", pyromat="CH4O", rocketprops="Methanol"),
+    "Ethanol": SpeciesRecord("Ethanol", coolprop="Ethanol", pyromat="C2H6O", rocketprops="Ethanol"),
+    "NitrousOxide": SpeciesRecord("NitrousOxide", coolprop="NitrousOxide", pyromat="N2O", rocketprops="N2O"),
     "HydrogenChloride": SpeciesRecord("HydrogenChloride", coolprop="HydrogenChloride", pyromat="HCl"),
     "HydrogenSulfide": SpeciesRecord("HydrogenSulfide", coolprop="HydrogenSulfide", pyromat="H2S"),
     "SulfurDioxide": SpeciesRecord("SulfurDioxide", coolprop="SulfurDioxide", pyromat="SO2"),
@@ -148,6 +149,24 @@ SPECIES_DATABASE = MappingProxyType({
     "n-Octane": SpeciesRecord("n-Octane", coolprop="n-Octane", pyromat=None),
     "n-Pentane": SpeciesRecord("n-Pentane", coolprop="n-Pentane", pyromat=None),
     "n-Undecane": SpeciesRecord("n-Undecane", coolprop="n-Undecane", pyromat=None),
+
+    # ---------- RocketProps propellants / named mixtures ----------
+    "RP1": SpeciesRecord("RP1", rocketprops="RP1"),
+    "A50": SpeciesRecord("A50", rocketprops="A50"),
+    "CLF5": SpeciesRecord("CLF5", rocketprops="CLF5"),
+    "F2": SpeciesRecord("F2", rocketprops="F2"),
+    "H2O2": SpeciesRecord("H2O2", rocketprops="H2O2"),
+    "IRFNA": SpeciesRecord("IRFNA", rocketprops="IRFNA"),
+    "MHF3": SpeciesRecord("MHF3", rocketprops="MHF3"),
+    "MMH": SpeciesRecord("MMH", rocketprops="MMH"),
+    "MON10": SpeciesRecord("MON10", rocketprops="MON10"),
+    "MON25": SpeciesRecord("MON25", rocketprops="MON25"),
+    "MON30": SpeciesRecord("MON30", rocketprops="MON30"),
+    "N2H4": SpeciesRecord("N2H4", rocketprops="N2H4"),
+    "N2O4": SpeciesRecord("N2O4", rocketprops="N2O4"),
+    "PH2": SpeciesRecord("PH2", rocketprops="PH2"),
+    "UDMH": SpeciesRecord("UDMH", rocketprops="UDMH"),
+
 })
 
 
@@ -235,6 +254,62 @@ ALIASES: dict[str, str] = {
 }
 
 
+# Propellant aliases are intentionally separate from the general fluid aliases.
+# For example, ``rp1`` maps to n-Dodecane for CoolProp Fluid, but maps to
+# RocketProps RP1 for Propellant. Keeping this table separate avoids changing
+# existing Fluid and IdealGas behavior.
+PROPELLANT_ALIASES: dict[str, str] = {
+    "rp-1": "RP1",
+    "rp1": "RP1",
+    "kerosene": "RP1",
+    "jet-a": "RP1",
+    "jeta": "RP1",
+
+    "lox": "Oxygen",
+    "oxygen": "Oxygen",
+
+    "h2": "Hydrogen",
+    "lh2": "Hydrogen",
+    "hydrogen": "Hydrogen",
+
+    "ch4": "Methane",
+    "methane": "Methane",
+    "lch4": "Methane",
+    "lng": "Methane",
+
+    "n2o": "NitrousOxide",
+    "nitrous oxide": "NitrousOxide",
+    "nitrous-oxide": "NitrousOxide",
+
+    "nh3": "Ammonia",
+    "ammonia": "Ammonia",
+
+    "n2o4": "N2O4",
+    "nto": "N2O4",
+    "nitrogen tetroxide": "N2O4",
+    "nitrogen-tetroxide": "N2O4",
+
+    "mmh": "MMH",
+    "udmh": "UDMH",
+    "n2h4": "N2H4",
+    "hydrazine": "N2H4",
+
+    "a50": "A50",
+    "aerozine50": "A50",
+    "aerozine-50": "A50",
+
+    "h2o2": "H2O2",
+    "peroxide": "H2O2",
+
+    "mon10": "MON10",
+    "mon25": "MON25",
+    "mon30": "MON30",
+
+    "h2o": "Water",
+    "water": "Water",
+}
+
+
 def _normalize_key(value: str) -> str:
     """Return the compact key used for alias and species lookup."""
     return (
@@ -261,7 +336,24 @@ def _build_name_lookup() -> dict[str, str]:
     return lookup
 
 
+def _build_propellant_lookup() -> dict[str, str]:
+    """Build the normalized lookup table for RocketProps propellants."""
+    lookup = {
+        _normalize_key(name): name
+        for name, record in SPECIES_DATABASE.items()
+        if record.rocketprops is not None
+    }
+
+    lookup.update({
+        _normalize_key(alias): name
+        for alias, name in PROPELLANT_ALIASES.items()
+    })
+
+    return lookup
+
+
 _NAME_LOOKUP = _build_name_lookup()
+_PROPELLANT_LOOKUP = _build_propellant_lookup()
 
 
 class classproperty(property):
@@ -326,6 +418,34 @@ class FluidRegistry:
         return record.pyromat
 
     @classmethod
+    def propellant_name(cls, value: str) -> str:
+        """Return the RocketProps backend name for a user name or alias."""
+        lookup = cls.normalize_name(value)
+
+        try:
+            canonical_name = _PROPELLANT_LOOKUP[lookup]
+        except KeyError:
+            raise ValueError(f"Unknown RocketProps propellant name: {value!r}")
+
+        record = SPECIES_DATABASE[canonical_name]
+
+        if record.rocketprops is None:
+            raise ValueError(
+                f"{record.name!r} is not supported by RocketProps."
+            )
+
+        return record.rocketprops
+
+    @classmethod
+    def supports_propellant(cls, value: str) -> bool:
+        """Return True if the species or alias has a RocketProps mapping."""
+        try:
+            cls.propellant_name(value)
+            return True
+        except ValueError:
+            return False
+
+    @classmethod
     def supports_coolprop(cls, value: str) -> bool:
         """Return True if the species has a CoolProp backend mapping."""
         try:
@@ -386,6 +506,16 @@ class FluidRegistry:
             if record.pyromat is not None
         )
 
+
+    @classproperty
+    def propellant_supported_names(cls) -> list[str]:
+        """Return canonical names with RocketProps support."""
+        return sorted(
+            name
+            for name, record in SPECIES_DATABASE.items()
+            if record.rocketprops is not None
+        )
+
     @classproperty
     def supports_both_names(cls) -> list[str]:
         """Return canonical names supported by both backends."""
@@ -402,6 +532,12 @@ class FluidRegistry:
     def aliases(cls) -> dict[str, str]:
         """Return a copy of the user alias table."""
         return dict(sorted(ALIASES.items()))
+
+
+    @classproperty
+    def propellant_aliases(cls) -> dict[str, str]:
+        """Return a copy of the RocketProps-specific alias table."""
+        return dict(sorted(PROPELLANT_ALIASES.items()))
 
     @classmethod
     def show_species(cls) -> list[str]:
