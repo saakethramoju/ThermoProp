@@ -43,6 +43,13 @@ class Fluid:
         temperature_density
         density_enthalpy
         temperature_enthalpy
+
+    --- IMPORTANT!! ---
+    CoolProp defines its own enthalpy and internal energy reference states.
+
+    Absolute enthalpy and internal energy values should not be directly compared
+    with those from other thermodynamic libraries unless a common reference basis
+    has been established.
     """
 
     _PHASE_NAMES = {

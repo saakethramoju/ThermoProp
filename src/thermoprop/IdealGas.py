@@ -25,6 +25,14 @@ class IdealGas:
         density + temperature      -> pressure
         density + enthalpy         -> temperature, pressure
         density + internal_energy  -> temperature, pressure
+
+        
+    --- IMPORTANT!! ---
+    PYroMat defines its own enthalpy and internal energy reference states.
+
+    Absolute enthalpy and internal energy values should not be directly compared
+    with those from other thermodynamic libraries unless a common reference basis
+    has been established.
     """
 
     _SUTHERLAND_VISCOSITY = {

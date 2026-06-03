@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+* Added documentation describing thermodynamic reference-state differences between ThermoProp backends.
+* Clarified that absolute enthalpy, internal energy, and entropy values may differ between wrappers due to backend-specific reference conventions.
+* Added guidance for users combining results from multiple ThermoProp wrappers.
+
 ## 0.1.5
 
 - Documented how to update Fluid and IdealGas state properties.

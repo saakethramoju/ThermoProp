@@ -78,6 +78,37 @@ It supports:
 - Pressure-density closure
 - Cp, Cv, gamma, entropy, Gibbs energy, and speed of sound
 
+## Thermodynamic Reference States
+
+ThermoProp provides a unified interface to multiple thermodynamic backends.
+
+Different property libraries may use different reference states for properties such as:
+
+* Enthalpy
+* Internal energy
+* Entropy
+
+As a result, absolute values of these properties may differ between ThermoProp classes even when pressure, temperature, and composition are identical.
+
+For example, two wrappers representing the same physical state may report different absolute enthalpy values if their underlying thermodynamic libraries use different energy reference conventions.
+
+This behavior is expected and does not indicate an error.
+
+Most engineering calculations depend on property differences rather than absolute values. Properties such as:
+
+* Temperature
+* Pressure
+* Density
+* Specific heats
+* Speed of sound
+* Enthalpy differences (Δh)
+* Internal-energy differences (Δu)
+
+remain physically meaningful within each backend.
+
+Users combining results from multiple ThermoProp wrappers should establish a consistent thermodynamic reference basis if absolute values of enthalpy, internal energy, or entropy are required.
+
+
 ## Pure Fluid Example
 
 ```python
