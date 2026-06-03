@@ -1,6 +1,6 @@
 [project]
 name = "thermoprop"
-version = "0.1.5"
+version = "0.1.6"
 description = "A Python thermodynamic property wrapper for fluids and mixtures."
 readme = "README.md"
 license = "GPL-3.0-only"
