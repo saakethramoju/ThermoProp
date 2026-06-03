@@ -166,7 +166,6 @@ SPECIES_DATABASE = MappingProxyType({
     "N2O4": SpeciesRecord("N2O4", rocketprops="N2O4"),
     "PH2": SpeciesRecord("PH2", rocketprops="PH2"),
     "UDMH": SpeciesRecord("UDMH", rocketprops="UDMH"),
-
 })
 
 
@@ -266,6 +265,7 @@ PROPELLANT_ALIASES: dict[str, str] = {
     "jeta": "RP1",
 
     "lox": "Oxygen",
+    "o2": "Oxygen",
     "oxygen": "Oxygen",
 
     "h2": "Hydrogen",
@@ -283,6 +283,12 @@ PROPELLANT_ALIASES: dict[str, str] = {
 
     "nh3": "Ammonia",
     "ammonia": "Ammonia",
+
+    "propane": "n-Propane",
+    "c3h8": "n-Propane",
+
+    "h2o": "Water",
+    "water": "Water",
 
     "n2o4": "N2O4",
     "nto": "N2O4",
@@ -304,9 +310,6 @@ PROPELLANT_ALIASES: dict[str, str] = {
     "mon10": "MON10",
     "mon25": "MON25",
     "mon30": "MON30",
-
-    "h2o": "Water",
-    "water": "Water",
 }
 
 
@@ -334,6 +337,7 @@ def _build_name_lookup() -> dict[str, str]:
     })
 
     return lookup
+
 
 
 def _build_propellant_lookup() -> dict[str, str]:
@@ -364,7 +368,41 @@ class classproperty(property):
 
 
 class FluidRegistry:
-    """Registry that maps user-facing names to CoolProp and PYroMat names."""
+    """
+    User-facing fluid/species registry for ThermoProp.
+
+    The registry gives users simple names such as ``"water"``, ``"gn2"``,
+    ``"rp-1"``, or ``"lox"`` and maps them to the correct backend names for:
+
+        Fluid      -> CoolProp
+        IdealGas   -> PYroMat
+        Propellant -> RocketProps
+
+    General aliases and propellant aliases are intentionally separate. This is
+    important because a name such as ``"rp-1"`` should map to ``n-Dodecane``
+    for CoolProp's Fluid wrapper, but to ``RP1`` for RocketProps' Propellant
+    wrapper.
+    """
+
+    _BACKEND_ALIASES = {
+        "coolprop": "coolprop",
+        "cool-prop": "coolprop",
+        "cp": "coolprop",
+        "fluid": "coolprop",
+
+        "pyromat": "pyromat",
+        "pyro-mat": "pyromat",
+        "pm": "pyromat",
+        "idealgas": "pyromat",
+        "ideal-gas": "pyromat",
+        "ideal_gas": "pyromat",
+
+        "rocketprops": "rocketprops",
+        "rocket-props": "rocketprops",
+        "rp": "rocketprops",
+        "propellant": "rocketprops",
+        "propellants": "rocketprops",
+    }
 
     @staticmethod
     def normalize_name(value: str) -> str:
@@ -372,8 +410,27 @@ class FluidRegistry:
         return _normalize_key(value)
 
     @classmethod
+    def normalize_backend(cls, backend: str) -> str:
+        """
+        Normalize a backend name.
+
+        Accepted examples include ``"coolprop"``, ``"cp"``, ``"fluid"``,
+        ``"pyromat"``, ``"pm"``, ``"idealgas"``, ``"rocketprops"``, and
+        ``"propellant"``.
+        """
+        lookup = cls.normalize_name(backend)
+
+        try:
+            return cls._BACKEND_ALIASES[lookup]
+        except KeyError:
+            raise ValueError(
+                f"Unknown backend: {backend!r}. Expected one of: "
+                "'coolprop', 'pyromat', or 'rocketprops'."
+            )
+
+    @classmethod
     def name(cls, value: str) -> str:
-        """Return the canonical registry name for a user name or alias."""
+        """Return the canonical ThermoProp registry name for a user name or alias."""
         lookup = cls.normalize_name(value)
 
         try:
@@ -382,9 +439,58 @@ class FluidRegistry:
             raise ValueError(f"Unknown fluid/species name: {value!r}")
 
     @classmethod
+    def propellant_registry_name(cls, value: str) -> str:
+        """
+        Return the canonical registry name used for RocketProps lookup.
+
+        This can differ from :meth:`name` because propellant aliases are kept
+        separate from general fluid aliases. For example:
+
+            FluidRegistry.name("rp-1") -> "n-Dodecane"
+            FluidRegistry.propellant_registry_name("rp-1") -> "RP1"
+        """
+        lookup = cls.normalize_name(value)
+
+        try:
+            return _PROPELLANT_LOOKUP[lookup]
+        except KeyError:
+            raise ValueError(f"Unknown RocketProps propellant name: {value!r}")
+
+    @classmethod
     def record(cls, value: str) -> SpeciesRecord:
-        """Return the full registry record for a user name or alias."""
+        """Return the full registry record for a user name or general alias."""
         return SPECIES_DATABASE[cls.name(value)]
+
+    @classmethod
+    def propellant_record(cls, value: str) -> SpeciesRecord:
+        """Return the full registry record for a user propellant name or alias."""
+        return SPECIES_DATABASE[cls.propellant_registry_name(value)]
+
+    @classmethod
+    def backend_name(cls, value: str, backend: str, include_prefix: bool = False) -> str:
+        """
+        Return the backend-specific name for a user name or alias.
+
+        Parameters
+        ----------
+        value:
+            User name, alias, or canonical registry name.
+        backend:
+            Backend selector. Accepted examples include ``"coolprop"``,
+            ``"pyromat"``, and ``"rocketprops"``.
+        include_prefix:
+            If True and backend is PYroMat, return names with the ``"ig."``
+            prefix, such as ``"ig.N2"``.
+        """
+        backend = cls.normalize_backend(backend)
+
+        if backend == "coolprop":
+            return cls.coolprop_name(value)
+
+        if backend == "pyromat":
+            return cls.pyromat_name(value, include_prefix=include_prefix)
+
+        return cls.propellant_name(value)
 
     @classmethod
     def coolprop_name(cls, value: str) -> str:
@@ -392,25 +498,17 @@ class FluidRegistry:
         record = cls.record(value)
 
         if record.coolprop is None:
-            raise ValueError(
-                f"{record.name!r} is not supported by CoolProp."
-            )
+            raise ValueError(f"{record.name!r} is not supported by CoolProp.")
 
         return record.coolprop
 
     @classmethod
-    def pyromat_name(
-        cls,
-        value: str,
-        include_prefix: bool = False,
-    ) -> str:
+    def pyromat_name(cls, value: str, include_prefix: bool = False) -> str:
         """Return the PYroMat species name for a user name or alias."""
         record = cls.record(value)
 
         if record.pyromat is None:
-            raise ValueError(
-                f"{record.name!r} is not supported by PYroMat."
-            )
+            raise ValueError(f"{record.name!r} is not supported by PYroMat.")
 
         if include_prefix:
             return f"ig.{record.pyromat}"
@@ -419,31 +517,26 @@ class FluidRegistry:
 
     @classmethod
     def propellant_name(cls, value: str) -> str:
-        """Return the RocketProps backend name for a user name or alias."""
-        lookup = cls.normalize_name(value)
-
-        try:
-            canonical_name = _PROPELLANT_LOOKUP[lookup]
-        except KeyError:
-            raise ValueError(f"Unknown RocketProps propellant name: {value!r}")
-
-        record = SPECIES_DATABASE[canonical_name]
+        """Return the RocketProps backend name for a user propellant name or alias."""
+        record = cls.propellant_record(value)
 
         if record.rocketprops is None:
-            raise ValueError(
-                f"{record.name!r} is not supported by RocketProps."
-            )
+            raise ValueError(f"{record.name!r} is not supported by RocketProps.")
 
         return record.rocketprops
 
     @classmethod
-    def supports_propellant(cls, value: str) -> bool:
-        """Return True if the species or alias has a RocketProps mapping."""
-        try:
-            cls.propellant_name(value)
-            return True
-        except ValueError:
-            return False
+    def supports(cls, value: str, backend: str) -> bool:
+        """Return True if ``value`` is supported by the selected backend."""
+        backend = cls.normalize_backend(backend)
+
+        if backend == "coolprop":
+            return cls.supports_coolprop(value)
+
+        if backend == "pyromat":
+            return cls.supports_pyromat(value)
+
+        return cls.supports_propellant(value)
 
     @classmethod
     def supports_coolprop(cls, value: str) -> bool:
@@ -462,26 +555,144 @@ class FluidRegistry:
             return False
 
     @classmethod
+    def supports_propellant(cls, value: str) -> bool:
+        """Return True if the species or propellant alias has a RocketProps mapping."""
+        try:
+            cls.propellant_name(value)
+            return True
+        except ValueError:
+            return False
+
+    @classmethod
     def supports_both(cls, value: str) -> bool:
-        """Return True if the species is available in both backends."""
-        return (
-            cls.supports_coolprop(value)
-            and cls.supports_pyromat(value)
-        )
+        """Return True if the species is available in both CoolProp and PYroMat."""
+        return cls.supports_coolprop(value) and cls.supports_pyromat(value)
 
     @classmethod
     def add_alias(cls, alias: str, name: str) -> None:
-        """Add a user alias and refresh the lookup cache."""
+        """
+        Add a general alias for Fluid and IdealGas lookups.
+
+        This affects :class:`Fluid` and :class:`IdealGas`, not
+        :class:`Propellant`. Use :meth:`add_propellant_alias` for RocketProps
+        aliases.
+
+        Examples
+        --------
+        FluidRegistry.add_alias("my-water", "Water")
+        FluidRegistry.add_alias("my-rp1-surrogate", "n-Dodecane")
+        """
         global _NAME_LOOKUP
         ALIASES[alias] = cls.name(name)
         _NAME_LOOKUP = _build_name_lookup()
 
     @classmethod
+    def add_propellant_alias(cls, alias: str, name: str) -> None:
+        """
+        Add a RocketProps-specific alias for Propellant lookups.
+
+        This affects :class:`Propellant`, not :class:`Fluid` or
+        :class:`IdealGas`.
+
+        Examples
+        --------
+        FluidRegistry.add_propellant_alias("fuel", "RP1")
+        FluidRegistry.add_propellant_alias("oxidizer", "LOX")
+        """
+        global _PROPELLANT_LOOKUP
+        PROPELLANT_ALIASES[alias] = cls.propellant_registry_name(name)
+        _PROPELLANT_LOOKUP = _build_propellant_lookup()
+
+    @classmethod
+    def add_backend_alias(cls, alias: str, name: str, backend: str) -> None:
+        """
+        Add an alias for a specific backend.
+
+        This is a convenience wrapper around :meth:`add_alias` and
+        :meth:`add_propellant_alias`.
+        """
+        backend = cls.normalize_backend(backend)
+
+        if backend == "rocketprops":
+            cls.add_propellant_alias(alias, name)
+            return
+
+        cls.add_alias(alias, name)
+
+    @classmethod
     def remove_alias(cls, alias: str) -> None:
-        """Remove a user alias and refresh the lookup cache."""
+        """Remove a general Fluid/IdealGas alias and refresh the lookup cache."""
         global _NAME_LOOKUP
         ALIASES.pop(alias, None)
         _NAME_LOOKUP = _build_name_lookup()
+
+    @classmethod
+    def remove_propellant_alias(cls, alias: str) -> None:
+        """Remove a RocketProps-specific Propellant alias and refresh the lookup cache."""
+        global _PROPELLANT_LOOKUP
+        PROPELLANT_ALIASES.pop(alias, None)
+        _PROPELLANT_LOOKUP = _build_propellant_lookup()
+
+    @classmethod
+    def remove_backend_alias(cls, alias: str, backend: str) -> None:
+        """Remove an alias from a specific backend alias table."""
+        backend = cls.normalize_backend(backend)
+
+        if backend == "rocketprops":
+            cls.remove_propellant_alias(alias)
+            return
+
+        cls.remove_alias(alias)
+
+    @classmethod
+    def describe(cls, value: str) -> dict[str, str | None | bool]:
+        """
+        Return a compact description of a general registry entry.
+
+        Use this when users want to check what a name maps to for Fluid and
+        IdealGas.
+        """
+        record = cls.record(value)
+
+        return {
+            "input": value,
+            "name": record.name,
+            "coolprop": record.coolprop,
+            "pyromat": record.pyromat,
+            "rocketprops": record.rocketprops,
+            "supports_coolprop": record.coolprop is not None,
+            "supports_pyromat": record.pyromat is not None,
+            "supports_propellant": cls.supports_propellant(value),
+        }
+
+    @classmethod
+    def describe_propellant(cls, value: str) -> dict[str, str | bool | None]:
+        """
+        Return a compact description of a Propellant/RocketProps lookup.
+
+        Use this when users want to check what a propellant alias maps to.
+        """
+        record = cls.propellant_record(value)
+
+        return {
+            "input": value,
+            "name": record.name,
+            "rocketprops": record.rocketprops,
+            "supports_propellant": record.rocketprops is not None,
+        }
+
+    @classmethod
+    def supported_names(cls, backend: str) -> list[str]:
+        """Return canonical registry names supported by the selected backend."""
+        backend = cls.normalize_backend(backend)
+
+        if backend == "coolprop":
+            return cls.coolprop_supported_names
+
+        if backend == "pyromat":
+            return cls.pyromat_supported_names
+
+        return cls.propellant_supported_names
 
     @classproperty
     def names(cls) -> list[str]:
@@ -506,7 +717,6 @@ class FluidRegistry:
             if record.pyromat is not None
         )
 
-
     @classproperty
     def propellant_supported_names(cls) -> list[str]:
         """Return canonical names with RocketProps support."""
@@ -518,25 +728,21 @@ class FluidRegistry:
 
     @classproperty
     def supports_both_names(cls) -> list[str]:
-        """Return canonical names supported by both backends."""
+        """Return canonical names supported by both CoolProp and PYroMat."""
         return sorted(
             name
             for name, record in SPECIES_DATABASE.items()
-            if (
-                record.coolprop is not None
-                and record.pyromat is not None
-            )
+            if record.coolprop is not None and record.pyromat is not None
         )
 
     @classproperty
     def aliases(cls) -> dict[str, str]:
-        """Return a copy of the user alias table."""
+        """Return a copy of the general Fluid/IdealGas alias table."""
         return dict(sorted(ALIASES.items()))
-
 
     @classproperty
     def propellant_aliases(cls) -> dict[str, str]:
-        """Return a copy of the RocketProps-specific alias table."""
+        """Return a copy of the RocketProps-specific Propellant alias table."""
         return dict(sorted(PROPELLANT_ALIASES.items()))
 
     @classmethod
@@ -546,3 +752,50 @@ class FluidRegistry:
             print(name)
 
         return cls.names
+
+    @classmethod
+    def show_supported(cls, backend: str) -> list[str]:
+        """Print and return canonical names supported by the selected backend."""
+        names = cls.supported_names(backend)
+
+        for name in names:
+            print(name)
+
+        return names
+
+    @classmethod
+    def show_aliases(cls) -> dict[str, str]:
+        """Print and return general Fluid/IdealGas aliases."""
+        aliases = cls.aliases
+
+        if not aliases:
+            return aliases
+
+        width = max(len(alias) for alias in aliases)
+
+        print("Fluid / IdealGas Aliases")
+        print("-" * (width + 24))
+
+        for alias, name in aliases.items():
+            print(f"{alias:<{width}} -> {name}")
+
+        return aliases
+
+    @classmethod
+    def show_propellant_aliases(cls) -> dict[str, str]:
+        """Print and return RocketProps-specific Propellant aliases."""
+        aliases = cls.propellant_aliases
+
+        if not aliases:
+            return aliases
+
+        width = max(len(alias) for alias in aliases)
+
+        print("Propellant Aliases")
+        print("-" * (width + 20))
+
+        for alias, name in aliases.items():
+            backend = cls.propellant_name(name)
+            print(f"{alias:<{width}} -> {name} ({backend})")
+
+        return aliases

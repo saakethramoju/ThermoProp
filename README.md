@@ -101,6 +101,28 @@ It supports:
 
 `Propellant` is intended for liquid propellant engineering properties. It is not a thermodynamic flash solver and does not calculate vapor-state properties, two-phase states, enthalpy, internal energy, or entropy.
 
+### FluidRegistry
+
+`FluidRegistry` maps user-friendly names and aliases to backend-specific names.
+
+For example:
+
+```python
+from thermoprop import FluidRegistry
+
+print(FluidRegistry.coolprop_name("rp-1"))
+print(FluidRegistry.propellant_name("rp-1"))
+```
+
+outputs different backend names:
+
+```text
+n-Dodecane
+RP1
+```
+
+This is intentional. `Fluid("rp-1")` uses CoolProp's `n-Dodecane` as an RP-1 surrogate, while `Propellant("rp-1")` uses RocketProps' actual `RP1` correlation.
+
 ## Thermodynamic Reference States
 
 ThermoProp provides a unified interface to multiple thermodynamic backends.
@@ -240,6 +262,135 @@ lox = Propellant(
 margin = lox.pressure - lox.vapor_pressure
 
 print(margin)
+```
+
+## Fluid Registry Examples
+
+`FluidRegistry` can be used to inspect supported names, check backend support, and add custom aliases.
+
+### Check Backend Names
+
+```python
+from thermoprop import FluidRegistry
+
+print(FluidRegistry.coolprop_name("water"))
+print(FluidRegistry.pyromat_name("gn2"))
+print(FluidRegistry.propellant_name("rp-1"))
+```
+
+Example output:
+
+```text
+Water
+N2
+RP1
+```
+
+For PYroMat, the `ig.` prefix can also be requested:
+
+```python
+print(FluidRegistry.pyromat_name("gn2", include_prefix=True))
+```
+
+Example output:
+
+```text
+ig.N2
+```
+
+### Check Backend Support
+
+```python
+from thermoprop import FluidRegistry
+
+print(FluidRegistry.supports_coolprop("water"))
+print(FluidRegistry.supports_pyromat("gn2"))
+print(FluidRegistry.supports_propellant("rp-1"))
+```
+
+### List Supported Names
+
+```python
+from thermoprop import FluidRegistry
+
+print(FluidRegistry.names)
+print(FluidRegistry.coolprop_supported_names)
+print(FluidRegistry.pyromat_supported_names)
+print(FluidRegistry.propellant_supported_names)
+```
+
+You can also print supported species directly:
+
+```python
+FluidRegistry.show_species()
+FluidRegistry.show_coolprop_species()
+FluidRegistry.show_pyromat_species()
+FluidRegistry.show_propellant_species()
+```
+
+### Show Aliases
+
+ThermoProp keeps normal fluid aliases and propellant aliases separate.
+
+```python
+from thermoprop import FluidRegistry
+
+FluidRegistry.show_aliases()
+FluidRegistry.show_propellant_aliases()
+```
+
+This avoids ambiguity. For example:
+
+```python
+print(FluidRegistry.coolprop_name("rp-1"))
+print(FluidRegistry.propellant_name("rp-1"))
+```
+
+returns:
+
+```text
+n-Dodecane
+RP1
+```
+
+### Add Custom Aliases
+
+Use `add_alias()` for `Fluid` and `IdealGas` names:
+
+```python
+from thermoprop import Fluid, FluidRegistry
+
+FluidRegistry.add_alias("my-water", "Water")
+
+water = Fluid(
+    "my-water",
+    pressure=101325,
+    temperature=300,
+)
+
+print(water.density)
+```
+
+Use `add_propellant_alias()` for `Propellant` names:
+
+```python
+from thermoprop import Propellant, FluidRegistry
+
+FluidRegistry.add_propellant_alias("my-rp1", "RP1")
+
+rp1 = Propellant(
+    "my-rp1",
+    temperature=293.15,
+)
+
+print(rp1.density)
+```
+
+Removing aliases works the same way:
+
+```python
+FluidRegistry.remove_alias("my-water")
+FluidRegistry.remove_propellant_alias("my-rp1")
 ```
 
 ## Common Properties
