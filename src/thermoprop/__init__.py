@@ -1,6 +1,17 @@
 from .Fluid import Fluid
 from .IdealGas import IdealGas
-from .FluidRegistry import FluidRegistry
 from .Propellant import Propellant
+from .Material import Material
 
-__all__ = ["Fluid", "IdealGas", "FluidRegistry", "Propellant"]
+from .FluidRegistry import FluidRegistry
+from .MaterialRegistry import MaterialRegistry
+
+
+__all__ = [
+    "Fluid",
+    "IdealGas",
+    "Propellant",
+    "Material",
+    "FluidRegistry",
+    "MaterialRegistry",
+]

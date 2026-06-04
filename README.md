@@ -4,19 +4,22 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/thermoprop/)
 [![License](https://img.shields.io/pypi/l/thermoprop)](https://github.com/saakethramoju/ThermoProp)
 
-ThermoProp is a Python thermodynamic property wrapper for real fluids, mixtures, ideal gases, and liquid rocket propellants.
+ThermoProp is a Python thermophysical property library for real fluids, fluid mixtures, ideal gases, ideal gas mixtures, liquid rocket propellants, and isotropic engineering materials.
+
+It provides a unified API around CoolProp, PYroMat, RocketProps, and a built-in engineering material property database.
 
 It provides a clean interface around:
 
 * CoolProp
 * PYroMat
 * RocketProps
+* Built-in Material Database
 * NumPy
 * SciPy
 
 ## Why ThermoProp?
 
-ThermoProp provides a unified API around CoolProp, PYroMat, and RocketProps.
+ThermoProp provides a unified API around CoolProp, PYroMat, RocketProps, and a built-in engineering material property database.
 
 Instead of remembering backend-specific syntax such as:
 
@@ -41,7 +44,7 @@ print(water.density)
 print(water.enthalpy)
 ```
 
-with a consistent interface for pure fluids, mixtures, ideal gases, and liquid rocket propellants.
+with a consistent interface for pure fluids, mixtures, ideal gases, liquid rocket propellants, and engineering materials.
 
 ## Installation
 
@@ -100,6 +103,123 @@ It supports:
 * Critical properties
 
 `Propellant` is intended for liquid propellant engineering properties. It is not a thermodynamic flash solver and does not calculate vapor-state properties, two-phase states, enthalpy, internal energy, or entropy.
+
+### Material
+
+`Material` is a built-in isotropic engineering material-property wrapper.
+
+It provides temperature-dependent engineering material properties using ThermoProp's integrated material property database.
+
+Supported properties include:
+
+* Density
+* Yield strength
+* Ultimate strength
+* Elastic modulus
+* Torsional modulus
+* Poisson ratio
+* Thermal conductivity
+* Specific heat
+* Coefficient of thermal expansion
+* Melting point
+* Electrical resistivity
+
+Currently supported materials include:
+
+#### Aluminum Alloys
+
+* Aluminum 6061
+* Aluminum 7075
+
+#### Copper Alloys
+
+* Copper C101
+* Copper C11000
+* Copper C17200
+* GRCop-42
+* GRCop-84
+
+#### Carbon & Low-Alloy Steels
+
+* 1018 Carbon Steel
+* 1045 Carbon Steel
+* 3140 Low-Alloy Steel
+* 4140 Steel
+
+#### Stainless Steels
+
+* Stainless Steel 303
+* Stainless Steel 304
+* Stainless Steel 316
+* A286 Steel
+
+#### Nickel-Based Superalloys
+
+* Inconel 625
+* Inconel 718
+
+#### Ceramics & Non-Metals
+
+* Graphite
+
+### MaterialRegistry
+
+`MaterialRegistry` maps user-friendly aliases to canonical ThermoProp material names.
+
+Material names can be supplied using common aliases:
+
+```python
+from thermoprop import Material
+
+mat = Material("in718")
+mat = Material("6061")
+mat = Material("304ss")
+```
+
+`MaterialRegistry` can also be used directly:
+
+```python
+from thermoprop import MaterialRegistry
+
+print(MaterialRegistry.name("in718"))
+print(MaterialRegistry.name("6061"))
+print(MaterialRegistry.name("304ss"))
+```
+
+Example output:
+
+```text
+Inconel 718
+Aluminum 6061
+Stainless Steel 304
+```
+
+Custom aliases can be added at runtime:
+
+```python
+from thermoprop import Material
+from thermoprop import MaterialRegistry
+
+MaterialRegistry.add_alias(
+    "chamber alloy",
+    "Inconel 718",
+)
+
+mat = Material(
+    "chamber alloy",
+    temperature=300,
+)
+
+print(mat.yield_strength)
+```
+
+Aliases can be removed using:
+
+```python
+MaterialRegistry.remove_alias(
+    "chamber alloy"
+)
+```
 
 ### FluidRegistry
 
@@ -230,6 +350,21 @@ rp1 = Propellant(
 print(rp1.density)
 print(rp1.dynamic_viscosity)
 print(rp1.vapor_pressure)
+```
+
+## Material Example
+
+```python
+from thermoprop import Material
+
+inc718 = Material(
+    "in718",
+    temperature=300,
+)
+
+print(inc718.density)
+print(inc718.yield_strength)
+print(inc718.thermal_conductivity)
 ```
 
 ## Compressed-Liquid Propellant Example
@@ -519,6 +654,7 @@ rp1.pressure_temperature = (2e6, 300)
 
 It is intended for liquid engineering properties and does not calculate:
 
+* Mixture properties
 * Vapor-state properties
 * Two-phase flash states
 * Enthalpy
@@ -560,6 +696,32 @@ print(air.dynamic_viscosity)
 ```
 
 If viscosity data is unavailable for a gas, ThermoProp raises `NotImplementedError`.
+
+## Material Limitations
+
+`Material` currently provides temperature-dependent isotropic engineering material properties.
+
+It does not currently support:
+
+* Anisotropic materials
+* Composite materials
+* Stress-strain curves
+* Fatigue data
+* Fracture mechanics properties
+* Creep data
+* Pressure-dependent material behavior
+
+Attempting to access unsupported thermodynamic properties such as enthalpy, entropy, viscosity, or vapor quality will raise `NotImplementedError`.
+
+## Acknowledgments
+
+ThermoProp's isotropic material property database was adapted from material property data compiled and distributed through the MatProtLib project.
+
+The author gratefully acknowledges Tyson Tran and the MatProtLib project for making these engineering material datasets publicly available.
+
+MatProtLib:
+
+https://github.com/tysontran/MatProtLib
 
 ## Source Code
 

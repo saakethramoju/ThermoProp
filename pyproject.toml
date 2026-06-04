@@ -1,7 +1,7 @@
 [project]
 name = "thermoprop"
-version = "0.2.1"
-description = "A Python thermodynamic property wrapper for real fluids, ideal gases, and liquid rocket propellants."
+version = "0.3.0"
+description = "A Python thermophysical property wrapper for real fluids, ideal gases, liquid rocket propellants, and isotropic engineering materials."
 readme = "README.md"
 license = "GPL-3.0-only"
 authors = [
@@ -10,13 +10,15 @@ authors = [
 requires-python = ">=3.11"
 keywords = [
     "thermodynamics",
+    "thermophysical-properties",
+    "material-properties",
+    "isotropic-materials",
     "coolprop",
     "pyromat",
     "rocketprops",
     "fluids",
     "ideal-gas",
     "propellants",
-    "thermophysical-properties",
     "engineering",
     "rocket-propulsion",
 ]
@@ -26,10 +28,15 @@ classifiers = [
     "Intended Audience :: Education",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Information Analysis",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
 ]
+
 dependencies = [
     "coolprop>=6.8.0",
     "numpy>=2.4.6",
@@ -43,6 +50,9 @@ Homepage = "https://github.com/saakethramoju/ThermoProp"
 Repository = "https://github.com/saakethramoju/ThermoProp"
 Issues = "https://github.com/saakethramoju/ThermoProp/issues"
 Changelog = "https://github.com/saakethramoju/ThermoProp/blob/main/CHANGELOG.md"
+
+[tool.thermoprop.credits]
+material_properties_database = "Material property database adapted from data compiled by Tyson Tran."
 
 [build-system]
 requires = ["uv_build>=0.11.18,<0.12.0"]

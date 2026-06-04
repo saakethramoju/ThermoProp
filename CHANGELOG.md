@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+* Added the `Material` wrapper for isotropic engineering material properties.
+* Added `MaterialRegistry` for material name management and alias support.
+* Added support for user-defined material aliases through `MaterialRegistry`.
+* Added built-in temperature-dependent engineering material property database.
+* Added support for:
+
+  * Aluminum 6061
+  * Aluminum 7075
+  * Copper C101
+  * Copper C11000
+  * Copper C17200
+  * GRCop-42
+  * GRCop-84
+  * 1018 Carbon Steel
+  * 1045 Carbon Steel
+  * 3140 Low-Alloy Steel
+  * 4140 Steel
+  * Stainless Steel 303
+  * Stainless Steel 304
+  * Stainless Steel 316
+  * A286 Steel
+  * Inconel 625
+  * Inconel 718
+  * Graphite
+* Added temperature-dependent lookup support for:
+
+  * Yield strength
+  * Ultimate strength
+  * Elastic modulus
+  * Torsional modulus
+  * Density
+  * Poisson ratio
+  * Thermal conductivity
+  * Specific heat
+  * Coefficient of thermal expansion
+  * Melting point
+  * Electrical resistivity
+* Added material property alias support.
+* Added material curve inspection and property availability utilities.
+
+### Improved
+
+* Extended ThermoProp beyond thermodynamic properties to include engineering material properties.
+* Improved API consistency across `Fluid`, `IdealGas`, `Propellant`, and `Material`.
+* Unified registry-based name handling through `FluidRegistry` and `MaterialRegistry`.
+* Improved package organization and material property lookup infrastructure.
+
+### Documentation
+
+* Added Material documentation and usage examples.
+* Added MaterialRegistry documentation and examples.
+* Added material property lookup examples.
+* Added supported materials documentation.
+* Added acknowledgments for the MatProtLib project.
+* Expanded third-party licensing documentation to include MatProtLib.
+* Updated package description to reflect support for engineering materials.
+
+### Acknowledgments
+
+* ThermoProp's engineering material property database was adapted from material property data compiled and distributed through the MatProtLib project.
+* Special thanks to Tyson Tran for making these engineering material datasets publicly available.
+
 ## 0.2.1
 
 ### Added
