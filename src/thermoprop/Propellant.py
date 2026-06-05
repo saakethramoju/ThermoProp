@@ -729,3 +729,31 @@ class Propellant:
             print(f"{alias:<{width}} -> {backend}")
 
         return dict(aliases)
+    
+
+    @classmethod
+    def supported_properties(cls) -> list[str]:
+        """Return public @property names exposed by this wrapper."""
+        return sorted(
+            name
+            for name, value in vars(cls).items()
+            if isinstance(value, property)
+            and not name.startswith("_")
+        )
+
+
+    @classmethod
+    def show_supported_properties(cls) -> list[str]:
+        """Print and return public @property names exposed by this wrapper."""
+        properties = cls.supported_properties()
+
+        for prop in properties:
+            print(prop)
+
+        return properties
+
+
+    @classmethod
+    def supports_property(cls, property_name: str) -> bool:
+        """Return True if this wrapper exposes property_name as a @property."""
+        return property_name in cls.supported_properties()

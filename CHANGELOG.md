@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.1
+
+### Added
+
+* Added property introspection utilities across ThermoProp wrappers:
+
+  * `supported_properties()`
+  * `show_supported_properties()`
+  * `supports_property()`
+* Added property introspection support to:
+
+  * `Fluid`
+  * `IdealGas`
+  * `Propellant`
+  * `Material`
+
+### Improved
+
+* Improved API consistency across ThermoProp wrappers.
+* Standardized property discovery and wrapper introspection utilities.
+* Improved discoverability of supported properties without requiring documentation lookup.
+
+### Documentation
+
+* Added property introspection examples.
+* Added wrapper capability discovery examples.
+* Updated API reference documentation for `Fluid`, `IdealGas`, `Propellant`, and `Material`.
+
 ## 0.3.0
 
 ### Added
