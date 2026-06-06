@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.3.2
+
+### Added
+
+* Added flash-input introspection utilities across ThermoProp wrappers:
+
+  * `supported_flash_pairs()`
+  * `available_flash_pairs()`
+  * `supported_flash_inputs()`
+  * `available_flash_inputs()`
+
+* Added flash-input validation support to `IdealGas`.
+
+* Added supported flash-input discovery utilities to:
+
+  * `Fluid`
+  * `IdealGas`
+  * `Propellant`
+
+* Added approximate ideal-gas Prandtl number support to `IdealGas`.
+
+* Added approximate ideal-gas thermal conductivity support to `IdealGas`.
+
+* Added Wilke mixture-viscosity support for ideal-gas mixtures.
+
+* Added thermal conductivity alias support through `thermal_conductivity`.
+
+### Improved
+
+* Improved API consistency across `Fluid`, `IdealGas`, `Propellant`, and `Material`.
+* Standardized wrapper introspection utilities across ThermoProp backends.
+* Improved validation of user-specified state inputs for `IdealGas`.
+* Improved discoverability of supported flash-input combinations and wrapper capabilities.
+* Extended `IdealGas` transport-property support with approximate Prandtl number estimation.
+* Extended `IdealGas` transport-property support with approximate thermal conductivity estimation based on viscosity, specific heat, and Prandtl number.
+* Improved ideal-gas mixture transport-property calculations through Wilke viscosity mixing.
+* Expanded Sutherland-law viscosity support to ideal-gas mixture calculations.
+
+### Documentation
+
+* Added flash-input introspection examples.
+* Added supported state-input discovery examples.
+* Added wrapper capability inspection examples.
+* Updated API reference documentation for wrapper introspection utilities.
+* Updated IdealGas documentation to describe approximate Prandtl number, viscosity, and thermal conductivity support.
+* Updated IdealGas documentation to describe transport-property limitations and supported gases.
+
 ## 0.3.1
 
 ### Added

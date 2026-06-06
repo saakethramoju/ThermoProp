@@ -82,6 +82,9 @@ It supports:
 * Internal-energy states
 * Pressure-density closure
 * Cp, Cv, gamma, entropy, Gibbs energy, and speed of sound
+* Dynamic & kinematic viscosity (selected species)
+* Approximate Prandtl number
+* Approximate thermal conductivity
 
 ### Propellant
 
@@ -666,11 +669,15 @@ It is intended for liquid engineering properties and does not calculate:
 
 Unsupported properties raise `NotImplementedError`.
 
-## Ideal-Gas Viscosity Limitation
+## Ideal-Gas Transport Properties
+
+`IdealGas` provides approximate transport-property support.
+
+### Dynamic Viscosity
 
 `IdealGas.dynamic_viscosity` uses Sutherland's law.
 
-Currently, viscosity is only supported for selected pure gases, including:
+Viscosity is currently supported only for gases with available Sutherland-law constants. Supported gases include:
 
 * Air
 * Argon
@@ -681,7 +688,7 @@ Currently, viscosity is only supported for selected pure gases, including:
 * Hydrogen
 * Water vapor
 
-Mixture viscosity is not currently supported.
+Ideal-gas mixtures are supported using Wilke's viscosity mixing rule when viscosity data is available for all constituent species.
 
 ```python
 from thermoprop import IdealGas
@@ -695,7 +702,34 @@ air = IdealGas(
 print(air.dynamic_viscosity)
 ```
 
-If viscosity data is unavailable for a gas, ThermoProp raises `NotImplementedError`.
+If viscosity data is unavailable for a species, ThermoProp raises `NotImplementedError`.
+
+### Prandtl Number
+
+`IdealGas.prandtl` provides an approximate Prandtl number based on an Eucken-style kinetic-theory correlation.
+
+```python
+print(air.prandtl)
+```
+
+This approximation is intended for engineering calculations and should not be considered a replacement for detailed transport-property models.
+
+### Thermal Conductivity
+
+`IdealGas.conductivity` and `IdealGas.thermal_conductivity` provide approximate thermal conductivity estimates computed from:
+
+```text
+k = Cp μ / Pr
+```
+
+using the wrapper's specific heat, dynamic viscosity, and approximate Prandtl number.
+
+```python
+print(air.conductivity)
+print(air.thermal_conductivity)
+```
+
+These estimates are intended for engineering calculations and do not use detailed transport-property databases such as those employed by CEA, Cantera, or REFPROP.
 
 ## Material Limitations
 

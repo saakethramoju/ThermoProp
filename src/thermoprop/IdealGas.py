@@ -37,11 +37,7 @@ class IdealGas:
 
     _BACKEND_NAME = "PYroMat"
 
-    _UNSUPPORTED_PROPERTIES = {
-        "conductivity",
-        "thermal_conductivity",
-        "prandtl",
-    }
+    _UNSUPPORTED_PROPERTIES = set()
 
     _SUTHERLAND_VISCOSITY = {
         "ig.air": {"mu0": 1.716e-5, "T0": 273.0, "S": 111.0},
@@ -638,26 +634,11 @@ class IdealGas:
     def speed_of_sound(self) -> float:
         return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self._temperature))
         
-
-    @property
-    def dynamic_viscosity(self) -> float:
-        """
-        Dynamic viscosity [Pa-s] from Sutherland's law.
-
-        Only available for gases listed in _SUTHERLAND_VISCOSITY.
-        Mixture viscosity is not currently supported.
-        """
-        if self._mixture:
-            raise NotImplementedError(
-                "Sutherland viscosity is currently only supported for pure gases."
-            )
-
-        species_id = self._species_ids[0]
-
+    def _species_viscosity(self, species_id: str) -> float:
+        """Return pure-species dynamic viscosity [Pa-s] from Sutherland's law."""
         if species_id not in self._SUTHERLAND_VISCOSITY:
             raise NotImplementedError(
-                f"Sutherland viscosity is not available for {species_id}. "
-                "Add its mu0, T0, and S constants to _SUTHERLAND_VISCOSITY."
+                f"Sutherland viscosity constants (mu0, T0, and S) are not available for {self.name}."
             )
 
         data = self._SUTHERLAND_VISCOSITY[species_id]
@@ -667,27 +648,76 @@ class IdealGas:
         S = data["S"]
         T = self.temperature
 
-        return mu0 * (T / T0) ** 1.5 * (T0 + S) / (T + S)
+        return float(mu0 * (T / T0) ** 1.5 * (T0 + S) / (T + S))
 
+    def _mixture_viscosity_wilke(self) -> float:
+        """Return ideal-gas-mixture viscosity [Pa-s] using Wilke's rule."""
+        x = self._mole_fractions
+        M = self._M
+
+        mu = np.array(
+            [self._species_viscosity(sid) for sid in self._species_ids],
+            dtype=float,
+        )
+
+        phi = np.zeros((len(mu), len(mu)))
+
+        for i in range(len(mu)):
+            for j in range(len(mu)):
+                phi[i, j] = (
+                    (1.0 + np.sqrt(mu[i] / mu[j]) * (M[j] / M[i]) ** 0.25) ** 2
+                    / np.sqrt(8.0 * (1.0 + M[i] / M[j]))
+                )
+
+        return float(
+            sum(
+                x[i] * mu[i] / sum(x[j] * phi[i, j] for j in range(len(mu)))
+                for i in range(len(mu))
+            )
+        )
+
+    @property
+    def dynamic_viscosity(self) -> float:
+        """
+        Dynamic viscosity [Pa-s].
+
+        Pure gases use Sutherland's law. Mixtures use Wilke's mixing rule.
+        Every species in a mixture must have Sutherland constants.
+        """
+        if self._mixture:
+            return self._mixture_viscosity_wilke()
+
+        return self._species_viscosity(self._species_ids[0])
 
     @property
     def kinematic_viscosity(self) -> float:
-        """
-        Kinematic viscosity [m^2/s].
-        """
+        """Kinematic viscosity [m^2/s]."""
         return self.dynamic_viscosity / self.density
-    
-    @property
-    def conductivity(self):
-        return self._unsupported("conductivity")
 
     @property
-    def thermal_conductivity(self):
-        return self._unsupported("thermal_conductivity")
+    def prandtl(self) -> float:
+        """Approximate ideal-gas Prandtl number from Eucken-style relation."""
+        gamma = self.specific_heat_ratio
+
+        if gamma is None or abs(9.0 * gamma - 5.0) < 1e-15:
+            return None
+
+        return 4.0 * gamma / (9.0 * gamma - 5.0)
 
     @property
-    def prandtl(self):
-        return self._unsupported("prandtl")
+    def conductivity(self) -> float:
+        """Approximate thermal conductivity [W/m-K] from k = Cp*mu/Pr."""
+        Pr = self.prandtl
+
+        if Pr is None or Pr == 0.0:
+            return None
+
+        return self.specific_heat_cp * self.dynamic_viscosity / Pr
+
+    @property
+    def thermal_conductivity(self) -> float:
+        """Alias for conductivity."""
+        return self.conductivity
 
     @property
     def minimum_pressure(self) -> float:
