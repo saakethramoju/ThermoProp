@@ -52,6 +52,10 @@ class Fluid:
     has been established.
     """
 
+    _BACKEND_NAME = "CoolProp"
+
+    _UNSUPPORTED_PROPERTIES = set()
+
     _PHASE_NAMES = {
         getattr(CP, "iphase_unknown", -999): "Unknown",
         getattr(CP, "iphase_liquid", -999): "Liquid",
@@ -227,7 +231,8 @@ class Fluid:
 
     @property
     def backend(self) -> str:
-        return "CoolProp"
+        """Name of the thermodynamic property backend."""
+        return self._BACKEND_NAME
 
     def _build_state(self):
         """Create and configure a CoolProp AbstractState."""
@@ -666,6 +671,11 @@ class Fluid:
             return float(self._backend.conductivity())
         except Exception:
             return None
+            
+    @property
+    def thermal_conductivity(self) -> float:
+        """Backward-compatible alias for conductivity."""
+        return self.conductivity
 
     @property
     def critical_pressure(self) -> float:
@@ -1100,15 +1110,7 @@ class Fluid:
         return T, Q
 
     @staticmethod
-    def show_available_fluids():
-        """Print and return available CoolProp fluid names."""
-        fluids = Fluid.get_available_fluids()
-        for f in fluids:
-            print(f)
-        return fluids
-
-    @staticmethod
-    def get_available_fluids():
+    def get_available_fluids() -> List[str]:
         """Return available CoolProp fluid names."""
         return sorted(
             FluidRegistry.coolprop_name(name)
@@ -1116,27 +1118,54 @@ class Fluid:
         )
 
     @staticmethod
-    def available_flash_pairs():
+    def show_available_fluids() -> List[str]:
+        """Print and return available CoolProp fluid names."""
+        fluids = Fluid.get_available_fluids()
+
+        for fluid in fluids:
+            print(fluid)
+
+        return fluids
+
+    @classmethod
+    def available_flash_pairs(cls) -> list[str]:
+        """Return supported two-property CoolProp flash combinations."""
         return sorted(
             "-".join(sorted(pair))
-            for pair in Fluid._FLASH_PAIRS
+            for pair in cls._FLASH_PAIRS
         )
 
+    @classmethod
+    def supported_flash_pairs(cls) -> list[str]:
+        """Return supported two-property CoolProp flash combinations."""
+        return cls.available_flash_pairs()
+
+    @classmethod
+    def available_flash_inputs(cls) -> list[str]:
+        """Return supported CoolProp state input combinations."""
+        return cls.available_flash_pairs()
+
+    @classmethod
+    def supported_flash_inputs(cls) -> list[str]:
+        """Return supported CoolProp state input combinations."""
+        return cls.available_flash_inputs()
 
     @classmethod
     def supported_properties(cls) -> list[str]:
-        """Return public @property names exposed by this wrapper."""
+        """Return public properties intentionally supported by this wrapper."""
+        unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
+
         return sorted(
             name
             for name, value in vars(cls).items()
             if isinstance(value, property)
             and not name.startswith("_")
+            and name not in unsupported
         )
-
 
     @classmethod
     def show_supported_properties(cls) -> list[str]:
-        """Print and return public @property names exposed by this wrapper."""
+        """Print and return public properties intentionally supported by this wrapper."""
         properties = cls.supported_properties()
 
         for prop in properties:
@@ -1144,12 +1173,7 @@ class Fluid:
 
         return properties
 
-
     @classmethod
     def supports_property(cls, property_name: str) -> bool:
-        """Return True if this wrapper exposes property_name as a @property."""
+        """Return True if this wrapper intentionally supports property_name."""
         return property_name in cls.supported_properties()
-        
-    @classmethod
-    def supported_flash_pairs(cls) -> list[str]:
-        return cls.available_flash_pairs()

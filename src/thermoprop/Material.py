@@ -30,6 +30,25 @@ class Material:
     mat.yield_strength
     """
 
+    _BACKEND_NAME = "ThermoProp MaterialData"
+
+    _UNSUPPORTED_PROPERTIES = {
+        "enthalpy",
+        "internal_energy",
+        "entropy",
+        "quality",
+        "dynamic_viscosity",
+        "kinematic_viscosity",
+        "speed_of_sound",
+        "specific_heat_cv",
+        "specific_heat_ratio",
+    }
+
+    _FLASH_INPUTS = {
+        frozenset(("temperature",)),
+        frozenset(("pressure", "temperature")),
+    }
+
     def __init__(
         self,
         material: str,
@@ -57,7 +76,7 @@ class Material:
 
     @property
     def backend(self) -> str:
-        return "ThermoProp MaterialData"
+        return self._BACKEND_NAME
 
     @property
     def material(self) -> str:
@@ -424,7 +443,8 @@ class Material:
 
     @staticmethod
     def get_available_materials() -> list[str]:
-        return MaterialRegistry.names
+        """Return available ThermoProp material names."""
+        return sorted(MaterialRegistry.names)
 
     @staticmethod
     def show_available_materials() -> list[str]:
@@ -435,7 +455,8 @@ class Material:
 
     @staticmethod
     def get_available_properties() -> list[str]:
-        return MaterialRegistry.properties
+        """Return normalized material-property names known by the registry."""
+        return sorted(MaterialRegistry.properties)
 
     @staticmethod
     def show_available_properties() -> list[str]:
@@ -450,19 +471,48 @@ class Material:
         
 
     @classmethod
+    def available_flash_inputs(cls) -> list[str]:
+        """Return supported material state input combinations."""
+        return sorted(
+            "-".join(sorted(inputs))
+            for inputs in cls._FLASH_INPUTS
+        )
+
+    @classmethod
+    def supported_flash_inputs(cls) -> list[str]:
+        """Return supported material state input combinations."""
+        return cls.available_flash_inputs()
+
+    @classmethod
+    def available_flash_pairs(cls) -> list[str]:
+        """Return supported two-property material state input combinations."""
+        return sorted(
+            "-".join(sorted(inputs))
+            for inputs in cls._FLASH_INPUTS
+            if len(inputs) == 2
+        )
+
+    @classmethod
+    def supported_flash_pairs(cls) -> list[str]:
+        """Return supported two-property material state input combinations."""
+        return cls.available_flash_pairs()
+
+    @classmethod
     def supported_properties(cls) -> list[str]:
-        """Return public @property names exposed by this wrapper."""
+        """Return public properties intentionally supported by this wrapper."""
+        unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
+
         return sorted(
             name
             for name, value in vars(cls).items()
             if isinstance(value, property)
             and not name.startswith("_")
+            and name not in unsupported
         )
-
 
     @classmethod
     def show_supported_properties(cls) -> list[str]:
-        """Print and return public @property names exposed by this wrapper."""
+        """Print and return public properties intentionally supported by this wrapper."""
         properties = cls.supported_properties()
 
         for prop in properties:
@@ -470,8 +520,7 @@ class Material:
 
         return properties
 
-
     @classmethod
     def supports_property(cls, property_name: str) -> bool:
-        """Return True if this wrapper exposes property_name as a @property."""
+        """Return True if this wrapper intentionally supports property_name."""
         return property_name in cls.supported_properties()

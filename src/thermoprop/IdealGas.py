@@ -35,6 +35,14 @@ class IdealGas:
     has been established.
     """
 
+    _BACKEND_NAME = "PYroMat"
+
+    _UNSUPPORTED_PROPERTIES = {
+        "conductivity",
+        "thermal_conductivity",
+        "prandtl",
+    }
+
     _SUTHERLAND_VISCOSITY = {
         "ig.air": {"mu0": 1.716e-5, "T0": 273.0, "S": 111.0},
         "ig.Ar": {"mu0": 2.125e-5, "T0": 273.0, "S": 114.0},
@@ -47,6 +55,19 @@ class IdealGas:
     }
 
     _RU = 8.31446261815324  # J/mol-K
+
+    _FLASH_INPUTS = {
+        frozenset(("temperature",)),
+        frozenset(("enthalpy",)),
+        frozenset(("internal_energy",)),
+        frozenset(("pressure", "density")),
+        frozenset(("pressure", "temperature")),
+        frozenset(("pressure", "enthalpy")),
+        frozenset(("pressure", "internal_energy")),
+        frozenset(("density", "temperature")),
+        frozenset(("density", "enthalpy")),
+        frozenset(("density", "internal_energy")),
+    }
 
     def __init__(
         self,
@@ -137,7 +158,8 @@ class IdealGas:
     
     @property
     def backend(self) -> str:
-        return "PYroMat"
+        """Name of the thermodynamic property backend."""
+        return self._BACKEND_NAME
     # ---------------- Units ---------------- #
 
     @staticmethod
@@ -172,28 +194,19 @@ class IdealGas:
             if value is not None
         }
 
-        thermal_inputs = [
-            temperature is not None,
-            enthalpy is not None,
-            internal_energy is not None,
-        ]
+        provided = frozenset(self._last_state_values)
 
-        n_thermal = sum(thermal_inputs)
-
-        if n_thermal > 1:
-            raise ValueError("Provide only one of temperature, enthalpy, or internal_energy.")
-
-        if n_thermal == 0:
-            if pressure is not None and density is not None:
-                self._pressure = float(pressure)
-                self._temperature = self._pressure / (float(density) * self.gas_constant)
-                self._enthalpy = self._enthalpy_from_temperature(self._temperature)
-                return
-
+        if provided not in self._FLASH_INPUTS:
             raise LookupError(
-                "Please provide temperature, enthalpy, or internal_energy. "
-                "Alternatively provide both pressure and density."
+                "Unsupported ideal-gas state input combination. "
+                f"Supported inputs are: {self.available_flash_inputs()}."
             )
+
+        if provided == frozenset(("pressure", "density")):
+            self._pressure = float(pressure)
+            self._temperature = self._pressure / (float(density) * self.gas_constant)
+            self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+            return
 
         if temperature is not None:
             self._temperature = float(temperature)
@@ -510,6 +523,12 @@ class IdealGas:
 
     # ---------------- Thermo properties ---------------- #
 
+    def _unsupported(self, property_name: str):
+        raise NotImplementedError(
+            f"IdealGas.{property_name} is not supported by this wrapper."
+        )
+
+
     @property
     def species(self) -> List[str]:
         return self._display_names
@@ -657,6 +676,18 @@ class IdealGas:
         Kinematic viscosity [m^2/s].
         """
         return self.dynamic_viscosity / self.density
+    
+    @property
+    def conductivity(self):
+        return self._unsupported("conductivity")
+
+    @property
+    def thermal_conductivity(self):
+        return self._unsupported("thermal_conductivity")
+
+    @property
+    def prandtl(self):
+        return self._unsupported("prandtl")
 
     @property
     def minimum_pressure(self) -> float:
@@ -729,7 +760,7 @@ class IdealGas:
 
     @classmethod
     def _normalize_name(cls, user_name: str) -> Tuple[str, str]:
-
+        """Return the PYroMat species ID and display name for a user name."""
         sid = FluidRegistry.pyromat_name(user_name, include_prefix=True)
         display = FluidRegistry.name(user_name)
 
@@ -745,14 +776,61 @@ class IdealGas:
 
     @staticmethod
     def get_available_gases() -> List[str]:
-        return FluidRegistry.pyromat_supported_names
+        """Return available PYroMat ideal-gas names."""
+        return sorted(FluidRegistry.pyromat_supported_names)
 
     @staticmethod
     def show_available_gases() -> List[str]:
+        """Print and return available PYroMat ideal-gas names."""
         gases = IdealGas.get_available_gases()
-        for g in gases:
-            print(g)
+
+        for gas in gases:
+            print(gas)
+
         return gases
+
+    @staticmethod
+    def get_available_fluids() -> List[str]:
+        """Return available PYroMat ideal-gas names.
+
+        Fluid-style alias for API consistency with Fluid.
+        """
+        return IdealGas.get_available_gases()
+
+    @staticmethod
+    def show_available_fluids() -> List[str]:
+        """Print and return available PYroMat ideal-gas names.
+
+        Fluid-style alias for API consistency with Fluid.
+        """
+        return IdealGas.show_available_gases()
+
+    @classmethod
+    def available_flash_inputs(cls) -> list[str]:
+        """Return supported ideal-gas state input combinations."""
+        return sorted(
+            "-".join(sorted(inputs))
+            for inputs in cls._FLASH_INPUTS
+        )
+
+    @classmethod
+    def supported_flash_inputs(cls) -> list[str]:
+        """Return supported ideal-gas state input combinations."""
+        return cls.available_flash_inputs()
+
+    @classmethod
+    def available_flash_pairs(cls) -> list[str]:
+        """Return supported two-property ideal-gas flash combinations."""
+        return sorted(
+            "-".join(sorted(inputs))
+            for inputs in cls._FLASH_INPUTS
+            if len(inputs) == 2
+        )
+
+    @classmethod
+    def supported_flash_pairs(cls) -> list[str]:
+        """Return supported two-property ideal-gas flash combinations."""
+        return cls.available_flash_pairs()
 
     @staticmethod
     def _molar_mass_of(species_id: str) -> float:
@@ -798,21 +876,22 @@ class IdealGas:
         inv = w / M
         return inv / inv.sum()
 
-
     @classmethod
     def supported_properties(cls) -> list[str]:
-        """Return public @property names exposed by this wrapper."""
+        """Return public properties intentionally supported by this wrapper."""
+        unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
+
         return sorted(
             name
             for name, value in vars(cls).items()
             if isinstance(value, property)
             and not name.startswith("_")
+            and name not in unsupported
         )
-
 
     @classmethod
     def show_supported_properties(cls) -> list[str]:
-        """Print and return public @property names exposed by this wrapper."""
+        """Print and return public properties intentionally supported by this wrapper."""
         properties = cls.supported_properties()
 
         for prop in properties:
@@ -820,8 +899,7 @@ class IdealGas:
 
         return properties
 
-
     @classmethod
     def supports_property(cls, property_name: str) -> bool:
-        """Return True if this wrapper exposes property_name as a @property."""
+        """Return True if this wrapper intentionally supports property_name."""
         return property_name in cls.supported_properties()

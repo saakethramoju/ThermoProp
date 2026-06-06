@@ -53,6 +53,22 @@ class Propellant:
         heat_of_vaporization: J/kg
     """
 
+    _BACKEND_NAME = "RocketProps"
+
+    _UNSUPPORTED_PROPERTIES = {
+        "enthalpy",
+        "internal_energy",
+        "entropy",
+        "specific_heat_cv",
+        "specific_heat_ratio",
+        "speed_of_sound",
+    }
+
+    _FLASH_INPUTS = {
+        frozenset(("temperature",)),
+        frozenset(("pressure", "temperature")),
+    }
+
     _PSIA_TO_PA = 6894.757293168361
     _PA_TO_PSIA = 1.0 / _PSIA_TO_PA
 
@@ -279,7 +295,7 @@ class Propellant:
     @property
     def backend(self) -> str:
         """Name of the wrapped property backend."""
-        return "RocketProps"
+        return self._BACKEND_NAME
 
     @property
     def propellant(self) -> str:
@@ -517,6 +533,11 @@ class Propellant:
             return None
 
         return float(value)
+        
+    @property
+    def compressibility(self) -> float:
+        """Alias for saturated-liquid compressibility factor."""
+        return self.saturated_liquid_compressibility_factor
 
     # ---------------- Static/reference properties ---------------- #
 
@@ -704,7 +725,7 @@ class Propellant:
     @staticmethod
     def get_available_propellants() -> list[str]:
         """Return canonical registry names with RocketProps support."""
-        return FluidRegistry.propellant_supported_names
+        return sorted(FluidRegistry.propellant_supported_names)
 
     @staticmethod
     def show_available_propellants() -> list[str]:
@@ -715,6 +736,22 @@ class Propellant:
             print(name)
 
         return names
+
+    @staticmethod
+    def get_available_fluids() -> list[str]:
+        """Return available RocketProps propellant names.
+
+        Fluid-style alias for API consistency with Fluid.
+        """
+        return Propellant.get_available_propellants()
+
+    @staticmethod
+    def show_available_fluids() -> list[str]:
+        """Print and return available RocketProps propellant names.
+
+        Fluid-style alias for API consistency with Fluid.
+        """
+        return Propellant.show_available_propellants()
 
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
@@ -732,19 +769,48 @@ class Propellant:
     
 
     @classmethod
+    def available_flash_inputs(cls) -> list[str]:
+        """Return supported propellant state input combinations."""
+        return sorted(
+            "-".join(sorted(inputs))
+            for inputs in cls._FLASH_INPUTS
+        )
+
+    @classmethod
+    def supported_flash_inputs(cls) -> list[str]:
+        """Return supported propellant state input combinations."""
+        return cls.available_flash_inputs()
+
+    @classmethod
+    def available_flash_pairs(cls) -> list[str]:
+        """Return supported two-property propellant state input combinations."""
+        return sorted(
+            "-".join(sorted(inputs))
+            for inputs in cls._FLASH_INPUTS
+            if len(inputs) == 2
+        )
+
+    @classmethod
+    def supported_flash_pairs(cls) -> list[str]:
+        """Return supported two-property propellant state input combinations."""
+        return cls.available_flash_pairs()
+
+    @classmethod
     def supported_properties(cls) -> list[str]:
-        """Return public @property names exposed by this wrapper."""
+        """Return public properties intentionally supported by this wrapper."""
+        unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
+
         return sorted(
             name
             for name, value in vars(cls).items()
             if isinstance(value, property)
             and not name.startswith("_")
+            and name not in unsupported
         )
-
 
     @classmethod
     def show_supported_properties(cls) -> list[str]:
-        """Print and return public @property names exposed by this wrapper."""
+        """Print and return public properties intentionally supported by this wrapper."""
         properties = cls.supported_properties()
 
         for prop in properties:
@@ -752,8 +818,7 @@ class Propellant:
 
         return properties
 
-
     @classmethod
     def supports_property(cls, property_name: str) -> bool:
-        """Return True if this wrapper exposes property_name as a @property."""
+        """Return True if this wrapper intentionally supports property_name."""
         return property_name in cls.supported_properties()
