@@ -81,10 +81,20 @@ It supports:
 * Enthalpy states
 * Internal-energy states
 * Pressure-density closure
-* Cp, Cv, gamma, entropy, Gibbs energy, and speed of sound
-* Dynamic & kinematic viscosity (selected species)
+* Cp, Cv, gamma, entropy, Gibbs energy, Helmholtz energy, and speed of sound
+* Thermal expansion coefficient
+* Isothermal compressibility
+* Selected thermodynamic partial derivatives
+* Dynamic & kinematic viscosity (selected species only)
 * Approximate Prandtl number
 * Approximate thermal conductivity
+
+Transport properties are provided for engineering calculations.
+
+Dynamic viscosity is currently available only for species with
+implemented Sutherland-law coefficients. Thermal conductivity and
+Prandtl number are estimated using simple kinetic-theory-based
+correlations and should be considered approximate.
 
 ### Propellant
 
@@ -124,6 +134,7 @@ Supported properties include:
 * Thermal conductivity
 * Specific heat
 * Coefficient of thermal expansion
+* Thermal diffusivity
 * Melting point
 * Electrical resistivity
 
@@ -245,6 +256,36 @@ RP1
 ```
 
 This is intentional. `Fluid("rp-1")` uses CoolProp's `n-Dodecane` as an RP-1 surrogate, while `Propellant("rp-1")` uses RocketProps' actual `RP1` correlation.
+
+## Property Introspection
+
+All ThermoProp wrappers provide utilities for discovering supported
+properties programmatically.
+
+```python
+from thermoprop import Fluid
+
+print(Fluid.supported_properties())
+```
+
+Print supported properties:
+
+```python
+Fluid.show_supported_properties()
+```
+
+Check whether a property is supported:
+
+```python
+Fluid.supports_property("enthalpy")
+```
+
+The same interface is available for:
+
+* Fluid
+* IdealGas
+* Propellant
+* Material
 
 ## Thermodynamic Reference States
 
@@ -554,6 +595,88 @@ print(fluid.speed_of_sound)
 print(fluid.dynamic_viscosity)
 print(fluid.conductivity)
 ```
+
+## Advanced Thermodynamic Properties
+
+`Fluid` and `IdealGas` provide additional thermodynamic properties when supported by the underlying backend.
+
+```python
+from thermoprop import Fluid
+
+water = Fluid(
+    "water",
+    pressure=101325,
+    temperature=300,
+)
+
+print(water.thermal_expansion_coefficient)
+print(water.isothermal_compressibility)
+print(water.helmholtz_energy)
+print(water.gibbs_energy)
+print(water.joule_thomson_coefficient)
+```
+
+For `Fluid`, these properties are provided by CoolProp.
+
+For `IdealGas`, some properties are analytic ideal-gas results:
+
+* `thermal_expansion_coefficient = 1 / T`
+* `isothermal_compressibility = 1 / P`
+* `joule_thomson_coefficient = 0`
+
+`Propellant` and `Material` do not support all advanced thermodynamic properties because they are not full thermodynamic equation-of-state wrappers.
+
+## Thermodynamic Partial Derivatives
+
+`Fluid` provides access to CoolProp first partial derivatives using:
+
+```python
+fluid.partial_derivative(
+    "Hmass",
+    "T",
+    "P",
+)
+```
+
+This evaluates:
+
+```text
+(∂h/∂T)_P
+```
+
+Common derivative shortcuts are also available:
+
+```python
+print(fluid.dhdT_const_p)
+print(fluid.dhdP_const_t)
+
+print(fluid.drhodT_const_p)
+print(fluid.drhodP_const_t)
+
+print(fluid.dTdP_const_h)
+```
+
+where:
+
+* `dhdT_const_p` is `(∂h/∂T)_P`
+* `dhdP_const_t` is `(∂h/∂P)_T`
+* `drhodT_const_p` is `(∂ρ/∂T)_P`
+* `drhodP_const_t` is `(∂ρ/∂P)_T`
+* `dTdP_const_h` is `(∂T/∂P)_h`
+
+The Joule-Thomson coefficient is exposed as:
+
+```python
+print(fluid.joule_thomson_coefficient)
+```
+
+which is equivalent to:
+
+```python
+fluid.dTdP_const_h
+```
+
+`IdealGas` also provides selected analytic partial derivatives for common ideal-gas relationships.
 
 ## Updating State Properties
 

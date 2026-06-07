@@ -55,6 +55,7 @@ class Propellant:
 
     _BACKEND_NAME = "RocketProps"
 
+
     _UNSUPPORTED_PROPERTIES = {
         "enthalpy",
         "internal_energy",
@@ -62,6 +63,15 @@ class Propellant:
         "specific_heat_cv",
         "specific_heat_ratio",
         "speed_of_sound",
+        "thermal_expansion_coefficient",
+        "isothermal_compressibility",
+        "joule_thomson_coefficient",
+        "partial_derivative",
+        "helmholtz_energy",
+        "gibbs_energy",
+        "gas_constant",
+        "universal_gas_constant",
+        "prandtl",
     }
 
     _FLASH_INPUTS = {
@@ -343,6 +353,39 @@ class Propellant:
     @quality.setter
     def quality(self, value: float):
         raise ValueError("Propellant only supports liquid-property states.")
+        
+    @property
+    def thermal_expansion_coefficient(self) -> None:
+        """Volumetric thermal expansion coefficient is not supported."""
+        return self._unsupported("thermal_expansion_coefficient")
+        
+    @property
+    def isothermal_compressibility(self):
+        return self._unsupported("isothermal_compressibility")
+
+    @property
+    def joule_thomson_coefficient(self):
+        return self._unsupported("joule_thomson_coefficient")
+
+    @property
+    def helmholtz_energy(self):
+        return self._unsupported("helmholtz_energy")
+
+    @property
+    def gibbs_energy(self):
+        return self._unsupported("gibbs_energy")
+
+    @property
+    def gas_constant(self):
+        return self._unsupported("gas_constant")
+
+    @property
+    def universal_gas_constant(self):
+        return self._unsupported("universal_gas_constant")
+
+    @property
+    def prandtl(self):
+        return self._unsupported("prandtl")
 
     @property
     def enthalpy(self) -> None:

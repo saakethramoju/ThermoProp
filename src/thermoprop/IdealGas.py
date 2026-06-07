@@ -37,7 +37,20 @@ class IdealGas:
 
     _BACKEND_NAME = "PYroMat"
 
-    _UNSUPPORTED_PROPERTIES = set()
+
+
+    _UNSUPPORTED_PROPERTIES = {
+        "surface_tension",
+        "vapor_pressure",
+        "saturation_pressure",
+        "saturation_temperature",
+        "heat_of_vaporization",
+        "critical_pressure",
+        "critical_temperature",
+        "critical_density",
+        "freezing_temperature",
+        "boiling_temperature",
+    }
 
     _SUTHERLAND_VISCOSITY = {
         "ig.air": {"mu0": 1.716e-5, "T0": 273.0, "S": 111.0},
@@ -540,6 +553,22 @@ class IdealGas:
     @property
     def specific_volume(self) -> float:
         return 1.0 / self.density
+            
+    @property
+    def thermal_expansion_coefficient(self) -> float:
+        """Volumetric thermal expansion coefficient beta [1/K]."""
+        return 1.0 / self.temperature
+
+    @property
+    def isothermal_compressibility(self) -> float:
+        """Isothermal compressibility [1/Pa]."""
+        self._require_pressure("Isothermal compressibility")
+        return 1.0 / self.pressure
+
+    @property
+    def helmholtz_energy(self) -> float:
+        """Mass-specific Helmholtz free energy [J/kg]."""
+        return self.free_energy
 
     @property
     def molar_mass(self) -> float:
@@ -738,6 +767,80 @@ class IdealGas:
     @property
     def is_mixture(self) -> bool:
         return self._mixture
+    
+
+    def partial_derivative(self, of: str, with_respect_to: str, constant: str) -> float:
+        """
+        Return selected ideal-gas first partial derivatives.
+
+        Supported variables:
+            T, P, Dmass, Hmass, Umass
+        """
+        of = of.lower()
+        wrt = with_respect_to.lower()
+        const = constant.lower()
+
+        R = self.gas_constant
+        T = self.temperature
+        P = self.pressure
+        rho = self.density if self.pressure is not None else None
+        cp = self.specific_heat_cp
+        cv = self.specific_heat_cv
+
+        if P is None:
+            raise ValueError("Ideal-gas partial derivatives require pressure.")
+
+        if (of, wrt, const) == ("hmass", "t", "p"):
+            return cp
+
+        if (of, wrt, const) == ("umass", "t", "dmass"):
+            return cv
+
+        if (of, wrt, const) == ("dmass", "p", "t"):
+            return 1.0 / (R * T)
+
+        if (of, wrt, const) == ("dmass", "t", "p"):
+            return -rho / T
+
+        if (of, wrt, const) == ("t", "p", "hmass"):
+            return 0.0
+
+        if (of, wrt, const) == ("hmass", "p", "t"):
+            return 0.0
+
+        raise NotImplementedError(
+            f"IdealGas partial derivative d({of})/d({wrt})|{const} is not implemented."
+        )
+        
+
+    @property
+    def dhdT_const_p(self) -> float:
+        return self.partial_derivative("Hmass", "T", "P")
+
+
+    @property
+    def dhdp_const_T(self) -> float:
+        return self.partial_derivative("Hmass", "P", "T")
+
+
+    @property
+    def drhodT_const_p(self) -> float:
+        return self.partial_derivative("Dmass", "T", "P")
+
+
+    @property
+    def drhodp_const_T(self) -> float:
+        return self.partial_derivative("Dmass", "P", "T")
+
+
+    @property
+    def dTdp_const_h(self) -> float:
+        return self.partial_derivative("T", "P", "Hmass")
+
+
+    @property
+    def joule_thomson_coefficient(self) -> float:
+        return self.dTdp_const_h
 
     # ---------------- String output ---------------- #
 

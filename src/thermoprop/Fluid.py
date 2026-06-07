@@ -663,6 +663,55 @@ class Fluid:
     def compressibility(self) -> float:
         """Compressibility factor Z."""
         return self._keyed_output(CP.iZ)
+            
+    @property
+    def thermal_expansion_coefficient(self) -> float:
+        """Volumetric thermal expansion coefficient beta [1/K]."""
+        return self._keyed_output(CP.iisobaric_expansion_coefficient)
+
+    @property
+    def isothermal_compressibility(self) -> float:
+        """Isothermal compressibility [1/Pa]."""
+        return self._keyed_output(CP.iisothermal_compressibility)
+        
+    @property
+    def gas_constant(self) -> float:
+        """Mass-specific gas constant [J/kg-K]."""
+        return float(self._backend.gas_constant()) / self.molar_mass
+
+    @property
+    def universal_gas_constant(self) -> float:
+        """Universal gas constant [J/mol-K]."""
+        return float(self._backend.gas_constant())
+
+    @property
+    def helmholtz_energy(self) -> float:
+        """Mass-specific Helmholtz free energy [J/kg]."""
+        return float(self._backend.helmholtzmass())
+
+    @property
+    def gibbs_energy(self) -> float:
+        """Mass-specific Gibbs free energy [J/kg]."""
+        return float(self._backend.gibbsmass())
+
+    @property
+    def fundamental_derivative_of_gas_dynamics(self) -> float:
+        """Fundamental derivative of gas dynamics [-]."""
+        try:
+            return float(self._backend.fundamental_derivative_of_gas_dynamics())
+        except Exception:
+            return None
+            
+    @property
+    def fugacity_coefficients(self) -> list[float]:
+        """Mixture fugacity coefficients [-]."""
+        try:
+            return [
+                float(self._backend.fugacity_coefficient(i))
+                for i in range(len(self._fluids))
+            ]
+        except Exception:
+            return None
 
     @property
     def conductivity(self) -> float:
@@ -945,6 +994,70 @@ class Fluid:
             return float(tmp.T())
         except Exception:
             return None
+        
+
+    def partial_derivative(self, of: str, with_respect_to: str, constant: str) -> float:
+        """
+        Return a CoolProp first partial derivative.
+
+        Format
+        ------
+            d(of)/d(with_respect_to)|constant
+
+        Example
+        -------
+            fluid.partial_derivative("Hmass", "T", "P")
+        """
+        try:
+            return float(
+                CP.PropsSI(
+                    f"d({of})/d({with_respect_to})|{constant}",
+                    "P",
+                    self.pressure,
+                    "T",
+                    self.temperature,
+                    self._fluid_string,
+                )
+            )
+        except Exception:
+            return None
+
+
+    @property
+    def dhdT_const_p(self) -> float:
+        """(∂h/∂T)_p [J/kg-K]. Same as Cp."""
+        return self.partial_derivative("Hmass", "T", "P")
+
+
+    @property
+    def dhdp_const_T(self) -> float:
+        """(∂h/∂p)_T [J/kg-Pa]."""
+        return self.partial_derivative("Hmass", "P", "T")
+
+
+    @property
+    def drhodT_const_p(self) -> float:
+        """(∂rho/∂T)_p [kg/m³-K]."""
+        return self.partial_derivative("Dmass", "T", "P")
+
+
+    @property
+    def drhodp_const_T(self) -> float:
+        """(∂rho/∂p)_T [kg/m³-Pa]."""
+        return self.partial_derivative("Dmass", "P", "T")
+
+
+    @property
+    def dTdp_const_h(self) -> float:
+        """(∂T/∂p)_h [K/Pa]. Joule-Thomson coefficient."""
+        return self.partial_derivative("T", "P", "Hmass")
+
+
+    @property
+    def joule_thomson_coefficient(self) -> float:
+        """Joule-Thomson coefficient [K/Pa], computed as (∂T/∂p)_h."""
+        return self.dTdp_const_h
+
 
     # ---------------- String output ---------------- #
     def _safe(self, value, fmt=".3e"):

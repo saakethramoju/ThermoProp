@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.3.3
+
+### Added
+
+* Added advanced thermodynamic property support to `Fluid`, including:
+
+  * Thermal expansion coefficient
+  * Isothermal compressibility
+  * Helmholtz free energy
+  * Gibbs free energy
+  * Joule-Thomson coefficient
+
+* Added thermodynamic partial-derivative support to `Fluid` through:
+
+  * `partial_derivative()`
+  * `dhdT_const_p`
+  * `dhdP_const_t`
+  * `drhodT_const_p`
+  * `drhodP_const_t`
+  * `dTdP_const_h`
+
+* Added advanced thermodynamic property support to `IdealGas`, including:
+
+  * Thermal expansion coefficient
+  * Isothermal compressibility
+  * Helmholtz free energy
+  * Joule-Thomson coefficient
+
+* Added selected analytic thermodynamic partial derivatives to `IdealGas`.
+
+* Added thermal diffusivity support to `Material`.
+
+* Added `thermal_expansion_coefficient` alias support to `Material`.
+
+### Improved
+
+* Expanded CoolProp-backed property coverage through additional thermodynamic derivative access.
+* Improved support for advanced thermodynamic analysis and equation-of-state diagnostics.
+* Improved API consistency between `Fluid`, `IdealGas`, `Propellant`, and `Material`.
+* Standardized advanced thermodynamic property naming across ThermoProp wrappers.
+* Improved discoverability of backend-supported thermodynamic properties.
+
+### Documentation
+
+* Added documentation for advanced thermodynamic properties.
+* Added thermodynamic partial-derivative examples.
+* Added Joule-Thomson coefficient examples.
+* Added thermal expansion coefficient documentation.
+* Added thermal diffusivity documentation for `Material`.
+* Updated README feature summaries for `Fluid`, `IdealGas`, and `Material`.
+* Expanded wrapper capability documentation and property reference examples.
+
 ## 0.3.2
 
 ### Added

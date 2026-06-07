@@ -42,6 +42,19 @@ class Material:
         "speed_of_sound",
         "specific_heat_cv",
         "specific_heat_ratio",
+        "isothermal_compressibility",
+        "joule_thomson_coefficient",
+        "partial_derivative",
+        "helmholtz_energy",
+        "gibbs_energy",
+        "gas_constant",
+        "universal_gas_constant",
+        "prandtl",
+        "surface_tension",
+        "vapor_pressure",
+        "saturation_pressure",
+        "saturation_temperature",
+        "heat_of_vaporization",
     }
 
     _FLASH_INPUTS = {
@@ -322,10 +335,30 @@ class Material:
     @property
     def coefficient_of_thermal_expansion(self) -> float:
         return self.get("coefficient_of_thermal_expansion")
+        
+    @property
+    def thermal_expansion_coefficient(self) -> float:
+        return self.coefficient_of_thermal_expansion
 
     @property
     def cte(self) -> float:
         return self.coefficient_of_thermal_expansion
+        
+    @property
+    def thermal_diffusivity(self) -> float:
+        """
+        Thermal diffusivity [m²/s].
+
+        alpha = k / (rho Cp)
+        """
+        rho = self.density
+        Cp = self.specific_heat_cp
+        k = self.thermal_conductivity
+
+        if rho is None or Cp is None or k is None or rho == 0.0 or Cp == 0.0:
+            return None
+
+        return k / (rho * Cp)
 
     @property
     def melting_point(self) -> float:
