@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Dict, List, Tuple, Union
+from pathlib import Path
+import json
 
 import numpy as np
 from scipy.optimize import root_scalar
@@ -9,9 +11,54 @@ import pyromat as pm
 from .FluidRegistry import FluidRegistry
 
 
+# Folder containing parser-generated CEAM transport files.
+# Expected location for editable installs:
+#
+#     ThermoProp/cea_data/trans_ceam.npz
+#     ThermoProp/cea_data/trans_name_index.json
+#
+# If the folder name changes later, only this constant should need updating.
+_CEA_DATA_FOLDER = "cea_data"
+
+# This file usually lives at ThermoProp/src/thermoprop/IdealGas.py.
+# parents[2] therefore points to the repository/package root: ThermoProp/.
+_CEA_DATA_DIR = Path(__file__).resolve().parents[2] / _CEA_DATA_FOLDER
+
+
+def _load_cea_transport_tables():
+    """Load generated CEAM transport arrays once at module import.
+
+    The returned arrays are normal in-memory NumPy arrays, not an open NpzFile.
+    This avoids repeated disk access and avoids repeatedly decompressing arrays
+    during property calls. If the files are unavailable, transport falls back to
+    the older approximate methods where possible.
+    """
+    trans_path = _CEA_DATA_DIR / "trans_ceam.npz"
+    index_path = _CEA_DATA_DIR / "trans_name_index.json"
+
+    if not trans_path.exists() or not index_path.exists():
+        return None, None
+
+    with np.load(trans_path) as data:
+        trans = {name: data[name] for name in data.files}
+
+    with open(index_path, "r") as f:
+        index = json.load(f)
+
+    return trans, index
+
+
+# Loaded once per Python process. Property calls only use dict/array lookups.
+_CEA_TRANS, _CEA_TRANS_INDEX = _load_cea_transport_tables()
+
+
 class IdealGas:
     """
     PYroMat ideal-gas wrapper with a Fluid-like API.
+
+    Thermodynamic properties are evaluated with PYroMat. Pure-species
+    transport properties use generated NASA CEA / CEAM transport data when
+    available, with Sutherland viscosity retained as a fallback.
 
     Supports thermal state from:
         temperature
@@ -143,6 +190,10 @@ class IdealGas:
 
         else:
             raise TypeError("fluid must be a string or a dict mixture")
+
+        # Cache each species' CEA transport-table row once during construction.
+        # This avoids registry and JSON/dict name lookups inside every property call.
+        self._cea_transport_indices = self._build_cea_transport_indices()
 
         self._species = [pm.get(sid) for sid in self._species_ids]
         self._M = self._molar_masses()
@@ -663,11 +714,76 @@ class IdealGas:
     def speed_of_sound(self) -> float:
         return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self._temperature))
         
-    def _species_viscosity(self, species_id: str) -> float:
-        """Return pure-species dynamic viscosity [Pa-s] from Sutherland's law."""
+    def _build_cea_transport_indices(self) -> list[int | None]:
+        """Return cached CEAM transport-table indices for each species.
+
+        A value of None means this species was not found in the generated CEA
+        transport table. That lets the runtime fall back to the older
+        approximate methods without repeatedly checking the registry.
+        """
+        indices: list[int | None] = []
+
+        if _CEA_TRANS is None or _CEA_TRANS_INDEX is None:
+            return [None for _ in self._display_names]
+
+        for display_name in self._display_names:
+            try:
+                cea_name = FluidRegistry.cea_name(display_name)
+            except Exception:
+                indices.append(None)
+                continue
+
+            index = _CEA_TRANS_INDEX.get(cea_name)
+            indices.append(None if index is None else int(index))
+
+        return indices
+
+    @staticmethod
+    def _cea_transport_fit_by_index(index: int, temperature: float, kind: str) -> float:
+        """Evaluate one pure-species CEA transport fit in native CEA units.
+
+        The parser-generated transport fits return CEA units:
+            viscosity:     micropoise
+            conductivity:  microW / cm-K
+
+        SI conversion is handled by the caller.
+        """
+        if _CEA_TRANS is None:
+            raise NotImplementedError("CEA transport data are not loaded.")
+
+        T = float(temperature)
+
+        if kind == "viscosity":
+            n = int(_CEA_TRANS["n_v"][index])
+            ranges = _CEA_TRANS["v_ranges"][index]
+            coeffs = _CEA_TRANS["v_coeffs"][index]
+        elif kind == "conductivity":
+            n = int(_CEA_TRANS["n_c"][index])
+            ranges = _CEA_TRANS["c_ranges"][index]
+            coeffs = _CEA_TRANS["c_coeffs"][index]
+        else:
+            raise ValueError(f"Unknown CEA transport kind: {kind!r}")
+
+        logT = np.log(T)
+
+        for j in range(n):
+            Tmin, Tmax = ranges[j]
+
+            if Tmin <= T <= Tmax:
+                A, B, C, D = coeffs[j]
+                return float(np.exp(A * logT + B / T + C / T**2 + D))
+
+        raise ValueError(f"No CEA {kind} correlation at T={T:.6g} K.")
+
+    def _species_viscosity_sutherland(self, species_id: str) -> float:
+        """Return pure-species dynamic viscosity [Pa-s] from Sutherland's law.
+
+        This is retained as a fallback for gases that do not have CEAM
+        transport data, preserving the previous IdealGas behavior.
+        """
         if species_id not in self._SUTHERLAND_VISCOSITY:
             raise NotImplementedError(
-                f"Sutherland viscosity constants (mu0, T0, and S) are not available for {self.name}."
+                f"Neither CEA nor Sutherland viscosity data are available for {self.name}."
             )
 
         data = self._SUTHERLAND_VISCOSITY[species_id]
@@ -679,13 +795,70 @@ class IdealGas:
 
         return float(mu0 * (T / T0) ** 1.5 * (T0 + S) / (T + S))
 
+    def _species_viscosity(self, species_id: str, species_position: int | None = None) -> float:
+        """Return pure-species dynamic viscosity [Pa-s].
+
+        CEA/CEAM transport data are preferred. Sutherland's law is only used as
+        a fallback so existing supported gases keep working if CEA data are
+        unavailable for a species or temperature.
+        """
+        if species_position is not None:
+            index = self._cea_transport_indices[species_position]
+
+            if index is not None:
+                try:
+                    mu_micro_poise = self._cea_transport_fit_by_index(
+                        index,
+                        self.temperature,
+                        "viscosity",
+                    )
+                    return mu_micro_poise * 1e-7  # micropoise -> Pa-s
+                except Exception:
+                    pass
+
+        return self._species_viscosity_sutherland(species_id)
+
+    def _species_conductivity(self, species_position: int) -> float:
+        """Return pure-species thermal conductivity [W/m-K] from CEA data."""
+        index = self._cea_transport_indices[species_position]
+
+        if index is None:
+            raise NotImplementedError(
+                f"CEA thermal conductivity data are not available for {self._display_names[species_position]}."
+            )
+
+        k_micro_w_cm_k = self._cea_transport_fit_by_index(
+            index,
+            self.temperature,
+            "conductivity",
+        )
+
+        return k_micro_w_cm_k * 1e-4  # microW/cm-K -> W/m-K
+
+    @property
+    def _eucken_prandtl(self) -> float | None:
+        """Fallback approximate ideal-gas Prandtl number.
+
+        This preserves the older IdealGas behavior for species or mixtures that
+        do not have CEA conductivity support.
+        """
+        gamma = self.specific_heat_ratio
+
+        if gamma is None or abs(9.0 * gamma - 5.0) < 1e-15:
+            return None
+
+        return 4.0 * gamma / (9.0 * gamma - 5.0)
+
     def _mixture_viscosity_wilke(self) -> float:
         """Return ideal-gas-mixture viscosity [Pa-s] using Wilke's rule."""
         x = self._mole_fractions
         M = self._M
 
         mu = np.array(
-            [self._species_viscosity(sid) for sid in self._species_ids],
+            [
+                self._species_viscosity(sid, species_position=i)
+                for i, sid in enumerate(self._species_ids)
+            ],
             dtype=float,
         )
 
@@ -710,13 +883,13 @@ class IdealGas:
         """
         Dynamic viscosity [Pa-s].
 
-        Pure gases use Sutherland's law. Mixtures use Wilke's mixing rule.
-        Every species in a mixture must have Sutherland constants.
+        Pure gases use generated CEA/CEAM transport fits when available.
+        Mixtures use Wilke's rule with those pure-species viscosities.
         """
         if self._mixture:
             return self._mixture_viscosity_wilke()
 
-        return self._species_viscosity(self._species_ids[0])
+        return self._species_viscosity(self._species_ids[0], 0)
 
     @property
     def kinematic_viscosity(self) -> float:
@@ -725,18 +898,38 @@ class IdealGas:
 
     @property
     def prandtl(self) -> float:
-        """Approximate ideal-gas Prandtl number from Eucken-style relation."""
-        gamma = self.specific_heat_ratio
+        """Prandtl number [-].
 
-        if gamma is None or abs(9.0 * gamma - 5.0) < 1e-15:
-            return None
+        For pure gases with CEA conductivity data, this is calculated from
+        Pr = Cp * mu / k. Otherwise it falls back to the older Eucken-style
+        approximation so existing IdealGas behavior is preserved.
+        """
+        if not self._mixture:
+            try:
+                k = self._species_conductivity(0)
 
-        return 4.0 * gamma / (9.0 * gamma - 5.0)
+                if k is not None and k != 0.0:
+                    return self.specific_heat_cp * self.dynamic_viscosity / k
+            except Exception:
+                pass
+
+        return self._eucken_prandtl
 
     @property
     def conductivity(self) -> float:
-        """Approximate thermal conductivity [W/m-K] from k = Cp*mu/Pr."""
-        Pr = self.prandtl
+        """Thermal conductivity [W/m-K].
+
+        Pure gases use generated CEA/CEAM transport fits when available.
+        If CEA conductivity is unavailable, this preserves the previous
+        approximation k = Cp * mu / Pr.
+        """
+        if not self._mixture:
+            try:
+                return self._species_conductivity(0)
+            except Exception:
+                pass
+
+        Pr = self._eucken_prandtl
 
         if Pr is None or Pr == 0.0:
             return None

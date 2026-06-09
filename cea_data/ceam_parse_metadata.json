@@ -1,0 +1,32 @@
+{
+  "thermo_format": {
+    "source": "NASA CEA / NASA Glenn thermo.inp",
+    "coefficient_model": "CEA_NASA_Glenn_9_number_interval",
+    "coeffs_layout": {
+      "coeffs[:, :, 0:7]": "Cp/R coefficients with powers stored in cp_powers",
+      "coeffs[:, :, 7]": "enthalpy integration constant",
+      "coeffs[:, :, 8]": "entropy integration constant"
+    },
+    "usual_cp_powers": [
+      -2,
+      -1,
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "unused_interval_rows": "filled with NaN",
+    "no_polynomial_records": "n_intervals == 0; often reactant-only or condensed reference records"
+  },
+  "transport_format": {
+    "source": "NASA CEA trans.inp",
+    "record_types": {
+      "single_species": "e.g. O2",
+      "pair_record": "e.g. C|O"
+    },
+    "v_coeffs": "viscosity fit coefficients by temperature range",
+    "c_coeffs": "thermal-conductivity fit coefficients by temperature range",
+    "unused_range_rows": "filled with NaN"
+  }
+}

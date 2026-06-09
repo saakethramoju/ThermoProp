@@ -1,8 +1,45 @@
 from __future__ import annotations
 
 from typing import Tuple
+from pathlib import Path
+import json
+
+import numpy as np
 
 from .FluidRegistry import FluidRegistry
+
+
+# Generated CEA/CEAM data are expected in the ThermoProp project root.
+# Update this folder name if the generated data directory is renamed.
+CEA_DATA_FOLDER = "cea_data"
+
+# This file normally lives in ``src/thermoprop``. The CEA data folder lives
+# outside ``src`` in the repository/package root.
+_CEA_DATA_DIR = Path(__file__).resolve().parents[2] / CEA_DATA_FOLDER
+_CEA_THERMO_PATH = _CEA_DATA_DIR / "thermo_ceam.npz"
+_CEA_THERMO_INDEX_PATH = _CEA_DATA_DIR / "thermo_name_index.json"
+
+
+def _load_cea_thermo_data():
+    """Load CEA reactant/species data once at module import.
+
+    The Propellant wrapper still uses RocketProps for liquid correlations.
+    CEA data are only used for reactant bookkeeping properties needed by
+    combustion calculations, such as elemental composition and heat of
+    formation.
+    """
+    if not _CEA_THERMO_PATH.exists() or not _CEA_THERMO_INDEX_PATH.exists():
+        return None, {}
+
+    thermo = np.load(_CEA_THERMO_PATH, allow_pickle=False)
+
+    with open(_CEA_THERMO_INDEX_PATH, "r") as f:
+        index = json.load(f)
+
+    return thermo, index
+
+
+_CEA_THERMO, _CEA_THERMO_INDEX = _load_cea_thermo_data()
 
 
 class Propellant:
@@ -118,6 +155,11 @@ class Propellant:
         self._propellant_name = self._normalize_name(propellant)
         self._backend = self._get_backend(self._propellant_name)
 
+        # Cache the CEA reactant lookup once. This avoids repeated registry
+        # lookups during solver iterations. Missing mappings are allowed
+        # because RocketProps remains the primary backend for this class.
+        self._cea_reactant_name, self._cea_reactant_index = self._cea_reactant_lookup(propellant)
+
         self._temperature = float(temperature)
         self._pressure = None if pressure is None else float(pressure)
 
@@ -167,6 +209,36 @@ class Propellant:
             raise ValueError(f"Unknown RocketProps propellant: {propellant!r}")
 
         return backend
+
+    @staticmethod
+    def _cea_reactant_lookup(propellant: str) -> tuple[str | None, int | None]:
+        """Return cached CEA reactant name and database row for this propellant.
+
+        This intentionally uses the propellant registry path so aliases like
+        ``"rp-1"`` map to the CEA reactant ``"RP-1"`` rather than the general
+        Fluid surrogate ``"n-Dodecane"``.
+        """
+        try:
+            reactant_name = FluidRegistry.cea_reactant_name(propellant)
+        except Exception:
+            return None, None
+
+        if _CEA_THERMO is None:
+            return reactant_name, None
+
+        index = _CEA_THERMO_INDEX.get(reactant_name)
+
+        if index is None:
+            return reactant_name, None
+
+        return reactant_name, int(index)
+
+    def _cea_value(self, key: str):
+        """Return one raw CEA database value for the cached reactant row."""
+        if self._cea_reactant_index is None or _CEA_THERMO is None:
+            return None
+
+        return _CEA_THERMO[key][self._cea_reactant_index]
 
     def _call(self, *names: str, default=None):
         """Return the first available backend attribute or no-argument method."""
@@ -582,6 +654,95 @@ class Propellant:
         """Alias for saturated-liquid compressibility factor."""
         return self.saturated_liquid_compressibility_factor
 
+    # ---------------- CEA reactant/reference properties ---------------- #
+
+    @property
+    def cea_reactant(self) -> str | None:
+        """NASA CEA / CEAM reactant name used for combustion calculations."""
+        return self._cea_reactant_name
+
+    @property
+    def elemental_composition(self) -> dict[str, float] | None:
+        """CEA reactant elemental composition as ``{symbol: atom_count}``.
+
+        For example, RP-1 is stored by CEA as a normalized pseudo-formula
+        similar to ``C1 H1.95``. This is combustion bookkeeping data, not a
+        full molecular structure.
+        """
+        symbols = self._cea_value("element_symbols")
+        counts = self._cea_value("element_counts")
+
+        if symbols is None or counts is None:
+            return None
+
+        composition = {}
+
+        for symbol, count in zip(symbols, counts):
+            symbol = str(symbol).strip()
+
+            if not symbol or not np.isfinite(count):
+                continue
+
+            composition[symbol] = float(count)
+
+        return composition
+
+    @property
+    def cea_molar_mass(self) -> float | None:
+        """CEA reactant molar mass in kg/mol.
+
+        This can differ from ``molar_mass`` for pseudo-propellants like RP-1.
+        RocketProps reports a liquid surrogate molecular weight, while CEA may
+        use a normalized reactant formula such as ``C1 H1.95``.
+        """
+        value = self._cea_value("mw")
+
+        if value is None or not np.isfinite(value):
+            return None
+
+        return float(value) / 1000.0
+
+    @property
+    def heat_of_formation_molar(self) -> float | None:
+        """CEA reactant heat of formation at the reference state in J/mol."""
+        value = self._cea_value("hf298")
+
+        if value is None or not np.isfinite(value):
+            return None
+
+        # The generated CEAM thermo database stores hf298 in J/mol.
+        return float(value)
+
+    @property
+    def heat_of_formation(self) -> float | None:
+        """CEA reactant heat of formation at the reference state in J/kg."""
+        h_molar = self.heat_of_formation_molar
+        mw = self.cea_molar_mass
+
+        if h_molar is None or mw is None or mw == 0.0:
+            return None
+
+        return h_molar / mw
+    
+    @property
+    def enthalpy_of_formation(self) -> float | None:
+        return self.heat_of_formation
+
+    @property
+    def reference_temperature(self) -> float | None:
+        """CEA reactant reference temperature in K."""
+        ranges = self._cea_value("t_ranges")
+
+        if ranges is None:
+            return None
+
+        value = float(ranges[0, 0])
+
+        if not np.isfinite(value):
+            return None
+
+        return value
+
     # ---------------- Static/reference properties ---------------- #
 
     @property
@@ -728,6 +889,7 @@ class Propellant:
         rows = [
             ("Propellant", self.propellant),
             ("Backend", self.backend),
+            ("CEA reactant", self._safe(self.cea_reactant) if self.cea_reactant is not None else "N/A"),
             ("Phase", self.phase),
             ("Phase model", self.phase_model),
             ("Pressure [Pa]", self._safe(self.pressure, ".3e") if self.pressure is not None else "Saturation"),
@@ -749,6 +911,9 @@ class Propellant:
             ("Cv [J/kg-K]", self._safe_property("specific_heat_cv", ".3f")),
             ("Specific heat ratio", self._safe_property("specific_heat_ratio", ".5f")),
             ("Molar mass [kg/mol]", self._safe(self.molar_mass, ".6f")),
+            ("CEA molar mass [kg/mol]", self._safe(self.cea_molar_mass, ".6f")),
+            ("CEA Hf [J/kg]", self._safe(self.heat_of_formation, ".3e")),
+            ("CEA Tref [K]", self._safe(self.reference_temperature, ".2f")),
             ("Speed of sound [m/s]", self._safe_property("speed_of_sound", ".3f")),
         ]
 
