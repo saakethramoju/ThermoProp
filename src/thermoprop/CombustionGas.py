@@ -6,23 +6,10 @@ from typing import Dict, List, Tuple, Union
 
 import numpy as np
 
-from .FluidRegistry import FluidRegistry
+from .CombustionRegistry import CombustionRegistry
 
 
 # Folder containing the parser-generated CEA/CEAM data files.
-# Expected project layout:
-#
-#   ThermoProp/
-#       cea_data/
-#           thermo_ceam.npz
-#           thermo_name_index.json
-#           trans_ceam.npz
-#           trans_name_index.json
-#       src/
-#           thermoprop/
-#               CombustionGas.py
-#
-# Change this one constant if you rename the root data folder later.
 CEA_DATA_FOLDER = "cea_data"
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -33,9 +20,6 @@ _THERMO_INDEX_PATH = _CEA_DATA_DIR / "thermo_name_index.json"
 _TRANS_PATH = _CEA_DATA_DIR / "trans_ceam.npz"
 _TRANS_INDEX_PATH = _CEA_DATA_DIR / "trans_name_index.json"
 
-# Load once at module import for fast repeated property evaluation.
-# np.load returns an NpzFile; converting arrays into a normal dict avoids repeated
-# archive lookup overhead during solver iterations.
 if not _THERMO_PATH.exists() or not _THERMO_INDEX_PATH.exists():
     raise FileNotFoundError(
         "CEA thermo data files were not found. Expected "
@@ -49,8 +33,6 @@ _CEA_THERMO_FILE.close()
 with open(_THERMO_INDEX_PATH, "r") as f:
     _CEA_THERMO_INDEX = json.load(f)
 
-# Transport is useful but not required for all species. Load it if available;
-# individual properties raise clear errors if a requested species has no fit.
 if _TRANS_PATH.exists() and _TRANS_INDEX_PATH.exists():
     _CEA_TRANS_FILE = np.load(_TRANS_PATH, allow_pickle=False)
     _CEA_TRANS = {key: _CEA_TRANS_FILE[key] for key in _CEA_TRANS_FILE.files}
@@ -71,32 +53,13 @@ class CombustionGas:
     composition at a specified pressure and temperature. It does not solve
     equilibrium chemistry. Equilibrium and frozen-flow models should compute or
     provide the composition, then use this wrapper for gas properties.
-
-    Supported state inputs:
-
-        CombustionGas(..., temperature=..., pressure=...)
-
-    Composition can be provided on a mole or mass basis:
-
-        CombustionGas({"H2O": 0.4, "CO2": 0.3, "CO": 0.2, "H2": 0.1}, basis="mole", ...)
-
-    Public API units are SI:
-
-        pressure: Pa
-        temperature: K
-        density: kg/m^3
-        dynamic_viscosity: Pa-s
-        conductivity: W/m-K
-        specific_heat_cp: J/kg-K
-        enthalpy: J/kg
-        entropy: J/kg-K
     """
 
     _BACKEND_NAME = "NASA CEA / CEAM"
 
-    _RU = 8.31446261815324  # J/mol-K
-    _RU_KMOL = 8314.46261815324  # J/kmol-K
-    _P_REF = 100000.0  # Pa; CEA/NASA standard-state pressure for ideal gases.
+    _RU = 8.31446261815324
+    _RU_KMOL = 8314.46261815324
+    _P_REF = 100000.0
 
     _UNSUPPORTED_PROPERTIES = {
         "quality",
@@ -198,40 +161,23 @@ class CombustionGas:
 
         self._validate_temperature()
 
-    # ---------------- Name and database helpers ---------------- #
-
     @classmethod
     def _resolve_species(cls, value: str) -> tuple[str, str, int, int | None]:
-        """Resolve a user species name/alias to CEA species and table indices.
-
-        ``CombustionGas`` represents gas-phase product species with NASA-9
-        polynomial data. Propellant aliases such as ``"rp-1"`` or ``"lox"``
-        are CEA reactants, not combustion-gas product species, so they are
-        detected separately and rejected with a more useful message.
-        """
+        """Resolve a user species name/alias to CEA species and table indices."""
         raw_name = str(value).strip()
 
-        # First detect propellant/reactant aliases. This uses the propellant
-        # registry path, so "rp-1" resolves to CEA reactant "RP-1" instead of
-        # being silently interpreted as a CoolProp-style hydrocarbon surrogate.
         try:
-            reactant_name = FluidRegistry.cea_reactant_name(raw_name)
+            reactant_name = CombustionRegistry.cea_reactant_name(raw_name)
         except Exception:
             reactant_name = None
 
-        # Prefer the normal CEA species registry because it allows aliases such
-        # as "water" -> "H2O" and "oxygen" -> "O2".
         try:
-            species_name = FluidRegistry.cea_name(raw_name)
-            display_name = FluidRegistry.name(raw_name)
+            species_name = CombustionRegistry.cea_name(raw_name)
+            display_name = CombustionRegistry.name(raw_name)
         except Exception:
-            # Also allow direct CEA species names such as "OH", "H2O", or
-            # "C(gr)" so equilibrium output can be passed in directly.
             species_name = raw_name
             display_name = species_name
 
-        # If the name is a known CEA reactant but not a product species, explain
-        # the distinction directly. This is the expected path for RP-1.
         if species_name not in _CEA_THERMO_INDEX and reactant_name is not None:
             raise ValueError(
                 f"{value!r} maps to CEA reactant {reactant_name!r}, not a "
@@ -244,7 +190,7 @@ class CombustionGas:
         if species_name not in _CEA_THERMO_INDEX:
             raise ValueError(
                 f"{value!r} could not be resolved to a CEA thermo species. "
-                "Use a supported FluidRegistry CEA alias or a direct CEA product "
+                "Use a supported CombustionRegistry CEA alias or a direct CEA product "
                 "species name."
             )
 
@@ -293,8 +239,6 @@ class CombustionGas:
             raise ValueError(f"Unknown CEA species: {species_name!r}")
         return cls._mw_from_index(int(_CEA_THERMO_INDEX[species_name])) / 1000.0
 
-    # ---------------- State setters ---------------- #
-
     @property
     def pressure(self) -> float:
         return self._pressure
@@ -323,8 +267,6 @@ class CombustionGas:
         self._pressure = float(values[0])
         self._temperature = float(values[1])
         self._validate_temperature()
-
-    # ---------------- Basic API properties ---------------- #
 
     @property
     def name(self) -> str:
@@ -418,8 +360,6 @@ class CombustionGas:
     def quality(self, value: float):
         raise ValueError("CombustionGas does not support vapor quality.")
 
-    # ---------------- NASA-9 thermodynamic properties ---------------- #
-
     def _validate_temperature(self) -> None:
         if self.temperature < self.minimum_temperature or self.temperature > self.maximum_temperature:
             raise ValueError(
@@ -455,12 +395,6 @@ class CombustionGas:
 
     @classmethod
     def _species_thermo(cls, thermo_index: int, temperature: float) -> tuple[float, float, float]:
-        """Return pure-species (Cp, H, S0) in molar units [J/kmol-*].
-
-        Cp is J/kmol-K, H is J/kmol, and S0 is J/kmol-K at the CEA/NASA
-        standard-state pressure. Pressure correction for ideal-gas entropy is
-        applied separately for mixtures.
-        """
         T = float(temperature)
         j = cls._interval_index(thermo_index, T)
 
@@ -580,8 +514,6 @@ class CombustionGas:
     def speed_of_sound(self) -> float:
         return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self.temperature))
 
-    # ---------------- Transport properties ---------------- #
-
     @staticmethod
     def _transport_interval_index(transport_index: int, temperature: float, kind: str) -> int:
         if _CEA_TRANS is None:
@@ -642,7 +574,7 @@ class CombustionGas:
         for k in range(len(self._species_names)):
             idx = self._require_transport(k, "viscosity")
             mu_micro_poise = self._transport_fit(idx, self.temperature, "viscosity")
-            values.append(mu_micro_poise * 1e-7)  # micropoise -> Pa-s
+            values.append(mu_micro_poise * 1e-7)
 
         return np.asarray(values, dtype=float)
 
@@ -652,7 +584,7 @@ class CombustionGas:
         for k in range(len(self._species_names)):
             idx = self._require_transport(k, "conductivity")
             k_micro_w_cm_k = self._transport_fit(idx, self.temperature, "conductivity")
-            values.append(k_micro_w_cm_k * 1e-4)  # microW/cm-K -> W/m-K
+            values.append(k_micro_w_cm_k * 1e-4)
 
         return np.asarray(values, dtype=float)
 
@@ -696,9 +628,6 @@ class CombustionGas:
         if not self._mixture:
             return float(k[0])
 
-        # This uses the same Wilke-style form as viscosity. It is a practical
-        # first mixture rule for fixed-composition gas properties. A later CEA
-        # replacement can swap this with the exact CEA mixture transport method.
         return self._wilke_mix(self._mole_fractions, k, self._M)
 
     @property
@@ -718,8 +647,6 @@ class CombustionGas:
 
         return self.specific_heat_cp * self.dynamic_viscosity / k
 
-    # ---------------- Ideal-gas derivatives ---------------- #
-
     @property
     def thermal_expansion_coefficient(self) -> float:
         return 1.0 / self.temperature
@@ -735,7 +662,6 @@ class CombustionGas:
 
         R = self.gas_constant
         T = self.temperature
-        P = self.pressure
         rho = self.density
         cp = self.specific_heat_cp
         cv = self.specific_heat_cv
@@ -786,8 +712,6 @@ class CombustionGas:
     def joule_thomson_coefficient(self) -> float:
         return self.dTdp_const_h
 
-    # ---------------- Valid ranges ---------------- #
-
     @property
     def minimum_temperature(self) -> float:
         return self._minimum_temperature
@@ -803,8 +727,6 @@ class CombustionGas:
     @property
     def maximum_pressure(self) -> float:
         return np.inf
-
-    # ---------------- String output ---------------- #
 
     def _safe(self, value, fmt=".3e"):
         if value is None:
@@ -852,8 +774,6 @@ class CombustionGas:
             f"pressure={self.pressure:.3e} Pa, "
             f"temperature={self.temperature:.2f} K)"
         )
-
-    # ---------------- Utilities ---------------- #
 
     @classmethod
     def get_available_species(cls) -> list[str]:

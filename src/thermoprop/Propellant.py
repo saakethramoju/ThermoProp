@@ -6,15 +6,11 @@ import json
 
 import numpy as np
 
-from .FluidRegistry import FluidRegistry
+from .CombustionRegistry import CombustionRegistry
 
 
-# Generated CEA/CEAM data are expected in the ThermoProp project root.
-# Update this folder name if the generated data directory is renamed.
 CEA_DATA_FOLDER = "cea_data"
 
-# This file normally lives in ``src/thermoprop``. The CEA data folder lives
-# outside ``src`` in the repository/package root.
 _CEA_DATA_DIR = Path(__file__).resolve().parents[2] / CEA_DATA_FOLDER
 _CEA_THERMO_PATH = _CEA_DATA_DIR / "thermo_ceam.npz"
 _CEA_THERMO_INDEX_PATH = _CEA_DATA_DIR / "thermo_name_index.json"
@@ -92,7 +88,6 @@ class Propellant:
 
     _BACKEND_NAME = "RocketProps"
 
-
     _UNSUPPORTED_PROPERTIES = {
         "enthalpy",
         "internal_energy",
@@ -155,9 +150,6 @@ class Propellant:
         self._propellant_name = self._normalize_name(propellant)
         self._backend = self._get_backend(self._propellant_name)
 
-        # Cache the CEA reactant lookup once. This avoids repeated registry
-        # lookups during solver iterations. Missing mappings are allowed
-        # because RocketProps remains the primary backend for this class.
         self._cea_reactant_name, self._cea_reactant_index = self._cea_reactant_lookup(propellant)
 
         self._temperature = float(temperature)
@@ -190,7 +182,7 @@ class Propellant:
     @classmethod
     def _normalize_name(cls, propellant: str) -> str:
         """Return the RocketProps backend name for a user propellant name."""
-        return FluidRegistry.propellant_name(propellant)
+        return CombustionRegistry.propellant_name(propellant)
 
     @staticmethod
     def _get_backend(propellant: str):
@@ -212,14 +204,9 @@ class Propellant:
 
     @staticmethod
     def _cea_reactant_lookup(propellant: str) -> tuple[str | None, int | None]:
-        """Return cached CEA reactant name and database row for this propellant.
-
-        This intentionally uses the propellant registry path so aliases like
-        ``"rp-1"`` map to the CEA reactant ``"RP-1"`` rather than the general
-        Fluid surrogate ``"n-Dodecane"``.
-        """
+        """Return cached CEA reactant name and database row for this propellant."""
         try:
-            reactant_name = FluidRegistry.cea_reactant_name(propellant)
+            reactant_name = CombustionRegistry.cea_reactant_name(propellant)
         except Exception:
             return None, None
 
@@ -425,12 +412,12 @@ class Propellant:
     @quality.setter
     def quality(self, value: float):
         raise ValueError("Propellant only supports liquid-property states.")
-        
+
     @property
     def thermal_expansion_coefficient(self) -> None:
         """Volumetric thermal expansion coefficient is not supported."""
         return self._unsupported("thermal_expansion_coefficient")
-        
+
     @property
     def isothermal_compressibility(self):
         return self._unsupported("isothermal_compressibility")
@@ -648,7 +635,7 @@ class Propellant:
             return None
 
         return float(value)
-        
+
     @property
     def compressibility(self) -> float:
         """Alias for saturated-liquid compressibility factor."""
@@ -710,7 +697,6 @@ class Propellant:
         if value is None or not np.isfinite(value):
             return None
 
-        # The generated CEAM thermo database stores hf298 in J/mol.
         return float(value)
 
     @property
@@ -723,7 +709,7 @@ class Propellant:
             return None
 
         return h_molar / mw
-    
+
     @property
     def enthalpy_of_formation(self) -> float | None:
         return self.heat_of_formation
@@ -933,7 +919,7 @@ class Propellant:
     @staticmethod
     def get_available_propellants() -> list[str]:
         """Return canonical registry names with RocketProps support."""
-        return sorted(FluidRegistry.propellant_supported_names)
+        return sorted(CombustionRegistry.propellant_supported_names)
 
     @staticmethod
     def show_available_propellants() -> list[str]:
@@ -964,7 +950,11 @@ class Propellant:
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
         """Print and return RocketProps-specific propellant aliases."""
-        aliases = FluidRegistry.propellant_aliases
+        aliases = CombustionRegistry.propellant_aliases
+
+        if not aliases:
+            return aliases
+
         width = max(len(alias) for alias in aliases)
 
         print("Propellant Aliases")
@@ -974,7 +964,6 @@ class Propellant:
             print(f"{alias:<{width}} -> {backend}")
 
         return dict(aliases)
-    
 
     @classmethod
     def available_flash_inputs(cls) -> list[str]:

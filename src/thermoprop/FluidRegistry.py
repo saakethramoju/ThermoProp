@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import MappingProxyType
 
-
-
 @dataclass(frozen=True)
 class SpeciesRecord:
     """Canonical species entry and backend-specific names."""
@@ -12,10 +10,7 @@ class SpeciesRecord:
     name: str
     coolprop: str | None = None
     pyromat: str | None = None  # no "ig." prefix
-    rocketprops: str | None = None
     cea: str | None = None
-    cea_reactant: str | None = None
-
 
 SPECIES_DATABASE = MappingProxyType({
     # ---------- Common gases / shared ----------
@@ -24,24 +19,24 @@ SPECIES_DATABASE = MappingProxyType({
     "CarbonDioxide": SpeciesRecord("CarbonDioxide", coolprop="CarbonDioxide", pyromat="CO2", cea="CO2"),
     "CarbonMonoxide": SpeciesRecord("CarbonMonoxide", coolprop="CarbonMonoxide", pyromat="CO", cea="CO"),
     "Helium": SpeciesRecord("Helium", coolprop="Helium", pyromat="He", cea="He"),
-    "Hydrogen": SpeciesRecord("Hydrogen", coolprop="Hydrogen", pyromat="H2", rocketprops="PH2", cea="H2", cea_reactant="H2(L)"),
-    "Methane": SpeciesRecord("Methane", coolprop="Methane", pyromat="CH4", rocketprops="Methane", cea="CH4", cea_reactant="CH4(L)"),
+    "Hydrogen": SpeciesRecord("Hydrogen", coolprop="Hydrogen", pyromat="H2", cea="H2"),
+    "Methane": SpeciesRecord("Methane", coolprop="Methane", pyromat="CH4", cea="CH4"),
     "Nitrogen": SpeciesRecord("Nitrogen", coolprop="Nitrogen", pyromat="N2", cea="N2"),
-    "Oxygen": SpeciesRecord("Oxygen", coolprop="Oxygen", pyromat="O2", rocketprops="LOX", cea="O2", cea_reactant="O2(L)"),
-    "Water": SpeciesRecord("Water", coolprop="Water", pyromat="H2O", rocketprops="Water", cea="H2O", cea_reactant="H2O(L)"),
+    "Oxygen": SpeciesRecord("Oxygen", coolprop="Oxygen", pyromat="O2", cea="O2"),
+    "Water": SpeciesRecord("Water", coolprop="Water", pyromat="H2O", cea="H2O"),
 
     # ---------- Common fluids with PYroMat mappings ----------
-    "Ammonia": SpeciesRecord("Ammonia", coolprop="Ammonia", pyromat="NH3", rocketprops="NH3", cea="NH3", cea_reactant="NH3(L)"),
+    "Ammonia": SpeciesRecord("Ammonia", coolprop="Ammonia", pyromat="NH3", cea="NH3"),
     "Ethane": SpeciesRecord("Ethane", coolprop="Ethane", pyromat="C2H6", cea="C2H6"),
     "Ethylene": SpeciesRecord("Ethylene", coolprop="Ethylene", pyromat="C2H4", cea="C2H4"),
-    "n-Propane": SpeciesRecord("n-Propane", coolprop="n-Propane", pyromat="C3H8", rocketprops="Propane", cea="C3H8", cea_reactant="C3H8(L)"),
+    "n-Propane": SpeciesRecord("n-Propane", coolprop="n-Propane", pyromat="C3H8", cea="C3H8"),
     "n-Butane": SpeciesRecord("n-Butane", coolprop="n-Butane", pyromat="C4H10", cea="C4H10"),
     "IsoButane": SpeciesRecord("IsoButane", coolprop="IsoButane", pyromat=None),
     "Benzene": SpeciesRecord("Benzene", coolprop="Benzene", pyromat="C6H6", cea="C6H6"),
     "Toluene": SpeciesRecord("Toluene", coolprop="Toluene", pyromat="C7H8", cea="C7H8"),
-    "Methanol": SpeciesRecord("Methanol", coolprop="Methanol", pyromat="CH4O", rocketprops="Methanol", cea="CH3OH", cea_reactant="CH3OH(L)"),
-    "Ethanol": SpeciesRecord("Ethanol", coolprop="Ethanol", pyromat="C2H6O", rocketprops="Ethanol", cea="C2H5OH", cea_reactant="C2H5OH(L)"),
-    "NitrousOxide": SpeciesRecord("NitrousOxide", coolprop="NitrousOxide", pyromat="N2O", rocketprops="N2O", cea="N2O", cea_reactant="N2O"),
+    "Methanol": SpeciesRecord("Methanol", coolprop="Methanol", pyromat="CH4O", cea="CH3OH"),
+    "Ethanol": SpeciesRecord("Ethanol", coolprop="Ethanol", pyromat="C2H6O", cea="C2H5OH"),
+    "NitrousOxide": SpeciesRecord("NitrousOxide", coolprop="NitrousOxide", pyromat="N2O", cea="N2O"),
     "HydrogenChloride": SpeciesRecord("HydrogenChloride", coolprop="HydrogenChloride", pyromat="HCl", cea="HCl"),
     "HydrogenSulfide": SpeciesRecord("HydrogenSulfide", coolprop="HydrogenSulfide", pyromat="H2S", cea="H2S"),
     "SulfurDioxide": SpeciesRecord("SulfurDioxide", coolprop="SulfurDioxide", pyromat="SO2", cea="SO2"),
@@ -67,7 +62,7 @@ SPECIES_DATABASE = MappingProxyType({
     "DimethylEther": SpeciesRecord("DimethylEther", coolprop="DimethylEther", pyromat=None, cea="CH3OCH3"),
     "EthylBenzene": SpeciesRecord("EthylBenzene", coolprop="EthylBenzene", pyromat=None, cea="C6H5C2H5"),
     "EthyleneOxide": SpeciesRecord("EthyleneOxide", coolprop="EthyleneOxide", pyromat=None, cea="C2H4O,ethylen-o"),
-    "Fluorine": SpeciesRecord("Fluorine", coolprop="Fluorine", pyromat=None, rocketprops="F2", cea="F2", cea_reactant="F2(L)"),
+    "Fluorine": SpeciesRecord("Fluorine", coolprop="Fluorine", pyromat=None, cea="F2"),
     "HFE143m": SpeciesRecord("HFE143m", coolprop="HFE143m", pyromat=None),
     "HeavyWater": SpeciesRecord("HeavyWater", coolprop="HeavyWater", pyromat=None, cea="D2O"),
     "IsoButene": SpeciesRecord("IsoButene", coolprop="IsoButene", pyromat=None, cea="C4H8,isobutene"),
@@ -152,24 +147,7 @@ SPECIES_DATABASE = MappingProxyType({
     "n-Pentane": SpeciesRecord("n-Pentane", coolprop="n-Pentane", pyromat=None, cea="C5H12,n-pentane"),
     "n-Undecane": SpeciesRecord("n-Undecane", coolprop="n-Undecane", pyromat=None, cea="C11H24"),
 
-    # ---------- RocketProps propellants / named mixtures ----------
-    "RP1": SpeciesRecord("RP1", rocketprops="RP1", cea_reactant="RP-1"),
-    "A50": SpeciesRecord("A50", rocketprops="A50"),
-    "CLF5": SpeciesRecord("CLF5", rocketprops="CLF5", cea="CLF5", cea_reactant="CLF5"),
-    "F2": SpeciesRecord("F2", rocketprops="F2", cea="F2", cea_reactant="F2(L)"),
-    "H2O2": SpeciesRecord("H2O2", rocketprops="H2O2", cea="H2O2", cea_reactant="H2O2(L)"),
-    "IRFNA": SpeciesRecord("IRFNA", rocketprops="IRFNA", cea_reactant="IRFNA"),
-    "MHF3": SpeciesRecord("MHF3", rocketprops="MHF3"),
-    "MMH": SpeciesRecord("MMH", rocketprops="MMH", cea_reactant="CH6N2(L)"),
-    "MON10": SpeciesRecord("MON10", rocketprops="MON10"),
-    "MON25": SpeciesRecord("MON25", rocketprops="MON25"),
-    "MON30": SpeciesRecord("MON30", rocketprops="MON30"),
-    "N2H4": SpeciesRecord("N2H4", rocketprops="N2H4", cea="N2H4", cea_reactant="N2H4(L)"),
-    "N2O4": SpeciesRecord("N2O4", rocketprops="N2O4", cea="N2O4", cea_reactant="N2O4(L)"),
-    "PH2": SpeciesRecord("PH2", rocketprops="PH2", cea_reactant="H2(L)"),
-    "UDMH": SpeciesRecord("UDMH", rocketprops="UDMH", cea_reactant="C2H8N2(L),UDMH"),
 })
-
 
 ALIASES: dict[str, str] = {
     "air": "Air",
@@ -329,98 +307,6 @@ ALIASES.update({
     "cyclopropane": "CycloPropane",
 })
 
-
-# Propellant aliases are intentionally separate from the general fluid aliases.
-# For example, ``rp1`` maps to n-Dodecane for CoolProp Fluid, but maps to
-# RocketProps RP1 for Propellant. Keeping this table separate avoids changing
-# existing Fluid and IdealGas behavior.
-PROPELLANT_ALIASES: dict[str, str] = {
-    "rp-1": "RP1",
-    "rp1": "RP1",
-    "kerosene": "RP1",
-    "jet-a": "RP1",
-    "jeta": "RP1",
-
-    "lox": "Oxygen",
-    "o2": "Oxygen",
-    "oxygen": "Oxygen",
-
-    "h2": "Hydrogen",
-    "lh2": "Hydrogen",
-    "hydrogen": "Hydrogen",
-
-    "ch4": "Methane",
-    "methane": "Methane",
-    "lch4": "Methane",
-    "lng": "Methane",
-
-    "n2o": "NitrousOxide",
-    "nitrous oxide": "NitrousOxide",
-    "nitrous-oxide": "NitrousOxide",
-
-    "nh3": "Ammonia",
-    "ammonia": "Ammonia",
-
-    "propane": "n-Propane",
-    "c3h8": "n-Propane",
-
-    "h2o": "Water",
-    "water": "Water",
-
-    "n2o4": "N2O4",
-    "nto": "N2O4",
-    "nitrogen tetroxide": "N2O4",
-    "nitrogen-tetroxide": "N2O4",
-
-    "mmh": "MMH",
-    "udmh": "UDMH",
-    "n2h4": "N2H4",
-    "hydrazine": "N2H4",
-
-    "a50": "A50",
-    "aerozine50": "A50",
-    "aerozine-50": "A50",
-
-    "h2o2": "H2O2",
-    "peroxide": "H2O2",
-
-    "mon10": "MON10",
-    "mon25": "MON25",
-    "mon30": "MON30",
-    # Common explicit phase aliases for the propellant registry.
-    "liquid oxygen": "Oxygen",
-    "gaseous oxygen": "Oxygen",
-    "liquid hydrogen": "Hydrogen",
-    "gaseous hydrogen": "Hydrogen",
-    "liquid methane": "Methane",
-    "gaseous methane": "Methane",
-    "liquid ammonia": "Ammonia",
-    "liquid propane": "n-Propane",
-
-    "rpa1": "RP1",
-    "rp 1": "RP1",
-    "rocket propellant 1": "RP1",
-    "rocket-propellant-1": "RP1",
-
-    "ph2": "Hydrogen",
-    "lco": "Methane",
-
-    "f2": "F2",
-    "fluorine": "F2",
-    "clf5": "CLF5",
-    "chlorine pentafluoride": "CLF5",
-
-    "irfna": "IRFNA",
-    "red fuming nitric acid": "IRFNA",
-    "inhibited red fuming nitric acid": "IRFNA",
-
-    "mhf3": "MHF3",
-    "mon-10": "MON10",
-    "mon-25": "MON25",
-    "mon-30": "MON30",
-}
-
-
 def _normalize_key(value: str) -> str:
     """Return the compact key used for alias and species lookup."""
     return (
@@ -430,7 +316,6 @@ def _normalize_key(value: str) -> str:
         .replace("_", "")
         .replace("-", "")
     )
-
 
 def _build_name_lookup() -> dict[str, str]:
     """Build the normalized-name lookup table once for fast registry queries."""
@@ -446,34 +331,13 @@ def _build_name_lookup() -> dict[str, str]:
 
     return lookup
 
-
-
-def _build_propellant_lookup() -> dict[str, str]:
-    """Build the normalized lookup table for RocketProps propellants."""
-    lookup = {
-        _normalize_key(name): name
-        for name, record in SPECIES_DATABASE.items()
-        if record.rocketprops is not None
-    }
-
-    lookup.update({
-        _normalize_key(alias): name
-        for alias, name in PROPELLANT_ALIASES.items()
-    })
-
-    return lookup
-
-
 _NAME_LOOKUP = _build_name_lookup()
-_PROPELLANT_LOOKUP = _build_propellant_lookup()
-
 
 class classproperty(property):
     """Small descriptor for read-only class-level properties."""
 
     def __get__(self, obj, owner):
         return self.fget(owner)
-
 
 class FluidRegistry:
     """
@@ -484,13 +348,11 @@ class FluidRegistry:
 
         Fluid      -> CoolProp
         IdealGas   -> PYroMat
-        Propellant -> RocketProps
         CEA        -> NASA CEA / CEAM data
 
-    General aliases and propellant aliases are intentionally separate. This is
-    important because a name such as ``"rp-1"`` should map to ``n-Dodecane``
-    for CoolProp's Fluid wrapper, but to ``RP1`` for RocketProps' Propellant
-    wrapper.
+    CEA mappings are kept because IdealGas can use CEA species names for
+    transport-property lookup. Propellant and combustion-gas mappings belong
+    in CombustionRegistry.
     """
 
     _BACKEND_ALIASES = {
@@ -506,12 +368,6 @@ class FluidRegistry:
         "ideal-gas": "pyromat",
         "ideal_gas": "pyromat",
 
-        "rocketprops": "rocketprops",
-        "rocket-props": "rocketprops",
-        "rp": "rocketprops",
-        "propellant": "rocketprops",
-        "propellants": "rocketprops",
-
         "cea": "cea",
         "ceam": "cea",
         "nasa": "cea",
@@ -520,13 +376,6 @@ class FluidRegistry:
         "chem-equilibrium": "cea",
         "chemical-equilibrium": "cea",
 
-        # CEA reactant names are propellant-side mappings used for
-        # combustion reactant bookkeeping, not general gas/species lookup.
-        "cea-reactant": "cea_reactant",
-        "cea_reactant": "cea_reactant",
-        "ceareactant": "cea_reactant",
-        "reactant": "cea_reactant",
-        "reactants": "cea_reactant",
     }
 
     @staticmethod
@@ -540,8 +389,7 @@ class FluidRegistry:
         Normalize a backend name.
 
         Accepted examples include ``"coolprop"``, ``"cp"``, ``"fluid"``,
-        ``"pyromat"``, ``"pm"``, ``"idealgas"``, ``"rocketprops"``, and
-        ``"propellant"``.
+        ``"pyromat"``, ``"pm"``, and ``"idealgas"``.
         """
         lookup = cls.normalize_name(backend)
 
@@ -550,7 +398,7 @@ class FluidRegistry:
         except KeyError:
             raise ValueError(
                 f"Unknown backend: {backend!r}. Expected one of: "
-                "'coolprop', 'pyromat', 'rocketprops', 'cea', or 'cea_reactant'."
+                "'coolprop', 'pyromat', or 'cea'."
             )
 
     @classmethod
@@ -564,32 +412,9 @@ class FluidRegistry:
             raise ValueError(f"Unknown fluid/species name: {value!r}")
 
     @classmethod
-    def propellant_registry_name(cls, value: str) -> str:
-        """
-        Return the canonical registry name used for RocketProps lookup.
-
-        This can differ from :meth:`name` because propellant aliases are kept
-        separate from general fluid aliases. For example:
-
-            FluidRegistry.name("rp-1") -> "n-Dodecane"
-            FluidRegistry.propellant_registry_name("rp-1") -> "RP1"
-        """
-        lookup = cls.normalize_name(value)
-
-        try:
-            return _PROPELLANT_LOOKUP[lookup]
-        except KeyError:
-            raise ValueError(f"Unknown RocketProps propellant name: {value!r}")
-
-    @classmethod
     def record(cls, value: str) -> SpeciesRecord:
         """Return the full registry record for a user name or general alias."""
         return SPECIES_DATABASE[cls.name(value)]
-
-    @classmethod
-    def propellant_record(cls, value: str) -> SpeciesRecord:
-        """Return the full registry record for a user propellant name or alias."""
-        return SPECIES_DATABASE[cls.propellant_registry_name(value)]
 
     @classmethod
     def backend_name(cls, value: str, backend: str, include_prefix: bool = False) -> str:
@@ -602,7 +427,7 @@ class FluidRegistry:
             User name, alias, or canonical registry name.
         backend:
             Backend selector. Accepted examples include ``"coolprop"``,
-            ``"pyromat"``, ``"rocketprops"``, and ``"cea"``.
+            ``"pyromat"`` and ``"cea"``.
         include_prefix:
             If True and backend is PYroMat, return names with the ``"ig."``
             prefix, such as ``"ig.N2"``.
@@ -614,12 +439,6 @@ class FluidRegistry:
 
         if backend == "pyromat":
             return cls.pyromat_name(value, include_prefix=include_prefix)
-
-        if backend == "rocketprops":
-            return cls.propellant_name(value)
-
-        if backend == "cea_reactant":
-            return cls.cea_reactant_name(value)
 
         return cls.cea_name(value)
 
@@ -657,35 +476,6 @@ class FluidRegistry:
         return record.cea
 
     @classmethod
-    def propellant_name(cls, value: str) -> str:
-        """Return the RocketProps backend name for a user propellant name or alias."""
-        record = cls.propellant_record(value)
-
-        if record.rocketprops is None:
-            raise ValueError(f"{record.name!r} is not supported by RocketProps.")
-
-        return record.rocketprops
-
-
-    @classmethod
-    def cea_reactant_name(cls, value: str) -> str:
-        """Return the NASA CEA / CEAM reactant name for a propellant alias.
-
-        This intentionally uses the propellant registry, not the general fluid
-        registry. For example, ``"rp-1"`` maps to RocketProps ``"RP1"`` and
-        CEA reactant ``"RP-1"``, while the general Fluid alias still maps
-        ``"rp-1"`` to ``"n-Dodecane"``.
-        """
-        record = cls.propellant_record(value)
-
-        if record.cea_reactant is None:
-            raise ValueError(
-                f"{record.name!r} does not have a NASA CEA reactant mapping."
-            )
-
-        return record.cea_reactant
-
-    @classmethod
     def supports(cls, value: str, backend: str) -> bool:
         """Return True if ``value`` is supported by the selected backend."""
         backend = cls.normalize_backend(backend)
@@ -695,12 +485,6 @@ class FluidRegistry:
 
         if backend == "pyromat":
             return cls.supports_pyromat(value)
-
-        if backend == "rocketprops":
-            return cls.supports_propellant(value)
-
-        if backend == "cea_reactant":
-            return cls.supports_cea_reactant(value)
 
         return cls.supports_cea(value)
 
@@ -721,28 +505,10 @@ class FluidRegistry:
             return False
 
     @classmethod
-    def supports_propellant(cls, value: str) -> bool:
-        """Return True if the species or propellant alias has a RocketProps mapping."""
-        try:
-            cls.propellant_name(value)
-            return True
-        except ValueError:
-            return False
-
-    @classmethod
     def supports_cea(cls, value: str) -> bool:
         """Return True if the species has a NASA CEA / CEAM mapping."""
         try:
             return cls.record(value).cea is not None
-        except ValueError:
-            return False
-
-
-    @classmethod
-    def supports_cea_reactant(cls, value: str) -> bool:
-        """Return True if the propellant has a NASA CEA / CEAM reactant mapping."""
-        try:
-            return cls.propellant_record(value).cea_reactant is not None
         except ValueError:
             return False
 
@@ -756,10 +522,6 @@ class FluidRegistry:
         """
         Add a general alias for Fluid and IdealGas lookups.
 
-        This affects :class:`Fluid` and :class:`IdealGas`, not
-        :class:`Propellant`. Use :meth:`add_propellant_alias` for RocketProps
-        aliases.
-
         Examples
         --------
         FluidRegistry.add_alias("my-water", "Water")
@@ -770,35 +532,13 @@ class FluidRegistry:
         _NAME_LOOKUP = _build_name_lookup()
 
     @classmethod
-    def add_propellant_alias(cls, alias: str, name: str) -> None:
-        """
-        Add a RocketProps-specific alias for Propellant lookups.
-
-        This affects :class:`Propellant`, not :class:`Fluid` or
-        :class:`IdealGas`.
-
-        Examples
-        --------
-        FluidRegistry.add_propellant_alias("fuel", "RP1")
-        FluidRegistry.add_propellant_alias("oxidizer", "LOX")
-        """
-        global _PROPELLANT_LOOKUP
-        PROPELLANT_ALIASES[alias] = cls.propellant_registry_name(name)
-        _PROPELLANT_LOOKUP = _build_propellant_lookup()
-
-    @classmethod
     def add_backend_alias(cls, alias: str, name: str, backend: str) -> None:
         """
         Add an alias for a specific backend.
 
-        This is a convenience wrapper around :meth:`add_alias` and
-        :meth:`add_propellant_alias`.
+        This is a convenience wrapper around :meth:`add_alias`.
         """
         backend = cls.normalize_backend(backend)
-
-        if backend == "rocketprops":
-            cls.add_propellant_alias(alias, name)
-            return
 
         cls.add_alias(alias, name)
 
@@ -810,20 +550,9 @@ class FluidRegistry:
         _NAME_LOOKUP = _build_name_lookup()
 
     @classmethod
-    def remove_propellant_alias(cls, alias: str) -> None:
-        """Remove a RocketProps-specific Propellant alias and refresh the lookup cache."""
-        global _PROPELLANT_LOOKUP
-        PROPELLANT_ALIASES.pop(alias, None)
-        _PROPELLANT_LOOKUP = _build_propellant_lookup()
-
-    @classmethod
     def remove_backend_alias(cls, alias: str, backend: str) -> None:
         """Remove an alias from a specific backend alias table."""
         backend = cls.normalize_backend(backend)
-
-        if backend == "rocketprops":
-            cls.remove_propellant_alias(alias)
-            return
 
         cls.remove_alias(alias)
 
@@ -842,30 +571,10 @@ class FluidRegistry:
             "name": record.name,
             "coolprop": record.coolprop,
             "pyromat": record.pyromat,
-            "rocketprops": record.rocketprops,
             "cea": record.cea,
             "supports_coolprop": record.coolprop is not None,
             "supports_pyromat": record.pyromat is not None,
-            "supports_propellant": cls.supports_propellant(value),
             "supports_cea": record.cea is not None,
-        }
-
-    @classmethod
-    def describe_propellant(cls, value: str) -> dict[str, str | bool | None]:
-        """
-        Return a compact description of a Propellant/RocketProps lookup.
-
-        Use this when users want to check what a propellant alias maps to.
-        """
-        record = cls.propellant_record(value)
-
-        return {
-            "input": value,
-            "name": record.name,
-            "rocketprops": record.rocketprops,
-            "cea_reactant": record.cea_reactant,
-            "supports_propellant": record.rocketprops is not None,
-            "supports_cea_reactant": record.cea_reactant is not None,
         }
 
     @classmethod
@@ -878,12 +587,6 @@ class FluidRegistry:
 
         if backend == "pyromat":
             return cls.pyromat_supported_names
-
-        if backend == "rocketprops":
-            return cls.propellant_supported_names
-
-        if backend == "cea_reactant":
-            return cls.cea_reactant_supported_names
 
         return cls.cea_supported_names
 
@@ -911,25 +614,6 @@ class FluidRegistry:
         )
 
     @classproperty
-    def propellant_supported_names(cls) -> list[str]:
-        """Return canonical names with RocketProps support."""
-        return sorted(
-            name
-            for name, record in SPECIES_DATABASE.items()
-            if record.rocketprops is not None
-        )
-
-
-    @classproperty
-    def cea_reactant_supported_names(cls) -> list[str]:
-        """Return canonical names with NASA CEA / CEAM reactant mappings."""
-        return sorted(
-            name
-            for name, record in SPECIES_DATABASE.items()
-            if record.cea_reactant is not None
-        )
-
-    @classproperty
     def cea_supported_names(cls) -> list[str]:
         """Return canonical names with NASA CEA / CEAM support."""
         return sorted(
@@ -951,11 +635,6 @@ class FluidRegistry:
     def aliases(cls) -> dict[str, str]:
         """Return a copy of the general Fluid/IdealGas alias table."""
         return dict(sorted(ALIASES.items()))
-
-    @classproperty
-    def propellant_aliases(cls) -> dict[str, str]:
-        """Return a copy of the RocketProps-specific Propellant alias table."""
-        return dict(sorted(PROPELLANT_ALIASES.items()))
 
     @classmethod
     def show_species(cls) -> list[str]:
@@ -994,46 +673,8 @@ class FluidRegistry:
         return aliases
 
     @classmethod
-    def show_propellant_aliases(cls) -> dict[str, str]:
-        """Print and return RocketProps-specific Propellant aliases."""
-        aliases = cls.propellant_aliases
-
-        if not aliases:
-            return aliases
-
-        width = max(len(alias) for alias in aliases)
-
-        print("Propellant Aliases")
-        print("-" * (width + 20))
-
-        for alias, name in aliases.items():
-            backend = cls.propellant_name(name)
-
-            try:
-                cea_reactant = cls.cea_reactant_name(name)
-                print(f"{alias:<{width}} -> {name} ({backend}, CEA: {cea_reactant})")
-            except ValueError:
-                print(f"{alias:<{width}} -> {name} ({backend})")
-
-        return aliases
-
-    @classmethod
-    def show_cea_reactants(cls) -> list[str]:
-        """Print and return canonical propellant names with CEA reactant mappings."""
-        names = cls.cea_reactant_supported_names
-
-        for name in names:
-            print(f"{name} -> {SPECIES_DATABASE[name].cea_reactant}")
-
-        return names
-
-    @classmethod
     def show_backend_names(cls, value: str) -> dict:
-        """Return general Fluid / IdealGas backend mappings for a name or alias.
-
-        This uses the general registry path. For propellant-specific mappings,
-        including CEA reactant names, use :meth:`show_propellant_backend_names`.
-        """
+        """Return Fluid / IdealGas backend mappings for a name or alias."""
         record = cls.record(value)
 
         return {
@@ -1041,25 +682,6 @@ class FluidRegistry:
             "canonical": record.name,
             "coolprop": record.coolprop,
             "pyromat": record.pyromat,
-            "rocketprops": record.rocketprops,
             "cea": record.cea,
         }
 
-    @classmethod
-    def show_propellant_backend_names(cls, value: str) -> dict:
-        """Return propellant-side RocketProps and CEA reactant mappings.
-
-        This uses the propellant registry path, so aliases such as ``"rp-1"``
-        resolve to RocketProps ``"RP1"`` and CEA reactant ``"RP-1"`` instead
-        of the general Fluid surrogate ``"n-Dodecane"``.
-        """
-        record = cls.propellant_record(value)
-
-        return {
-            "input": value,
-            "canonical": record.name,
-            "rocketprops": record.rocketprops,
-            "cea_reactant": record.cea_reactant,
-            "supports_propellant": record.rocketprops is not None,
-            "supports_cea_reactant": record.cea_reactant is not None,
-        }

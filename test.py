@@ -1,6 +1,6 @@
-from src.thermoprop import IdealGas, FluidRegistry, Propellant, CombustionGas
+from src.thermoprop import Propellant, CombustionGas
+from CEADatabase import CEA
 
-#ig = IdealGas("1-Butene", temperature=1000)
 p = Propellant("rp-1", temperature=100)
 
 print(p.specific_heat_cp)
@@ -32,8 +32,4 @@ print(gas.thermal_conductivity)
 print(gas.prandtl)
 print(gas)
 
-gas = CombustionGas(
-    'RP-1', 
-    temperature=3200.0,
-    pressure=2.0e6,
-    )
+print(CEA.describe("RP-1"))
