@@ -13,7 +13,7 @@ gas = CombustionGas(
     temperature=3200.0,
     pressure=2.0e6,
 )
-
+'''
 print(gas.molar_mass)
 print(gas.gas_constant)
 print(gas.density)
@@ -26,7 +26,7 @@ print(gas.dynamic_viscosity)
 print(gas.thermal_conductivity)
 print(gas.prandtl)
 print(gas)
-
+'''
 
 ig = IdealGas(
     {
@@ -41,23 +41,13 @@ ig = IdealGas(
     pressure=2.0e6,
 )
 
-print(ig)
+#print(ig)
 
-print(CEA.describe("Jet-A(L)"))
+fuel = Propellant("C2H4", temperature=300, pressure=300*6894)
+print(fuel.speed_of_sound)
 
+ig = IdealGas("C2H4", temperature=300, pressure=300*6894)
+print(ig.speed_of_sound)
 
-'''
-from src.thermoprop import CombustionReactants
-
-fuel = Propellant("rp-1", temperature=298.15)
-oxidizer = Propellant("lox", temperature=90.0)
-
-mix = CombustionReactants(
-    fuel=fuel,
-    oxidizer=oxidizer,
-    mixture_ratio=2.5,
-)
-
-print(mix)
-print(fuel.specific_heat_cp)
-'''
+cg = CombustionGas("C2H4", temperature=300, pressure=300*6894)
+print(cg.speed_of_sound)

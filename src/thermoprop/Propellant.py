@@ -1,76 +1,51 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Any, Tuple
 
 import numpy as np
+from scipy.integrate import quad
 
 from CEADatabase import CEA
 from .CombustionRegistry import CombustionRegistry
 
+
 class Propellant:
     """
-    RocketProps-backed liquid propellant property wrapper.
+    Combined RocketProps / CEA propellant and reactant property wrapper.
 
-    This class intentionally stays close to what RocketProps is designed to do:
-    liquid rocket propellant engineering properties. It is not a thermodynamic
-    flash solver and does not attempt to calculate enthalpy, internal energy,
-    entropy, vapor-state properties, or two-phase states.
+    Propellant resolves names through CombustionRegistry first. When the
+    registry maps a name to RocketProps, RocketProps is used for liquid
+    engineering properties. When the registry maps a name to a CEA reactant, or
+    when the input is an exact strict CEA database name, CEA is used for
+    reference/thermochemical data.
 
-    Notes
-    -----
-    RocketProps is mainly useful for liquid propellant properties such as:
+    If both backends are available, liquid states use both backends:
+    RocketProps supplies liquid engineering correlations, while CEA supplies
+    reactant/reference data and condensed NASA-polynomial thermodynamics when
+    that liquid/condensed entry has polynomial data. Gas states use the CEA gas
+    species when one is available.
 
-        density
-        compressed-liquid density
-        dynamic viscosity
-        compressed-liquid dynamic viscosity
-        vapor pressure
-        saturation temperature
-        heat of vaporization
-        surface tension
-        heat capacity
-        thermal conductivity
-        critical properties
-        normal boiling point
-        freezing point
+    If a registry entry has RocketProps support but no CEA mapping, CEA is not
+    queried. This keeps RocketProps-only species and mixtures independent from
+    strict CEA names.
 
     Supported state inputs:
 
         Propellant(..., temperature=...)
         Propellant(..., temperature=..., pressure=...)
 
-    Temperature-only states use saturated-liquid correlations.
-    Temperature-pressure states use compressed-liquid correlations where
-    RocketProps provides them.
-
-    Public API units are SI:
-
-        pressure: Pa
-        temperature: K
-        density: kg/m^3
-        dynamic_viscosity: Pa-s
-        conductivity: W/m-K
-        surface_tension: N/m
-        specific_heat_cp: J/kg-K
-        heat_of_vaporization: J/kg
+    Public API units are SI.
     """
 
-    _BACKEND_NAME = "RocketProps"
+    _BACKEND_NAME = "RocketProps + CEA"
 
     _UNSUPPORTED_PROPERTIES = {
-        "enthalpy",
-        "internal_energy",
-        "entropy",
-        "specific_heat_cv",
-        "specific_heat_ratio",
-        "speed_of_sound",
         "thermal_expansion_coefficient",
         "isothermal_compressibility",
         "joule_thomson_coefficient",
         "partial_derivative",
         "helmholtz_energy",
         "gibbs_energy",
-        "gas_constant",
         "universal_gas_constant",
         "prandtl",
     }
@@ -80,6 +55,7 @@ class Propellant:
         frozenset(("pressure", "temperature")),
     }
 
+    _P0_CEA = 101325.0
     _PSIA_TO_PA = 6894.757293168361
     _PA_TO_PSIA = 1.0 / _PSIA_TO_PA
 
@@ -87,6 +63,7 @@ class Propellant:
     _BTU_PER_LBM_R_TO_J_PER_KG_K = 4186.8
     _BTU_PER_HR_FT_R_TO_W_PER_M_K = 1.730735
     _LBF_PER_IN_TO_N_PER_M = 175.126835
+    _RU = 8.31446261815324
 
     def __init__(
         self,
@@ -94,74 +71,148 @@ class Propellant:
         temperature: float,
         pressure: float | None = None,
     ):
-        """
-        Initialize a liquid propellant property state.
-
-        Parameters
-        ----------
-        propellant:
-            RocketProps propellant name or a common alias, such as "rp1",
-            "lox", "mmh", "n2o4", "MON25", or "A50".
-        temperature:
-            Propellant temperature in K.
-        pressure:
-            Optional pressure in Pa. If omitted, saturated-liquid properties are
-            used. If provided, compressed-liquid properties are used where
-            RocketProps supports them.
-
-        Raises
-        ------
-        ValueError
-            If the specified pressure is below vapor pressure at the specified
-            temperature. In that case, the state is not a stable liquid state,
-            and this wrapper intentionally refuses to extrapolate.
-        """
-        self._propellant_name = self._normalize_name(propellant)
-        self._backend = self._get_backend(self._propellant_name)
-
-        self._cea_reactant_name, self._cea_reactant_index = self._cea_reactant_lookup(propellant)
-
+        self._input_name = str(propellant)
         self._temperature = float(temperature)
         self._pressure = None if pressure is None else float(pressure)
 
+        self._registry_name: str | None = None
+        self._rocketprops_name: str | None = None
+        self._cea_species_name: str | None = None
+        self._cea_species_index: int | None = None
+        self._cea_reactant_name: str | None = None
+        self._cea_reactant_index: int | None = None
+        self._cea_name: str | None = None
+        self._cea_index: int | None = None
+        self._backend = None
+        self._data_sources: dict[str, str] = {}
+        self._property_cache: dict[str, Any] = {}
+
+        self._resolve_backends(propellant)
+
+        if (
+            self._rocketprops_name is None
+            and self._cea_species_name is None
+            and self._cea_reactant_name is None
+        ):
+            raise ValueError(
+                f"Unknown propellant or CEA species: {propellant!r}. "
+                "Use Propellant.show_available_propellants(), "
+                "Propellant.show_available_cea_species(), or "
+                "CombustionRegistry.show_propellant_aliases() to inspect names."
+            )
+
+        if self._rocketprops_name is not None:
+            self._backend = self._get_rocketprops_backend(self._rocketprops_name)
+
+        self._update_active_cea_name()
         self._validate_liquid_state()
 
-    # ---------------- Unit conversion helpers ---------------- #
+    # ---------------- Resolution ---------------- #
+
+    def _resolve_backends(self, propellant: str) -> None:
+        """Resolve RocketProps and CEA names without applying CEA aliases."""
+        try:
+            record = CombustionRegistry.propellant_record(propellant)
+            self._registry_name = record.name
+            self._rocketprops_name = record.rocketprops
+
+            if record.cea is not None:
+                self._set_cea_species_name_if_present(record.cea)
+
+            if record.cea_reactant is not None:
+                self._set_cea_reactant_name_if_present(record.cea_reactant)
+
+            return
+        except Exception:
+            pass
+
+        raw = str(propellant).strip()
+
+        if CEA.has_species(raw):
+            self._set_exact_cea_name(raw)
+            return
+
+        try:
+            from rocketprops.rocket_prop import get_prop
+        except ImportError:
+            return
+
+        backend = get_prop(raw)
+        if backend is not None:
+            self._rocketprops_name = raw
+
+    def _set_cea_species_name_if_present(self, name: str) -> None:
+        if CEA.has_species(name):
+            self._cea_species_name = CEA.resolve_name(name)
+            self._cea_species_index = CEA.index(self._cea_species_name)
+
+    def _set_cea_reactant_name_if_present(self, name: str) -> None:
+        if CEA.has_species(name):
+            self._cea_reactant_name = CEA.resolve_name(name)
+            self._cea_reactant_index = CEA.index(self._cea_reactant_name)
+
+    def _set_exact_cea_name(self, name: str) -> None:
+        name = CEA.resolve_name(name)
+        if CEA.has_thermo(name) and CEA.is_gas(name):
+            self._cea_species_name = name
+            self._cea_species_index = CEA.index(name)
+        else:
+            self._cea_reactant_name = name
+            self._cea_reactant_index = CEA.index(name)
+
+        self._cea_name = name
+        self._cea_index = CEA.index(name)
+
+    def _update_active_cea_name(self) -> None:
+        """Select the CEA row that matches the current phase.
+
+        For liquid states, keep the CEA reactant/condensed row active so CEA
+        reference data such as elemental composition, molar mass, and heat of
+        formation are accounted for alongside RocketProps liquid correlations.
+        For vapor states, switch to the CEA gas species when one is available.
+        """
+        if self._backend is not None:
+            if self._active_is_liquid_model_raw():
+                active = self._cea_reactant_name or self._cea_species_name
+            else:
+                active = self._cea_species_name or self._cea_reactant_name
+        else:
+            # Exact CEA-only input: keep the input phase. If both gas and
+            # reactant names were resolved through the registry, use the phase
+            # implied by pressure/vapor pressure only when RocketProps exists.
+            active = self._cea_name or self._cea_species_name or self._cea_reactant_name
+
+        self._cea_name = active
+        self._cea_index = CEA.index(active) if active is not None else None
+
+    def _active_is_liquid_model_raw(self) -> bool:
+        """Phase decision without calling _update_active_cea_name recursively."""
+        if self._backend is None:
+            return False
+
+        if self.pressure is None:
+            return True
+
+        # Use RocketProps vapor pressure when available. If unavailable, keep
+        # RocketProps in its normal liquid-correlation role.
+        pvap = self._rocketprops_vapor_pressure_no_source()
+        if pvap is None:
+            return True
+
+        return self.pressure >= pvap
+
+    @property
+    def _active_is_liquid_model(self) -> bool:
+        return self._active_is_liquid_model_raw()
 
     @staticmethod
-    def _degR_from_K(temperature: float) -> float:
-        """Convert K to degR."""
-        return float(temperature) * 9.0 / 5.0
-
-    @staticmethod
-    def _K_from_degR(temperature: float) -> float:
-        """Convert degR to K."""
-        return float(temperature) * 5.0 / 9.0
-
-    @classmethod
-    def _psia_from_Pa(cls, pressure: float) -> float:
-        """Convert Pa to psia."""
-        return float(pressure) * cls._PA_TO_PSIA
-
-    @classmethod
-    def _Pa_from_psia(cls, pressure: float) -> float:
-        """Convert psia to Pa."""
-        return float(pressure) * cls._PSIA_TO_PA
-
-    @classmethod
-    def _normalize_name(cls, propellant: str) -> str:
-        """Return the RocketProps backend name for a user propellant name."""
-        return CombustionRegistry.propellant_name(propellant)
-
-    @staticmethod
-    def _get_backend(propellant: str):
-        """Load a RocketProps propellant object."""
+    def _get_rocketprops_backend(propellant: str):
         try:
             from rocketprops.rocket_prop import get_prop
         except ImportError as exc:
             raise ImportError(
-                "Propellant requires RocketProps. Install it with "
-                "`pip install rocketprops`."
+                "Propellant requires RocketProps for RocketProps-backed "
+                "propellants. Install it with `pip install rocketprops`."
             ) from exc
 
         backend = get_prop(propellant)
@@ -171,28 +222,70 @@ class Propellant:
 
         return backend
 
+    # ---------------- Unit conversion helpers ---------------- #
+
     @staticmethod
-    def _cea_reactant_lookup(propellant: str) -> tuple[str | None, int | None]:
-        """Return cached CEA reactant name and database row for this propellant."""
-        try:
-            reactant_name = CombustionRegistry.cea_reactant_name(propellant)
-        except Exception:
-            return None, None
+    def _degR_from_K(temperature: float) -> float:
+        return float(temperature) * 9.0 / 5.0
 
-        if not CEA.has_species(reactant_name):
-            return reactant_name, None
+    @staticmethod
+    def _K_from_degR(temperature: float) -> float:
+        return float(temperature) * 5.0 / 9.0
 
-        return reactant_name, CEA.index(reactant_name)
+    @classmethod
+    def _psia_from_Pa(cls, pressure: float) -> float:
+        return float(pressure) * cls._PA_TO_PSIA
 
-    def _cea_value(self, key: str):
-        """Return one raw CEA database value for the cached reactant row."""
-        if self._cea_reactant_index is None:
-            return None
+    @classmethod
+    def _Pa_from_psia(cls, pressure: float) -> float:
+        return float(pressure) * cls._PSIA_TO_PA
 
-        return CEA.raw_by_index(key, self._cea_reactant_index)
-    
+    # ---------------- Source tracking helpers ---------------- #
+
+    @property
+    def data_sources(self) -> dict[str, str]:
+        """Return the source used by each property that has been evaluated."""
+        return dict(self._data_sources)
+
+    def property_source(self, property_name: str) -> str | None:
+        """Return the backend source used for one property, if evaluated."""
+        return self._data_sources.get(property_name)
+
+    def _source(self, property_name: str, value: Any, source: str):
+        if value is not None:
+            self._data_sources[property_name] = source
+        return value
+
+    def _cache_get(self, property_name: str):
+        return self._property_cache.get(property_name, None)
+
+    def _cache_set(self, property_name: str, value: Any):
+        self._property_cache[property_name] = value
+        return value
+
+    def _clear_property_cache(self) -> None:
+        self._property_cache.clear()
+        self._data_sources.clear()
+
+    @staticmethod
+    def _require_number(value: Any, message: str) -> float:
+        """Return a finite float or raise a clear error."""
+        if value is None:
+            raise ValueError(message)
+
+        value = float(value)
+
+        if not np.isfinite(value):
+            raise ValueError(message)
+
+        return value
+
+    # ---------------- Backend call helpers ---------------- #
+
     def _call(self, *names: str, default=None):
-        """Return the first available backend attribute or no-argument method."""
+        if self._backend is None:
+            return default
+
         for name in names:
             attr = getattr(self._backend, name, None)
 
@@ -203,11 +296,15 @@ class Propellant:
                 return attr() if callable(attr) else attr
             except TypeError:
                 continue
+            except Exception:
+                continue
 
         return default
 
     def _call_at_temperature(self, *names: str, default=None):
-        """Call the first available RocketProps temperature-based method."""
+        if self._backend is None:
+            return default
+
         TdegR = self._degR_from_K(self.temperature)
 
         for name in names:
@@ -220,12 +317,13 @@ class Propellant:
                 return fn(TdegR)
             except TypeError:
                 continue
+            except Exception:
+                continue
 
         return default
 
     def _call_compressed(self, *names: str, default=None):
-        """Call the first available RocketProps compressed-liquid method."""
-        if self.pressure is None:
+        if self._backend is None or self.pressure is None:
             return default
 
         TdegR = self._degR_from_K(self.temperature)
@@ -241,18 +339,40 @@ class Propellant:
                 return fn(TdegR, Ppsia)
             except TypeError:
                 continue
+            except Exception:
+                continue
 
         return default
 
-    def _validate_liquid_state(self) -> None:
-        """
-        Refuse states that are below vapor pressure.
+    def _cea_value(self, key: str):
+        if self._cea_index is None:
+            return None
+        return CEA.raw_by_index(key, self._cea_index)
 
-        RocketProps liquid correlations should not be used to represent a vapor
-        or superheated state. Temperature-only construction is allowed because
-        it means saturated liquid at vapor_pressure.
-        """
-        if self.pressure is None:
+    def _cea_call(self, method: str, *args, default=None):
+        if self._cea_name is None:
+            return default
+
+        fn = getattr(CEA, method)
+
+        try:
+            return fn(self._cea_name, *args)
+        except Exception:
+            return default
+
+    def _rocketprops_vapor_pressure_no_source(self) -> float | None:
+        """RocketProps vapor pressure without updating source bookkeeping."""
+        value = self._call_at_temperature("PvapAtTdegR", "PvapAtT", default=None)
+
+        if value is None:
+            return None
+
+        return self._Pa_from_psia(value)
+
+    def _validate_liquid_state(self) -> None:
+        self._update_active_cea_name()
+
+        if self._backend is None or self.pressure is None:
             return
 
         pvap = self.vapor_pressure
@@ -260,126 +380,195 @@ class Propellant:
         if pvap is None:
             return
 
-        if self.pressure < pvap:
+        if self.pressure < pvap and self._cea_species_name is None:
             raise ValueError(
-                f"{self._propellant_name}: pressure={self.pressure:.6g} Pa is "
+                f"{self._rocketprops_name}: pressure={self.pressure:.6g} Pa is "
                 f"below vapor pressure={pvap:.6g} Pa at "
-                f"temperature={self.temperature:.6g} K. "
-                "RocketProps liquid correlations are not valid for this state."
+                f"temperature={self.temperature:.6g} K, and no CEA gas species "
+                "is available for automatic vapor-phase fallback."
             )
 
     def _unsupported(self, property_name: str):
-        """Raise a clear error for properties RocketProps is not used to compute."""
         raise NotImplementedError(
-            f"Propellant.{property_name} is not supported. "
-            "RocketProps is used here for liquid propellant property "
-            "correlations, not as a thermodynamic flash solver."
+            f"Propellant.{property_name} is not supported by RocketProps or CEA "
+            "for this wrapper."
         )
 
     # ---------------- State setters ---------------- #
 
     @property
     def pressure(self) -> float | None:
-        """
-        Absolute pressure in Pa.
-
-        If pressure is None, properties are evaluated as saturated-liquid
-        properties at the current temperature.
-        """
         return self._pressure
 
     @pressure.setter
     def pressure(self, value: float | None):
         self._pressure = None if value is None else float(value)
+        self._clear_property_cache()
         self._validate_liquid_state()
 
     @property
     def temperature(self) -> float:
-        """Absolute temperature in K."""
         return self._temperature
 
     @temperature.setter
     def temperature(self, value: float):
         self._temperature = float(value)
+        self._clear_property_cache()
         self._validate_liquid_state()
 
     @property
     def pressure_temperature(self) -> Tuple[float | None, float]:
-        """Return (pressure [Pa] or None, temperature [K])."""
         return self.pressure, self.temperature
 
     @pressure_temperature.setter
     def pressure_temperature(self, values: Tuple[float | None, float]):
-        """Update state from pressure and temperature."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("pressure_temperature must be set with (pressure, temperature)")
 
         self._pressure = None if values[0] is None else float(values[0])
         self._temperature = float(values[1])
+        self._clear_property_cache()
         self._validate_liquid_state()
 
-    # ---------------- Package-consistent API properties ---------------- #
+    # ---------------- General API properties ---------------- #
 
     @property
     def name(self) -> str:
-        """Canonical RocketProps propellant name."""
         return self.propellant
 
     @property
     def backend(self) -> str:
-        """Name of the wrapped property backend."""
-        return self._BACKEND_NAME
+        if self._rocketprops_name is not None and self._cea_name is not None:
+            return "RocketProps + CEA"
+        if self._rocketprops_name is not None:
+            return "RocketProps"
+        return "CEA"
 
     @property
     def propellant(self) -> str:
-        """Canonical RocketProps propellant name."""
-        return self._propellant_name
+        if self._registry_name is not None:
+            return self._registry_name
+        if self._cea_name is not None:
+            return self._cea_name
+        return str(self._rocketprops_name)
+
+    @property
+    def input_name(self) -> str:
+        return self._input_name
+
+    @property
+    def registry_name(self) -> str | None:
+        return self._registry_name
+
+    @property
+    def rocketprops_name(self) -> str | None:
+        return self._rocketprops_name
+
+    @property
+    def cea_name(self) -> str | None:
+        """Active CEA name for the current state/phase."""
+        return self._cea_name
+
+    @property
+    def cea_species(self) -> str | None:
+        """CEA gas/product species name, when available."""
+        return self._cea_species_name
+
+    @property
+    def cea_reactant(self) -> str | None:
+        """CEA condensed/reference reactant name, when available."""
+        return self._cea_reactant_name
 
     @property
     def species(self) -> list[str]:
-        """Return the propellant name as a one-item species list."""
         return [self.propellant]
 
     @property
-    def phase(self) -> str:
-        """
-        Thermodynamic phase label.
+    def has_rocketprops(self) -> bool:
+        return self._rocketprops_name is not None
 
-        Propellant only exposes liquid RocketProps correlations, so this is
-        always "Liquid" for valid states.
-        """
-        return "Liquid"
+    @property
+    def has_cea(self) -> bool:
+        return self._cea_name is not None
+
+    @property
+    def has_cea_reference_data(self) -> bool:
+        return self._cea_name is not None
+
+    @property
+    def has_cea_species_thermo(self) -> bool:
+        return self._cea_species_name is not None and CEA.has_thermo(self._cea_species_name)
+
+    @property
+    def has_cea_reactant_thermo(self) -> bool:
+        return self._cea_reactant_name is not None and CEA.has_thermo(self._cea_reactant_name)
+
+    @property
+    def has_cea_thermo(self) -> bool:
+        if self._cea_name is None:
+            return False
+        return CEA.has_thermo(self._cea_name)
+
+    @property
+    def has_cea_transport(self) -> bool:
+        if self._cea_name is None:
+            return False
+        try:
+            return CEA.has_transport(self._cea_name)
+        except Exception:
+            return False
+
+    @property
+    def phase(self) -> str:
+        if self._backend is not None and self._active_is_liquid_model:
+            return "Liquid"
+        if self._cea_name is None:
+            return "Unknown"
+        if CEA.is_reactant(self._cea_name):
+            return "Reference Reactant"
+        if CEA.is_condensed(self._cea_name):
+            label = CEA.phase_label(self._cea_name)
+            return f"Condensed ({label})" if label else "Condensed"
+        return "Gas"
 
     @property
     def phase_model(self) -> str:
-        """
-        Return the RocketProps liquid-property model currently being used.
+        if self._backend is not None and self._active_is_liquid_model:
+            rp_model = (
+                "RocketProps saturated liquid table"
+                if self.pressure is None
+                else "RocketProps compressed liquid table"
+            )
 
-        Temperature-only states use saturated-liquid correlations.
-        Temperature-pressure states use compressed-liquid correlations where
-        RocketProps supports them.
-        """
-        if self.pressure is None:
-            return "Saturated Liquid"
-        return "Compressed Liquid"
+            if self._cea_name is None:
+                return rp_model
+
+            if self.has_cea_thermo:
+                return f"{rp_model} + CEA condensed NASA-9 polynomial"
+
+            return f"{rp_model} + CEA reactant/reference data"
+
+        if self.has_cea_thermo:
+            return "CEA NASA-9 polynomial"
+
+        return "CEA reactant/reference data"
 
     @property
-    def quality(self) -> float:
-        """
-        Vapor quality.
-
-        This wrapper only represents liquid-property states, so quality is
-        always 0.0. RocketProps is not being used here as a two-phase solver.
-        """
-        return 0.0
+    def quality(self) -> float | None:
+        if self._backend is not None and self._active_is_liquid_model:
+            return 0.0
+        if self._backend is not None and not self._active_is_liquid_model:
+            return 1.0
+        return None
 
     @quality.setter
     def quality(self, value: float):
-        raise ValueError("Propellant only supports liquid-property states.")
+        raise ValueError("Propellant only supports temperature or pressure-temperature states.")
+
+    # ---------------- Unsupported placeholders ---------------- #
 
     @property
-    def thermal_expansion_coefficient(self) -> None:
-        """Volumetric thermal expansion coefficient is not supported."""
+    def thermal_expansion_coefficient(self):
         return self._unsupported("thermal_expansion_coefficient")
 
     @property
@@ -399,124 +588,596 @@ class Propellant:
         return self._unsupported("gibbs_energy")
 
     @property
-    def gas_constant(self):
-        return self._unsupported("gas_constant")
-
-    @property
     def universal_gas_constant(self):
-        return self._unsupported("universal_gas_constant")
+        return self._RU
 
     @property
     def prandtl(self):
         return self._unsupported("prandtl")
 
     @property
-    def enthalpy(self) -> None:
-        """Enthalpy is not supported by this RocketProps wrapper."""
-        return self._unsupported("enthalpy")
+    def specific_heat_cv(self) -> float | None:
+        if not (
+            self._cea_name is not None
+            and self.has_cea_thermo
+            and CEA.is_gas(self._cea_name)
+        ):
+            return None
+
+        cp = self.specific_heat_cp
+        R = self.gas_constant
+
+        if cp is None or R is None:
+            return None
+
+        cv = cp - R
+
+        if cv <= 0.0:
+            return None
+
+        return self._source("specific_heat_cv", cv, "CEA ideal gas")
+
 
     @property
-    def internal_energy(self) -> None:
-        """Internal energy is not supported by this RocketProps wrapper."""
-        return self._unsupported("internal_energy")
+    def specific_heat_ratio(self) -> float | None:
+        cp = self.specific_heat_cp
+        cv = self.specific_heat_cv
+
+        if cp is None or cv is None or cv <= 0.0:
+            return None
+
+        return self._source("specific_heat_ratio", cp / cv, "CEA ideal gas")
+
 
     @property
-    def entropy(self) -> None:
-        """Entropy is not supported by this RocketProps wrapper."""
-        return self._unsupported("entropy")
+    def speed_of_sound(self) -> float | None:
+        cached = self._cache_get("speed_of_sound")
+        if cached is not None:
+            return cached
+
+        if not (
+            self._cea_name is not None
+            and self.has_cea_thermo
+            and CEA.is_gas(self._cea_name)
+        ):
+            return None
+
+        gamma = self.specific_heat_ratio
+        R = self.gas_constant
+
+        if gamma is None or R is None:
+            return None
+
+        value = gamma * R * self.temperature
+
+        if value <= 0.0:
+            return None
+
+        return self._cache_set("speed_of_sound", self._source("speed_of_sound", float(np.sqrt(value)), "CEA ideal gas"))
+    # ---------------- Thermodynamic/reference properties ---------------- #
 
     @property
-    def specific_heat_cv(self) -> None:
-        """Cv is not supported by this RocketProps wrapper."""
-        return self._unsupported("specific_heat_cv")
+    def molar_mass(self) -> float | None:
+        """Engineering molar mass in kg/mol when physically meaningful.
 
-    @property
-    def specific_heat_ratio(self) -> None:
-        """Specific heat ratio is not supported by this RocketProps wrapper."""
-        return self._unsupported("specific_heat_ratio")
-
-    @property
-    def speed_of_sound(self) -> None:
-        """Speed of sound is not supported by this RocketProps wrapper."""
-        return self._unsupported("speed_of_sound")
-
-    # ---------------- Liquid propellant properties ---------------- #
-
-    @property
-    def density(self) -> float:
+        RocketProps-backed propellants use the RocketProps molecular weight.
+        CEA gas/thermo species use the CEA molecular weight. CEA-only
+        reactant/reference entries such as JP-4 expose their normalized
+        empirical-formula molecular weight through ``cea_formula_molar_mass``
+        instead, because it is not the real fluid molecular weight.
         """
-        Liquid density in kg/m^3.
+        cached = self._cache_get("molar_mass")
+        if cached is not None:
+            return cached
 
-        Uses compressed-liquid density when pressure is provided and supported;
-        otherwise falls back to saturated-liquid density at temperature.
+        value = self._call("MolWt", "MolecularWt", "MolarMass", default=None)
+        if value is not None:
+            return self._cache_set(
+                "molar_mass",
+                self._source("molar_mass", float(value) / 1000.0, "RocketProps"),
+            )
+
+        if (
+            self._cea_name is not None
+            and self.has_cea_thermo
+            and CEA.is_gas(self._cea_name)
+        ):
+            value = self._cea_call("molar_mass", default=None)
+            return self._cache_set("molar_mass", self._source("molar_mass", value, "CEA"))
+
+        return None
+
+    @property
+    def molecular_weight(self) -> float | None:
+        mw = self.molar_mass
+        if mw is None:
+            return None
+        return mw * 1000.0
+
+    @property
+    def cea_formula_molar_mass(self) -> float | None:
+        """CEA molecular weight in kg/mol for the active CEA row.
+
+        For gas/product species, this is the actual molecular weight. For
+        CEA reactant/reference entries such as RP-1, JP-4, and Jet-A, this is
+        the molecular weight of the normalized empirical formula used by CEA
+        for stoichiometry, not necessarily the real propellant molecular weight.
         """
-        value = self._call_compressed("SG_compressed", default=None)
+        cached = self._cache_get("cea_formula_molar_mass")
+        if cached is not None:
+            return cached
 
-        if value is None:
-            value = self._call_at_temperature("SGLiqAtTdegR", "SGAtTdegR", default=None)
+        value = self._cea_call("molar_mass", default=None)
+        return self._cache_set(
+            "cea_formula_molar_mass",
+            self._source("cea_formula_molar_mass", value, "CEA"),
+        )
+
+    @property
+    def cea_molar_mass(self) -> float | None:
+        """Backward-compatible alias for ``cea_formula_molar_mass``."""
+        value = self.cea_formula_molar_mass
+        if value is not None:
+            self._data_sources["cea_molar_mass"] = self.property_source("cea_formula_molar_mass") or "CEA"
+        return value
+
+    @property
+    def gas_constant(self) -> float | None:
+        cached = self._cache_get("gas_constant")
+        if cached is not None:
+            return cached
+
+        if (
+            self._cea_name is not None
+            and self.has_cea_thermo
+            and CEA.is_gas(self._cea_name)
+        ):
+            mw = self.cea_formula_molar_mass
+            if mw is None or mw == 0.0:
+                return None
+            return self._cache_set("gas_constant", self._source("gas_constant", self._RU / mw, "CEA"))
+
+        if self._rocketprops_name is not None:
+            mw = self.molar_mass
+            if mw is None or mw == 0.0:
+                return None
+            source = self.property_source("molar_mass") or "RocketProps"
+            return self._cache_set("gas_constant", self._source("gas_constant", self._RU / mw, source))
+
+        return None
+
+    @property
+    def elemental_composition(self) -> dict[str, float] | None:
+        value = self._cea_call("elemental_composition", default=None)
+        return self._source("elemental_composition", value, "CEA")
+
+    @property
+    def heat_of_formation_molar(self) -> float | None:
+        value = self._cea_call("heat_of_formation_molar", default=None)
+        return self._source("heat_of_formation_molar", value, "CEA")
+
+    @property
+    def heat_of_formation(self) -> float | None:
+        cached = self._cache_get("heat_of_formation")
+        if cached is not None:
+            return cached
+
+        h_molar = self.heat_of_formation_molar
+        mw = self.cea_formula_molar_mass
+
+        if h_molar is None or mw is None or mw == 0.0:
+            return None
+
+        return self._cache_set("heat_of_formation", self._source("heat_of_formation", h_molar / mw, "CEA"))
+
+    @property
+    def enthalpy_of_formation(self) -> float | None:
+        return self.heat_of_formation
+
+    @property
+    def specific_heat_cp(self) -> float | None:
+        cached = self._cache_get("specific_heat_cp")
+        if cached is not None:
+            return cached
+
+        value = self._call_at_temperature("CpAtTdegR", "CpAtT", default=None) if self._active_is_liquid_model else None
+        if value is not None:
+            return self._cache_set(
+                "specific_heat_cp",
+                self._source(
+                    "specific_heat_cp",
+                    float(value) * self._BTU_PER_LBM_R_TO_J_PER_KG_K,
+                    "RocketProps",
+                ),
+            )
+
+        value = self._cea_call("cp_mass", self.temperature, default=None)
+        return self._cache_set("specific_heat_cp", self._source("specific_heat_cp", value, "CEA"))
+
+    @property
+    def specific_heat(self) -> float | None:
+        return self.specific_heat_cp
+
+    @property
+    def enthalpy(self) -> float | None:
+        """Specific enthalpy in J/kg.
+
+        For CEA thermo species, this is the NASA-polynomial enthalpy. For
+        RocketProps liquid reactants with only CEA reference data, this anchors
+        the liquid enthalpy to the CEA heat of formation and integrates the exact
+        thermodynamic liquid relation along the path:
+
+            (Tref, Pref) -> (T, Pref) -> (T, P)
+
+        using RocketProps Cp(T) and v(T, P):
+
+            dh = Cp dT + [v - T (dv/dT)_P] dP
+        """
+        cached = self._cache_get("enthalpy")
+        if cached is not None:
+            return cached
+
+        value = self._cea_call("enthalpy_mass", self.temperature, default=None)
+        if value is not None and self.has_cea_thermo:
+            return self._cache_set("enthalpy", self._source("enthalpy", value, "CEA"))
+
+        if not self._active_is_liquid_model or self._backend is None:
+            return None
+
+        hf = self.heat_of_formation
+        tref = self.reference_temperature
+
+        if hf is None or tref is None:
+            return None
+
+        pref = self.vapor_pressure_at_temperature(tref)
+        if pref is None or not np.isfinite(pref) or pref <= 0.0:
+            pref = self._P0_CEA
+
+        pressure = self.pressure if self.pressure is not None else self.vapor_pressure
+        if pressure is None or not np.isfinite(pressure) or pressure <= 0.0:
+            pressure = pref
+
+        h_temperature, _ = quad(
+            lambda T: self._require_number(
+                self._cp_at_temperature(T, pref),
+                "Could not evaluate RocketProps Cp during liquid enthalpy integration.",
+            ),
+            tref,
+            self.temperature,
+        )
+
+        h_pressure, _ = quad(
+            lambda P: self._dh_dp_liquid(self.temperature, P),
+            pref,
+            pressure,
+        )
+
+        return self._cache_set(
+            "enthalpy",
+            self._source(
+                "enthalpy",
+                float(hf + h_temperature + h_pressure),
+                "CEA Hf + RocketProps",
+            ),
+        )
+
+    @property
+    def internal_energy(self) -> float | None:
+        h = self.enthalpy
+
+        if h is None:
+            return None
+
+        if self._cea_name is not None and CEA.is_gas(self._cea_name):
+            R = self.gas_constant
+            if R is not None:
+                return self._source("internal_energy", h - R * self.temperature, "CEA")
+
+        rho = self.density
+        pressure = self.pressure
+
+        if pressure is not None and rho is not None and rho != 0.0:
+            return self._source(
+                "internal_energy",
+                h - pressure / rho,
+                self.property_source("enthalpy") or "CEA Hf + RocketProps",
+            )
+
+        return None
+
+    def _cp_at_temperature(self, temperature: float, pressure: float | None = None) -> float | None:
+        """RocketProps liquid Cp at a temporary temperature and optional pressure.
+
+        RocketProps Cp is temperature based, but the temporary pressure is still
+        accepted so enthalpy integration follows a clear constant-pressure path.
+        """
+        T_old = self._temperature
+        P_old = self._pressure
+
+        try:
+            self._temperature = float(temperature)
+            if pressure is not None:
+                self._pressure = float(pressure)
+
+            value = self._call_at_temperature("CpAtTdegR", "CpAtT", default=None)
+
+            if value is None:
+                return None
+
+            return float(value) * self._BTU_PER_LBM_R_TO_J_PER_KG_K
+
+        finally:
+            self._temperature = T_old
+            self._pressure = P_old
+
+    def vapor_pressure_at_temperature(self, temperature: float) -> float | None:
+        """RocketProps vapor pressure in Pa at a temporary temperature."""
+        T_old = self._temperature
+
+        try:
+            self._temperature = float(temperature)
+            return self._rocketprops_vapor_pressure_no_source()
+
+        finally:
+            self._temperature = T_old
+
+    def _specific_volume_at(self, temperature: float, pressure: float) -> float | None:
+        """Liquid specific volume in m^3/kg at temporary T and P."""
+        T_old = self._temperature
+        P_old = self._pressure
+
+        try:
+            self._temperature = float(temperature)
+            self._pressure = float(pressure)
+
+            value = self._call_compressed("SG_compressed", default=None)
+
+            if value is None:
+                value = self._call_at_temperature("SGLiqAtTdegR", "SGAtTdegR", default=None)
+
+            if value is None:
+                return None
+
+            rho = float(value) * 1000.0
+
+            if rho == 0.0:
+                return None
+
+            return 1.0 / rho
+
+        finally:
+            self._temperature = T_old
+            self._pressure = P_old
+
+    def _dvdT_constP(self, temperature: float, pressure: float) -> float:
+        """Numerical derivative (dv/dT)_P for RocketProps liquid density."""
+        dT = max(1e-3, abs(float(temperature)) * 1e-5)
+
+        v1 = self._specific_volume_at(float(temperature) - dT, pressure)
+        v2 = self._specific_volume_at(float(temperature) + dT, pressure)
+
+        if v1 is None or v2 is None:
+            raise ValueError("Could not evaluate liquid specific volume derivative.")
+
+        return (v2 - v1) / (2.0 * dT)
+
+    def _dh_dp_liquid(self, temperature: float, pressure: float) -> float:
+        """Liquid (dh/dP)_T = v - T(dv/dT)_P in J/kg/Pa."""
+        v = self._specific_volume_at(temperature, pressure)
+
+        if v is None:
+            raise ValueError("Could not evaluate liquid specific volume.")
+
+        dvdT = self._dvdT_constP(temperature, pressure)
+
+        return float(v - temperature * dvdT)
+
+    @property
+    def standard_entropy(self) -> float | None:
+        cached = self._cache_get("standard_entropy")
+        if cached is not None:
+            return cached
+
+        value = self._cea_call("entropy_mass_standard", self.temperature, default=None)
+        return self._cache_set("standard_entropy", self._source("standard_entropy", value, "CEA"))
+
+    @property
+    def entropy(self) -> float | None:
+        value = self.standard_entropy
 
         if value is None:
             return None
 
-        return float(value) * 1000.0
+        if (
+            self.pressure is not None
+            and self._cea_name is not None
+            and CEA.has_thermo(self._cea_name)
+            and CEA.is_gas(self._cea_name)
+        ):
+            mw = self.cea_formula_molar_mass
+
+            if mw is None or mw == 0.0:
+                return None
+
+            R_cea = self._RU / mw
+            value = value - R_cea * np.log(self.pressure / self._P0_CEA)
+
+        return self._source("entropy", value, "CEA")
 
     @property
-    def specific_volume(self) -> float:
-        """Liquid specific volume in m^3/kg."""
+    def reference_temperature(self) -> float | None:
+        if self._cea_name is None or self._cea_index is None:
+            return None
+
+        if CEA.is_reactant(self._cea_name):
+            ranges = CEA.raw_by_index("t_ranges", self._cea_index)
+
+            if ranges is not None:
+                value = float(ranges[0, 0])
+
+                if np.isfinite(value):
+                    return self._source("reference_temperature", value, "CEA")
+
+        return self._source("reference_temperature", 298.15, "CEA")
+
+    @property
+    def cea_polynomial_temperature_range(self) -> tuple[float, float] | None:
+        if self._cea_name is None or not CEA.has_thermo(self._cea_name):
+            return None
+
+        ranges = CEA.temperature_ranges(self._cea_name)
+
+        if not ranges:
+            return None
+
+        return (
+            self._source("cea_polynomial_minimum_temperature", min(r[0] for r in ranges), "CEA"),
+            self._source("cea_polynomial_maximum_temperature", max(r[1] for r in ranges), "CEA"),
+        )
+
+    @property
+    def minimum_temperature(self) -> float | None:
+        data_range = getattr(self._backend, "T_data_range", None) if self._backend is not None else None
+
+        if data_range is not None:
+            try:
+                return self._source("minimum_temperature", self._K_from_degR(data_range()[0]), "RocketProps")
+            except Exception:
+                pass
+
+        if self._cea_index is not None:
+            ranges = CEA.raw_by_index("t_ranges", self._cea_index)
+            if ranges is not None:
+                vals = [float(row[0]) for row in ranges if np.isfinite(row[0])]
+                if vals:
+                    return self._source("minimum_temperature", min(vals), "CEA")
+
+        return self.freezing_temperature
+
+    @property
+    def maximum_temperature(self) -> float | None:
+        data_range = getattr(self._backend, "T_data_range", None) if self._backend is not None else None
+
+        if data_range is not None:
+            try:
+                return self._source("maximum_temperature", self._K_from_degR(data_range()[1]), "RocketProps")
+            except Exception:
+                pass
+
+        if self._cea_index is not None:
+            ranges = CEA.raw_by_index("t_ranges", self._cea_index)
+            if ranges is not None:
+                vals = [float(row[1]) for row in ranges if np.isfinite(row[1])]
+                if vals:
+                    return self._source("maximum_temperature", max(vals), "CEA")
+
+        return self.critical_temperature
+
+    # ---------------- Liquid / transport properties ---------------- #
+
+    @property
+    def density(self) -> float | None:
+        cached = self._cache_get("density")
+        if cached is not None:
+            return cached
+
+        value = self._call_compressed("SG_compressed", default=None) if self._active_is_liquid_model else None
+
+        if value is None and self._active_is_liquid_model:
+            value = self._call_at_temperature("SGLiqAtTdegR", "SGAtTdegR", default=None)
+
+        if value is not None:
+            return self._cache_set("density", self._source("density", float(value) * 1000.0, "RocketProps"))
+
+        if (
+            self.pressure is not None
+            and self._cea_name is not None
+            and CEA.has_thermo(self._cea_name)
+            and CEA.is_gas(self._cea_name)
+        ):
+            R = self.gas_constant
+            if R is not None and R != 0.0:
+                return self._cache_set("density", self._source("density", self.pressure / (R * self.temperature), "CEA ideal gas"))
+
+        return None
+
+    @property
+    def specific_volume(self) -> float | None:
         rho = self.density
 
         if rho is None or rho == 0:
             return None
 
-        return 1.0 / rho
+        return self._source("specific_volume", 1.0 / rho, self.property_source("density") or "Unknown")
 
     @property
-    def dynamic_viscosity(self) -> float:
-        """
-        Liquid dynamic viscosity in Pa-s.
+    def dynamic_viscosity(self) -> float | None:
+        cached = self._cache_get("dynamic_viscosity")
+        if cached is not None:
+            return cached
 
-        Uses compressed-liquid viscosity when pressure is provided and supported;
-        otherwise falls back to saturated-liquid viscosity at temperature.
-        """
-        value = self._call_compressed("Visc_compressed", default=None)
+        value = self._call_compressed("Visc_compressed", default=None) if self._active_is_liquid_model else None
 
-        if value is None:
+        if value is None and self._active_is_liquid_model:
             value = self._call_at_temperature("ViscAtTdegR", "ViscAtT", default=None)
 
-        if value is None:
-            return None
+        if value is not None:
+            return self._cache_set("dynamic_viscosity", self._source("dynamic_viscosity", float(value) * 0.1, "RocketProps"))
 
-        return float(value) * 0.1
+        value = self._cea_call("viscosity", self.temperature, default=None)
+        return self._cache_set("dynamic_viscosity", self._source("dynamic_viscosity", value, "CEA"))
 
     @property
-    def kinematic_viscosity(self) -> float:
-        """Liquid kinematic viscosity in m^2/s."""
+    def kinematic_viscosity(self) -> float | None:
         mu = self.dynamic_viscosity
         rho = self.density
 
         if mu is None or rho is None or rho == 0:
             return None
 
-        return mu / rho
+        return self._source(
+            "kinematic_viscosity",
+            mu / rho,
+            f"{self.property_source('dynamic_viscosity')} + {self.property_source('density')}",
+        )
 
     @property
-    def vapor_pressure(self) -> float:
-        """Saturation pressure in Pa at the current temperature."""
-        value = self._call_at_temperature("PvapAtTdegR", "PvapAtT", default=None)
+    def conductivity(self) -> float | None:
+        value = self._call_at_temperature("CondAtTdegR", "CondAtT", default=None) if self._active_is_liquid_model else None
 
-        if value is None:
-            return None
+        if value is not None:
+            return self._source(
+                "conductivity",
+                float(value) * self._BTU_PER_HR_FT_R_TO_W_PER_M_K,
+                "RocketProps",
+            )
 
-        return self._Pa_from_psia(value)
+        value = self._cea_call("conductivity", self.temperature, default=None)
+        return self._source("conductivity", value, "CEA")
 
     @property
-    def saturation_pressure(self) -> float:
-        """Alias for vapor_pressure in Pa."""
+    def thermal_conductivity(self) -> float | None:
+        return self.conductivity
+
+    @property
+    def vapor_pressure(self) -> float | None:
+        cached = self._cache_get("vapor_pressure")
+        if cached is not None:
+            return cached
+
+        value = self._rocketprops_vapor_pressure_no_source()
+        return self._cache_set("vapor_pressure", self._source("vapor_pressure", value, "RocketProps"))
+
+    @property
+    def saturation_pressure(self) -> float | None:
         return self.vapor_pressure
 
     @property
-    def saturation_temperature(self) -> float:
-        """Saturation temperature in K at the current pressure."""
+    def saturation_temperature(self) -> float | None:
+        if self._backend is None:
+            return None
+
         if self.pressure is None:
             return self.temperature
 
@@ -529,288 +1190,127 @@ class Propellant:
                 continue
 
             try:
-                return self._K_from_degR(fn(Ppsia))
+                return self._source("saturation_temperature", self._K_from_degR(fn(Ppsia)), "RocketProps")
             except Exception:
                 continue
 
         return None
 
     @property
-    def heat_of_vaporization(self) -> float:
-        """Heat of vaporization in J/kg at current temperature."""
+    def heat_of_vaporization(self) -> float | None:
+        if not self._active_is_liquid_model:
+            return None
         value = self._call_at_temperature("HvapAtTdegR", "HvapAtT", default=None)
 
         if value is None:
             return None
 
-        return float(value) * self._BTU_PER_LBM_TO_J_PER_KG
+        return self._source(
+            "heat_of_vaporization",
+            float(value) * self._BTU_PER_LBM_TO_J_PER_KG,
+            "RocketProps",
+        )
 
     @property
-    def surface_tension(self) -> float:
-        """Liquid surface tension in N/m."""
+    def surface_tension(self) -> float | None:
+        if not self._active_is_liquid_model:
+            return None
         value = self._call_at_temperature("SurfAtTdegR", "SurfAtT", default=None)
 
         if value is None:
             return None
 
-        return float(value) * self._LBF_PER_IN_TO_N_PER_M
+        return self._source("surface_tension", float(value) * self._LBF_PER_IN_TO_N_PER_M, "RocketProps")
 
     @property
-    def specific_heat_cp(self) -> float:
-        """Liquid constant-pressure heat capacity in J/kg-K."""
-        value = self._call_at_temperature("CpAtTdegR", "CpAtT", default=None)
-
-        if value is None:
-            return None
-
-        return float(value) * self._BTU_PER_LBM_R_TO_J_PER_KG_K
-
-    @property
-    def specific_heat(self) -> float:
-        """Backward-compatible alias for Cp."""
-        return self.specific_heat_cp
-
-    @property
-    def conductivity(self) -> float:
-        """Liquid thermal conductivity in W/m-K."""
-        value = self._call_at_temperature("CondAtTdegR", "CondAtT", default=None)
-
-        if value is None:
-            return None
-
-        return float(value) * self._BTU_PER_HR_FT_R_TO_W_PER_M_K
-
-    @property
-    def thermal_conductivity(self) -> float:
-        """Backward-compatible alias for conductivity."""
-        return self.conductivity
-
-    @property
-    def saturated_liquid_compressibility_factor(self) -> float:
-        """
-        Saturated-liquid compressibility factor when RocketProps provides it.
-
-        This is not a general CoolProp-style real-fluid compressibility
-        calculation. The longer name avoids confusion with Fluid.compressibility.
-        """
+    def saturated_liquid_compressibility_factor(self) -> float | None:
         value = self._call_at_temperature("ZLiqAtTdegR", "ZLiqAtT", default=None)
 
         if value is None:
             return None
 
-        return float(value)
+        return self._source("saturated_liquid_compressibility_factor", float(value), "RocketProps")
 
     @property
-    def compressibility(self) -> float:
-        """Alias for saturated-liquid compressibility factor."""
+    def compressibility(self) -> float | None:
         return self.saturated_liquid_compressibility_factor
 
-    # ---------------- CEA reactant/reference properties ---------------- #
+    # ---------------- Static RocketProps properties ---------------- #
 
     @property
-    def cea_reactant(self) -> str | None:
-        """NASA CEA / CEAM reactant name used for combustion calculations."""
-        return self._cea_reactant_name
-
-    @property
-    def elemental_composition(self) -> dict[str, float] | None:
-        """CEA reactant elemental composition as ``{symbol: atom_count}``.
-
-        For example, RP-1 is stored by CEA as a normalized pseudo-formula
-        similar to ``C1 H1.95``. This is combustion bookkeeping data, not a
-        full molecular structure.
-        """
-        symbols = self._cea_value("element_symbols")
-        counts = self._cea_value("element_counts")
-
-        if symbols is None or counts is None:
-            return None
-
-        composition = {}
-
-        for symbol, count in zip(symbols, counts):
-            symbol = str(symbol).strip()
-
-            if not symbol or not np.isfinite(count):
-                continue
-
-            composition[symbol] = float(count)
-
-        return composition
-
-    @property
-    def cea_molar_mass(self) -> float | None:
-        """CEA reactant molar mass in kg/mol.
-
-        This can differ from ``molar_mass`` for pseudo-propellants like RP-1.
-        RocketProps reports a liquid surrogate molecular weight, while CEA may
-        use a normalized reactant formula such as ``C1 H1.95``.
-        """
-        value = self._cea_value("mw")
-
-        if value is None or not np.isfinite(value):
-            return None
-
-        return float(value) / 1000.0
-
-    @property
-    def heat_of_formation_molar(self) -> float | None:
-        """CEA reactant heat of formation at the reference state in J/mol."""
-        value = self._cea_value("hf298")
-
-        if value is None or not np.isfinite(value):
-            return None
-
-        return float(value)
-
-    @property
-    def heat_of_formation(self) -> float | None:
-        """CEA reactant heat of formation at the reference state in J/kg."""
-        h_molar = self.heat_of_formation_molar
-        mw = self.cea_molar_mass
-
-        if h_molar is None or mw is None or mw == 0.0:
-            return None
-
-        return h_molar / mw
-
-    @property
-    def enthalpy_of_formation(self) -> float | None:
-        return self.heat_of_formation
-
-    @property
-    def reference_temperature(self) -> float | None:
-        """CEA reactant reference temperature in K."""
-        ranges = self._cea_value("t_ranges")
-
-        if ranges is None:
-            return None
-
-        value = float(ranges[0, 0])
-
-        if not np.isfinite(value):
-            return None
-
-        return value
-
-    # ---------------- Static/reference properties ---------------- #
-
-    @property
-    def molar_mass(self) -> float:
-        """Molar mass in kg/mol."""
-        value = self._call("MolWt", "MolecularWt", "MolarMass", default=None)
-
-        if value is None:
-            return None
-
-        return float(value) / 1000.0
-
-    @property
-    def critical_pressure(self) -> float:
-        """Critical pressure in Pa."""
+    def critical_pressure(self) -> float | None:
         value = self._call("Pc", "Pcrit", "P_crit", default=None)
 
         if value is None:
             return None
 
-        return self._Pa_from_psia(value)
+        return self._source("critical_pressure", self._Pa_from_psia(value), "RocketProps")
 
     @property
-    def critical_temperature(self) -> float:
-        """Critical temperature in K."""
+    def critical_temperature(self) -> float | None:
         value = self._call("Tc", "Tcrit", "T_crit", default=None)
 
         if value is None:
             return None
 
-        return self._K_from_degR(value)
+        return self._source("critical_temperature", self._K_from_degR(value), "RocketProps")
 
     @property
-    def critical_density(self) -> float:
-        """Critical density in kg/m^3 when available."""
+    def critical_density(self) -> float | None:
         value = self._call("SGc", "rhoc", "rho_crit", default=None)
 
         if value is None:
             return None
 
-        return float(value) * 1000.0
+        return self._source("critical_density", float(value) * 1000.0, "RocketProps")
 
     @property
-    def freezing_temperature(self) -> float:
-        """Freezing temperature in K when available."""
+    def freezing_temperature(self) -> float | None:
         value = self._call("Tfreeze", "Tfrz", "T_freeze", default=None)
 
         if value is None:
             return None
 
-        return self._K_from_degR(value)
+        return self._source("freezing_temperature", self._K_from_degR(value), "RocketProps")
 
     @property
-    def boiling_temperature(self) -> float:
-        """Normal boiling temperature in K when available."""
+    def boiling_temperature(self) -> float | None:
         value = self._call("Tnbp", "Tboil", "T_boil", default=None)
 
         if value is None:
             return None
 
-        return self._K_from_degR(value)
-
-    @property
-    def minimum_temperature(self) -> float:
-        """Minimum valid correlation temperature in K when available."""
-        data_range = getattr(self._backend, "T_data_range", None)
-
-        if data_range is None:
-            return self.freezing_temperature
-
-        try:
-            return self._K_from_degR(data_range()[0])
-        except Exception:
-            return self.freezing_temperature
-
-    @property
-    def maximum_temperature(self) -> float:
-        """Maximum valid correlation temperature in K when available."""
-        data_range = getattr(self._backend, "T_data_range", None)
-
-        if data_range is None:
-            return self.critical_temperature
-
-        try:
-            return self._K_from_degR(data_range()[1])
-        except Exception:
-            return self.critical_temperature
+        return self._source("boiling_temperature", self._K_from_degR(value), "RocketProps")
 
     @property
     def minimum_pressure(self) -> float:
-        """Minimum valid compressed-liquid pressure in Pa when available."""
-        data_range = getattr(self._backend, "P_data_range", None)
+        data_range = getattr(self._backend, "P_data_range", None) if self._backend is not None else None
 
         if data_range is None:
             return 0.0
 
         try:
-            return self._Pa_from_psia(data_range()[0])
+            return self._source("minimum_pressure", self._Pa_from_psia(data_range()[0]), "RocketProps")
         except Exception:
             return 0.0
 
     @property
     def maximum_pressure(self) -> float:
-        """Maximum valid compressed-liquid pressure in Pa when available."""
-        data_range = getattr(self._backend, "P_data_range", None)
+        data_range = getattr(self._backend, "P_data_range", None) if self._backend is not None else None
 
         if data_range is None:
             return float("inf")
 
         try:
-            return self._Pa_from_psia(data_range()[1])
+            return self._source("maximum_pressure", self._Pa_from_psia(data_range()[1]), "RocketProps")
         except Exception:
             return float("inf")
 
     @property
     def is_mixture(self) -> bool:
-        """Return True for common RocketProps named mixture families."""
-        name = self._propellant_name.upper()
+        if self._rocketprops_name is None:
+            return False
+        name = self._rocketprops_name.upper()
         return name.startswith("MON") or name in {"A50", "M20", "MHF3"}
 
     # ---------------- String output ---------------- #
@@ -824,47 +1324,61 @@ class Propellant:
             return str(value)
 
     def _safe_property(self, property_name: str, fmt=".3e"):
-        """
-        Safely format a property for string output.
-
-        Unsupported properties display as N/A instead of raising while printing.
-        Direct user access still raises NotImplementedError.
-        """
         try:
             return self._safe(getattr(self, property_name), fmt)
         except NotImplementedError:
             return "N/A"
 
+    def _source_label(self, property_name: str) -> str:
+        source = self.property_source(property_name)
+        return f" [{source}]" if source else ""
+
     def __str__(self):
         rows = [
             ("Propellant", self.propellant),
+            ("Input name", self.input_name),
+            ("Registry name", self.registry_name or "N/A"),
             ("Backend", self.backend),
-            ("CEA reactant", self._safe(self.cea_reactant) if self.cea_reactant is not None else "N/A"),
+            ("RocketProps name", self.rocketprops_name or "N/A"),
+            ("Active CEA name", self.cea_name or "N/A"),
+            ("CEA species", self.cea_species or "N/A"),
+            ("CEA reactant", self.cea_reactant or "N/A"),
+            ("Has RocketProps", self.has_rocketprops),
+            ("Has CEA", self.has_cea),
+            ("Has CEA reference data", self.has_cea_reference_data),
+            ("Has active CEA thermo", self.has_cea_thermo),
+            ("Has CEA species thermo", self.has_cea_species_thermo),
+            ("Has CEA reactant thermo", self.has_cea_reactant_thermo),
+            ("Has active CEA transport", self.has_cea_transport),
             ("Phase", self.phase),
             ("Phase model", self.phase_model),
-            ("Pressure [Pa]", self._safe(self.pressure, ".3e") if self.pressure is not None else "Saturation"),
+            ("Pressure [Pa]", self._safe(self.pressure, ".3e") if self.pressure is not None else "Saturation/None"),
             ("Temperature [K]", self._safe(self.temperature, ".2f")),
-            ("Density [kg/m³]", self._safe(self.density, ".3f")),
-            ("Specific volume [m³/kg]", self._safe(self.specific_volume, ".3e")),
+            ("Density [kg/m³]" + self._source_label("density"), self._safe(self.density, ".3f")),
+            ("Specific volume [m³/kg]" + self._source_label("specific_volume"), self._safe(self.specific_volume, ".3e")),
             ("Quality", self._safe(self.quality, ".3f")),
-            ("Internal energy [J/kg]", self._safe_property("internal_energy", ".3e")),
-            ("Enthalpy [J/kg]", self._safe_property("enthalpy", ".3e")),
-            ("Entropy [J/kg-K]", self._safe_property("entropy", ".3e")),
-            ("Dynamic viscosity [Pa·s]", self._safe(self.dynamic_viscosity, ".3e")),
-            ("Kinematic viscosity [m²/s]", self._safe(self.kinematic_viscosity, ".3e")),
-            ("Conductivity [W/m-K]", self._safe(self.conductivity, ".3f")),
-            ("Surface tension [N/m]", self._safe(self.surface_tension, ".3e")),
-            ("Vapor pressure [Pa]", self._safe(self.vapor_pressure, ".3e")),
-            ("Saturation temperature [K]", self._safe(self.saturation_temperature, ".2f")),
-            ("Heat of vaporization [J/kg]", self._safe(self.heat_of_vaporization, ".3e")),
-            ("Cp [J/kg-K]", self._safe(self.specific_heat_cp, ".3f")),
-            ("Cv [J/kg-K]", self._safe_property("specific_heat_cv", ".3f")),
-            ("Specific heat ratio", self._safe_property("specific_heat_ratio", ".5f")),
-            ("Molar mass [kg/mol]", self._safe(self.molar_mass, ".6f")),
-            ("CEA molar mass [kg/mol]", self._safe(self.cea_molar_mass, ".6f")),
-            ("CEA Hf [J/kg]", self._safe(self.heat_of_formation, ".3e")),
-            ("CEA Tref [K]", self._safe(self.reference_temperature, ".2f")),
-            ("Speed of sound [m/s]", self._safe_property("speed_of_sound", ".3f")),
+            ("Internal energy [J/kg]" + self._source_label("internal_energy"), self._safe_property("internal_energy", ".3e")),
+            ("Enthalpy [J/kg]" + self._source_label("enthalpy"), self._safe_property("enthalpy", ".3e")),
+            ("Standard entropy [J/kg-K]" + self._source_label("standard_entropy"), self._safe(self.standard_entropy, ".3e")),
+            ("Entropy [J/kg-K]" + self._source_label("entropy"), self._safe_property("entropy", ".3e")),
+            ("Dynamic viscosity [Pa·s]" + self._source_label("dynamic_viscosity"), self._safe(self.dynamic_viscosity, ".3e")),
+            ("Kinematic viscosity [m²/s]" + self._source_label("kinematic_viscosity"), self._safe(self.kinematic_viscosity, ".3e")),
+            ("Conductivity [W/m-K]" + self._source_label("conductivity"), self._safe(self.conductivity, ".3f")),
+            ("Surface tension [N/m]" + self._source_label("surface_tension"), self._safe(self.surface_tension, ".3e")),
+            ("Vapor pressure [Pa]" + self._source_label("vapor_pressure"), self._safe(self.vapor_pressure, ".3e")),
+            ("Saturation temperature [K]" + self._source_label("saturation_temperature"), self._safe(self.saturation_temperature, ".2f")),
+            ("Heat of vaporization [J/kg]" + self._source_label("heat_of_vaporization"), self._safe(self.heat_of_vaporization, ".3e")),
+            ("Cp [J/kg-K]" + self._source_label("specific_heat_cp"), self._safe(self.specific_heat_cp, ".3f")),
+            ("Cv [J/kg-K]" + self._source_label("specific_heat_cv"), self._safe_property("specific_heat_cv", ".3f")),
+            ("Specific heat ratio" + self._source_label("specific_heat_ratio"), self._safe_property("specific_heat_ratio", ".5f")),
+            ("Molar mass [kg/mol]" + self._source_label("molar_mass"), self._safe(self.molar_mass, ".6f")),
+            ("CEA formula MW [kg/mol]" + self._source_label("cea_formula_molar_mass"), self._safe(self.cea_formula_molar_mass, ".6f")),
+            ("CEA Hf [J/kg]" + self._source_label("heat_of_formation"), self._safe(self.heat_of_formation, ".3e")),
+            ("CEA reference T [K]" + self._source_label("reference_temperature"), self._safe(self.reference_temperature, ".2f")),
+            ("CEA thermo range [K]", self.cea_polynomial_temperature_range or "N/A"),
+            ("Gas constant [J/kg-K]" + self._source_label("gas_constant"), self._safe(self.gas_constant, ".3f")),
+            ("Elemental composition" + self._source_label("elemental_composition"), self.elemental_composition or "N/A"),
+            ("Speed of sound [m/s]" + self._source_label("speed_of_sound"), self._safe_property("speed_of_sound", ".3f")),
         ]
 
         width = max(len(r[0]) for r in rows)
@@ -875,76 +1389,74 @@ class Propellant:
         return (
             f"{self.__class__.__name__}(propellant={self.propellant!r}, "
             f"temperature={self.temperature:.2f} K, "
-            f"pressure={pressure} Pa)"
+            f"pressure={pressure} Pa, backend={self.backend!r})"
         )
 
     # ---------------- Utilities ---------------- #
 
     @staticmethod
     def get_available_propellants() -> list[str]:
-        """Return canonical registry names with RocketProps support."""
-        return sorted(CombustionRegistry.propellant_supported_names)
+        names = set(CombustionRegistry.propellant_supported_names)
+        names.update(CombustionRegistry.cea_reactant_supported_names)
+        names.update(CEA.names)
+        return sorted(names)
 
     @staticmethod
     def show_available_propellants() -> list[str]:
-        """Print and return common RocketProps propellant names."""
         names = Propellant.get_available_propellants()
-
         for name in names:
             print(name)
+        return names
 
+    @staticmethod
+    def get_available_cea_species() -> list[str]:
+        return CEA.names
+
+    @staticmethod
+    def show_available_cea_species() -> list[str]:
+        return CEA.show_species()
+
+    @staticmethod
+    def get_available_cea_reactants() -> list[str]:
+        return CEA.reactant_names
+
+    @staticmethod
+    def show_available_cea_reactants() -> list[str]:
+        return CEA.show_reactants()
+
+    @staticmethod
+    def get_available_rocketprops() -> list[str]:
+        return sorted(CombustionRegistry.propellant_supported_names)
+
+    @staticmethod
+    def show_available_rocketprops() -> list[str]:
+        names = Propellant.get_available_rocketprops()
+        for name in names:
+            print(name)
         return names
 
     @staticmethod
     def get_available_fluids() -> list[str]:
-        """Return available RocketProps propellant names.
-
-        Fluid-style alias for API consistency with Fluid.
-        """
         return Propellant.get_available_propellants()
 
     @staticmethod
     def show_available_fluids() -> list[str]:
-        """Print and return available RocketProps propellant names.
-
-        Fluid-style alias for API consistency with Fluid.
-        """
         return Propellant.show_available_propellants()
 
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
-        """Print and return RocketProps-specific propellant aliases."""
-        aliases = CombustionRegistry.propellant_aliases
-
-        if not aliases:
-            return aliases
-
-        width = max(len(alias) for alias in aliases)
-
-        print("Propellant Aliases")
-        print("-" * (width + 20))
-
-        for alias, backend in sorted(aliases.items()):
-            print(f"{alias:<{width}} -> {backend}")
-
-        return dict(aliases)
+        return CombustionRegistry.show_propellant_aliases()
 
     @classmethod
     def available_flash_inputs(cls) -> list[str]:
-        """Return supported propellant state input combinations."""
-        return sorted(
-            "-".join(sorted(inputs))
-            for inputs in cls._FLASH_INPUTS
-        )
+        return sorted("-".join(sorted(inputs)) for inputs in cls._FLASH_INPUTS)
 
     @classmethod
     def supported_flash_inputs(cls) -> list[str]:
-        """Return supported propellant state input combinations."""
         return cls.available_flash_inputs()
 
     @classmethod
     def available_flash_pairs(cls) -> list[str]:
-        """Return supported two-property propellant state input combinations."""
         return sorted(
             "-".join(sorted(inputs))
             for inputs in cls._FLASH_INPUTS
@@ -953,12 +1465,10 @@ class Propellant:
 
     @classmethod
     def supported_flash_pairs(cls) -> list[str]:
-        """Return supported two-property propellant state input combinations."""
         return cls.available_flash_pairs()
 
     @classmethod
     def supported_properties(cls) -> list[str]:
-        """Return public properties intentionally supported by this wrapper."""
         unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
 
         return sorted(
@@ -971,7 +1481,6 @@ class Propellant:
 
     @classmethod
     def show_supported_properties(cls) -> list[str]:
-        """Print and return public properties intentionally supported by this wrapper."""
         properties = cls.supported_properties()
 
         for prop in properties:
@@ -981,5 +1490,4 @@ class Propellant:
 
     @classmethod
     def supports_property(cls, property_name: str) -> bool:
-        """Return True if this wrapper intentionally supports property_name."""
         return property_name in cls.supported_properties()

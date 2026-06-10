@@ -3,7 +3,6 @@ from .IdealGas import IdealGas
 from .Propellant import Propellant
 from .Material import Material
 from .CombustionGas import CombustionGas
-from .CombustionReactants import CombustionReactants
 
 from .FluidRegistry import FluidRegistry
 from .MaterialRegistry import MaterialRegistry
@@ -14,7 +13,6 @@ __all__ = [
     "IdealGas",
     "Propellant",
     "CombustionGas",
-    "CombustionReactants",
     "Material",
     "FluidRegistry",
     "MaterialRegistry",
