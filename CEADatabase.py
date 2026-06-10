@@ -28,20 +28,10 @@ class CEASpecies:
 
 class CEADatabase:
     """
-    Internal helper for parser-generated CEA / CEAM data.
+    Strict-name helper for parser-generated CEA / CEAM data.
 
-    Expected project layout:
-
-        ThermoProp/
-            CEADatabase.py
-            cea_data/
-                thermo_ceam.npz
-                thermo_name_index.json
-                trans_ceam.npz
-                trans_name_index.json
-            src/
-                thermoprop/
-                    ...
+    This class does not apply aliases. Names must match the parsed CEA database
+    exactly, except for leading/trailing whitespace.
     """
 
     _RU = 8.31446261815324
@@ -88,86 +78,65 @@ class CEADatabase:
 
     def resolve_name(self, name: str) -> str:
         """
-        Resolve a user-facing CEA name when possible.
+        Return the exact CEA database name.
 
-        Direct CEA names always work. If CombustionRegistry is importable, this
-        also allows ThermoProp aliases such as "water" -> "H2O" or propellant
-        reactants such as "rp-1" -> "RP-1".
+        No aliases are applied. For example, "Jet-A" will only work if "Jet-A"
+        exists directly in the parsed CEA database.
         """
         raw = str(name).strip()
 
         if raw in self._thermo_index:
             return raw
 
-        try:
-            from src.thermoprop.CombustionRegistry import CombustionRegistry
-        except Exception:
-            CombustionRegistry = None
-
-        if CombustionRegistry is not None:
-            try:
-                resolved = CombustionRegistry.cea_name(raw)
-                if resolved in self._thermo_index:
-                    return resolved
-            except Exception:
-                pass
-
-            try:
-                resolved = CombustionRegistry.cea_reactant_name(raw)
-                if resolved in self._thermo_index:
-                    return resolved
-            except Exception:
-                pass
-
-        raise ValueError(f"Unknown CEA species or reactant: {name!r}")
+        raise ValueError(
+            f"Unknown CEA species or reactant: {name!r}. "
+            "CEA names are strict. Use CEA.show_species(), CEA.names, "
+            "or CEA.find_species(...) to inspect available names."
+        )
 
     @property
     def names(self) -> list[str]:
+        """Return every strict CEA database name."""
         return sorted(self._thermo_index.keys())
 
     @property
+    def species_names(self) -> list[str]:
+        """Alias-free list of every parsed CEA name."""
+        return self.names
+
+    @property
     def transport_names(self) -> list[str]:
+        """Return every strict CEA name with transport data."""
         return sorted(self._transport_index.keys())
 
     @property
     def product_names(self) -> list[str]:
+        """Return species with NASA polynomial thermo data."""
         return sorted(name for name in self.names if self.has_thermo(name))
 
     @property
     def reactant_names(self) -> list[str]:
+        """Return predefined CEA reactant cards."""
         return sorted(name for name in self.names if self.is_reactant(name))
 
     @property
     def product_species(self) -> list[str]:
-        """Return CEA species with NASA polynomial thermo data.
-
-        This includes gas-phase species and condensed-phase species. These are
-        the species that can appear as products in equilibrium calculations.
-        """
         return self.product_names
 
     @property
     def gas_species(self) -> list[str]:
-        """Return gas-phase CEA product species."""
         return sorted(name for name in self.product_names if self.is_gas(name))
 
     @property
     def condensed_species(self) -> list[str]:
-        """Return condensed-phase CEA product species."""
         return sorted(name for name in self.product_names if self.is_condensed(name))
 
     @property
     def predefined_reactants(self) -> list[str]:
-        """Return predefined CEA reactant cards stored in the parsed database.
-
-        These are not the only possible CEA reactants. They are only the
-        database-provided reactant definitions, such as propellant cards.
-        """
         return self.reactant_names
 
     @property
     def all_elements(self) -> set[str]:
-        """Return every element symbol appearing in the parsed CEA database."""
         elements: set[str] = set()
 
         for name in self.names:
@@ -175,19 +144,34 @@ class CEADatabase:
 
         return elements
 
+    def find_species(self, text: str, *, case_sensitive: bool = False) -> list[str]:
+        """
+        Search available CEA names by substring.
+
+        This does not resolve aliases. It only helps inspect strict database names.
+        """
+        query = str(text)
+
+        if case_sensitive:
+            return sorted(name for name in self.names if query in name)
+
+        query = query.lower()
+        return sorted(name for name in self.names if query in name.lower())
+
+    def find_transport_species(self, text: str, *, case_sensitive: bool = False) -> list[str]:
+        query = str(text)
+
+        if case_sensitive:
+            return sorted(name for name in self.transport_names if query in name)
+
+        query = query.lower()
+        return sorted(name for name in self.transport_names if query in name.lower())
+
     def has_species(self, name: str) -> bool:
-        try:
-            self.resolve_name(name)
-            return True
-        except ValueError:
-            return False
+        return str(name).strip() in self._thermo_index
 
     def has_transport(self, name: str) -> bool:
-        try:
-            name = self.resolve_name(name)
-        except ValueError:
-            return False
-
+        name = self.resolve_name(name)
         return name in self._transport_index
 
     def index(self, name: str) -> int:
@@ -244,21 +228,14 @@ class CEADatabase:
         }
 
     def molar_mass(self, name: str) -> float:
-        """Return molar mass in kg/mol."""
         return float(self.raw("mw", name)) / 1000.0
 
     def molecular_weight(self, name: str) -> float:
-        """Return molecular weight in kg/kmol, numerically equal to g/mol."""
         return float(self.raw("mw", name))
 
     def heat_of_formation_molar(self, name: str) -> float | None:
-        """Return heat of formation in J/mol when available."""
         value = float(self.raw("hf298", name))
-
-        if not np.isfinite(value):
-            return None
-
-        return value
+        return value if np.isfinite(value) else None
 
     def elemental_composition(self, name: str) -> dict[str, float]:
         symbols = self.raw("element_symbols", name)
@@ -294,7 +271,6 @@ class CEADatabase:
 
     @staticmethod
     def _phase_label_from_name(name: str) -> str | None:
-        """Return the final parenthesized CEA phase label, if one is present."""
         if not name.endswith(")") or "(" not in name:
             return None
 
@@ -302,52 +278,26 @@ class CEADatabase:
 
     @staticmethod
     def _is_condensed_phase_label(label: str | None) -> bool:
-        """Return True if a final CEA parenthesized label looks like a phase."""
         if not label:
             return False
 
         known_labels = {
-            "L",
-            "l",
-            "liq",
-            "liquid",
-            "cr",
-            "cr1",
-            "cr2",
-            "gr",
-            "graphite",
-            "s",
-            "solid",
-            "a",
-            "b",
-            "c",
-            "d",
-            "e",
-            "alpha",
-            "beta",
-            "gamma",
-            "delta",
-            "I",
-            "II",
-            "III",
-            "IV",
-            "V",
-            "VI",
-            "VII",
-            "VIII",
-            "IX",
-            "X",
+            "L", "l", "liq", "liquid",
+            "cr", "cr1", "cr2",
+            "gr", "graphite",
+            "s", "solid",
+            "a", "b", "c", "d", "e",
+            "alpha", "beta", "gamma", "delta",
+            "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
         }
 
         return label in known_labels
 
     def phase_label(self, name: str) -> str | None:
-        """Return the final CEA phase label for a species, if present."""
         name = self.resolve_name(name)
         return self._phase_label_from_name(name)
 
     def is_condensed(self, name: str) -> bool:
-        """Return True if the species appears to be a condensed CEA product."""
         name = self.resolve_name(name)
 
         if not self.has_thermo(name):
@@ -356,12 +306,10 @@ class CEADatabase:
         return self._is_condensed_phase_label(self.phase_label(name))
 
     def is_gas(self, name: str) -> bool:
-        """Return True if the species is a gas-phase CEA product."""
         name = self.resolve_name(name)
         return self.has_thermo(name) and not self.is_condensed(name)
 
     def element_set(self, name: str) -> set[str]:
-        """Return the set of element symbols present in a species or reactant."""
         return set(self.elemental_composition(name).keys())
 
     def temperature_ranges(self, name: str) -> list[tuple[float, float]]:
@@ -395,10 +343,10 @@ class CEADatabase:
         return max(mins), min(maxs)
 
     def interval_index(self, name: str, temperature: float) -> int:
+        name = self.resolve_name(name)
         idx = self.index(name)
         n = int(self._thermo["n_intervals"][idx])
         T = float(temperature)
-        resolved_name = self.resolve_name(name)
 
         for j in range(n):
             Tmin, Tmax = self._thermo["t_ranges"][idx, j]
@@ -406,36 +354,22 @@ class CEADatabase:
             if Tmin <= T <= Tmax:
                 return int(j)
 
-        raise ValueError(
-            f"No CEA polynomial interval for {resolved_name!r} at T={T:.6g} K."
-        )
+        raise ValueError(f"No CEA polynomial interval for {name!r} at T={T:.6g} K.")
 
     def nasa9_coefficients(self, name: str, temperature: float) -> np.ndarray:
-        resolved_name = self.resolve_name(name)
+        name = self.resolve_name(name)
 
-        if not self.has_thermo(resolved_name):
+        if not self.has_thermo(name):
             raise ValueError(
-                f"{resolved_name!r} has no NASA-9 thermo polynomial data. "
+                f"{name!r} has no NASA-9 thermo polynomial data. "
                 "It is probably a CEA reactant definition."
             )
 
-        idx = self.index(resolved_name)
-        j = self.interval_index(resolved_name, temperature)
+        idx = self.index(name)
+        j = self.interval_index(name, temperature)
         return np.asarray(self._thermo["coeffs"][idx, j], dtype=float)
 
     def thermo_molar(self, name: str, temperature: float) -> tuple[float, float, float]:
-        """
-        Return ideal-gas species thermo in molar units.
-
-        Returns
-        -------
-        cp : float
-            J/kmol-K.
-        h : float
-            J/kmol.
-        s0 : float
-            J/kmol-K at CEA standard-state pressure.
-        """
         T = float(temperature)
         a0, a1, a2, a3, a4, a5, a6, b1, b2 = self.nasa9_coefficients(name, T)
 
@@ -491,7 +425,6 @@ class CEADatabase:
     def thermo_mass(self, name: str, temperature: float) -> tuple[float, float, float]:
         mw = self.molecular_weight(name)
         cp, h, s0 = self.thermo_molar(name, temperature)
-
         return cp / mw, h / mw, s0 / mw
 
     def cp_mass(self, name: str, temperature: float) -> float:
@@ -566,12 +499,10 @@ class CEADatabase:
         return float(np.exp(A * np.log(T) + B / T + C / T**2 + D))
 
     def viscosity(self, name: str, temperature: float) -> float:
-        """Return pure-species viscosity in Pa-s."""
         mu_micro_poise = self.transport_fit(name, temperature, "viscosity")
         return mu_micro_poise * 1e-7
 
     def conductivity(self, name: str, temperature: float) -> float:
-        """Return pure-species thermal conductivity in W/m-K."""
         k_micro_w_cm_k = self.transport_fit(name, temperature, "conductivity")
         return k_micro_w_cm_k * 1e-4
 
@@ -590,6 +521,7 @@ class CEADatabase:
             [self.molecular_weight(name) for name in species_names],
             dtype=float,
         )
+
         return x * mw / np.dot(x, mw)
 
     def mass_to_mole(
@@ -607,6 +539,7 @@ class CEADatabase:
             [self.molecular_weight(name) for name in species_names],
             dtype=float,
         )
+
         inv = w / mw
         return inv / np.sum(inv)
 
@@ -639,9 +572,7 @@ class CEADatabase:
         return self.product_names
 
     def show_product_species(self) -> list[str]:
-        for name in self.product_species:
-            print(name)
-        return self.product_species
+        return self.show_products()
 
     def show_gas_species(self) -> list[str]:
         for name in self.gas_species:

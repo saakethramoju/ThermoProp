@@ -43,15 +43,10 @@ ig = IdealGas(
 
 print(ig)
 
-print(CEA.molar_mass("RP-1"))
-
-p = Propellant("lox", temperature=100)
-
-print(p.reference_temperature)
+print(CEA.describe("Jet-A(L)"))
 
 
-
-
+'''
 from src.thermoprop import CombustionReactants
 
 fuel = Propellant("rp-1", temperature=298.15)
@@ -65,3 +60,4 @@ mix = CombustionReactants(
 
 print(mix)
 print(fuel.specific_heat_cp)
+'''
