@@ -48,3 +48,20 @@ print(CEA.molar_mass("RP-1"))
 p = Propellant("lox", temperature=100)
 
 print(p.reference_temperature)
+
+
+
+
+from src.thermoprop import CombustionReactants
+
+fuel = Propellant("rp-1", temperature=298.15)
+oxidizer = Propellant("lox", temperature=90.0)
+
+mix = CombustionReactants(
+    fuel=fuel,
+    oxidizer=oxidizer,
+    mixture_ratio=2.5,
+)
+
+print(mix)
+print(fuel.specific_heat_cp)
