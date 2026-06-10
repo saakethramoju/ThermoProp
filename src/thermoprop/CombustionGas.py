@@ -1,48 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
-import json
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
 
+from CEADatabase import CEA
 from .CombustionRegistry import CombustionRegistry
-
-
-# Folder containing the parser-generated CEA/CEAM data files.
-CEA_DATA_FOLDER = "cea_data"
-
-_ROOT = Path(__file__).resolve().parents[2]
-_CEA_DATA_DIR = _ROOT / CEA_DATA_FOLDER
-
-_THERMO_PATH = _CEA_DATA_DIR / "thermo_ceam.npz"
-_THERMO_INDEX_PATH = _CEA_DATA_DIR / "thermo_name_index.json"
-_TRANS_PATH = _CEA_DATA_DIR / "trans_ceam.npz"
-_TRANS_INDEX_PATH = _CEA_DATA_DIR / "trans_name_index.json"
-
-if not _THERMO_PATH.exists() or not _THERMO_INDEX_PATH.exists():
-    raise FileNotFoundError(
-        "CEA thermo data files were not found. Expected "
-        f"{_THERMO_PATH} and {_THERMO_INDEX_PATH}."
-    )
-
-_CEA_THERMO_FILE = np.load(_THERMO_PATH, allow_pickle=False)
-_CEA_THERMO = {key: _CEA_THERMO_FILE[key] for key in _CEA_THERMO_FILE.files}
-_CEA_THERMO_FILE.close()
-
-with open(_THERMO_INDEX_PATH, "r") as f:
-    _CEA_THERMO_INDEX = json.load(f)
-
-if _TRANS_PATH.exists() and _TRANS_INDEX_PATH.exists():
-    _CEA_TRANS_FILE = np.load(_TRANS_PATH, allow_pickle=False)
-    _CEA_TRANS = {key: _CEA_TRANS_FILE[key] for key in _CEA_TRANS_FILE.files}
-    _CEA_TRANS_FILE.close()
-
-    with open(_TRANS_INDEX_PATH, "r") as f:
-        _CEA_TRANS_INDEX = json.load(f)
-else:
-    _CEA_TRANS = None
-    _CEA_TRANS_INDEX = {}
 
 
 class CombustionGas:
@@ -82,7 +45,7 @@ class CombustionGas:
     def __init__(
         self,
         composition: Union[str, Dict[str, float]],
-        basis: str = "mole",
+        basis: str = "mass",
         pressure: float | None = None,
         temperature: float | None = None,
         quality: float | None = None,
@@ -156,7 +119,7 @@ class CombustionGas:
         else:
             raise TypeError("composition must be a species name or a dict of fractions.")
 
-        self._M = np.array([self._mw_from_index(i) for i in self._thermo_indices], dtype=float)
+        self._M = np.array([CEA.molecular_weight(name) for name in self._species_names], dtype=float)
         self._minimum_temperature, self._maximum_temperature = self._temperature_limits()
 
         self._validate_temperature()
@@ -175,10 +138,13 @@ class CombustionGas:
             species_name = CombustionRegistry.cea_name(raw_name)
             display_name = CombustionRegistry.name(raw_name)
         except Exception:
-            species_name = raw_name
+            try:
+                species_name = CEA.resolve_name(raw_name)
+            except Exception:
+                species_name = raw_name
             display_name = species_name
 
-        if species_name not in _CEA_THERMO_INDEX and reactant_name is not None:
+        if not CEA.has_species(species_name) and reactant_name is not None:
             raise ValueError(
                 f"{value!r} maps to CEA reactant {reactant_name!r}, not a "
                 "gas-phase CEA product species. CombustionGas is a fixed-"
@@ -187,21 +153,23 @@ class CombustionGas:
                 "their fractions."
             )
 
-        if species_name not in _CEA_THERMO_INDEX:
+        if not CEA.has_species(species_name):
             raise ValueError(
                 f"{value!r} could not be resolved to a CEA thermo species. "
                 "Use a supported CombustionRegistry CEA alias or a direct CEA product "
                 "species name."
             )
 
-        thermo_index = int(_CEA_THERMO_INDEX[species_name])
-        n_intervals = int(_CEA_THERMO["n_intervals"][thermo_index])
+        species_name = CEA.resolve_name(species_name)
+        thermo_index = CEA.index(species_name)
 
-        if n_intervals <= 0 or np.isnan(_CEA_THERMO["coeffs"][thermo_index]).all():
-            elements = cls._elemental_composition_from_index(thermo_index)
+        if not CEA.has_thermo(species_name):
+            elements = CEA.elemental_composition(species_name)
             extra = ""
+
             if reactant_name is not None:
                 extra = f" It also maps to CEA reactant {reactant_name!r}."
+
             raise ValueError(
                 f"{species_name!r} is present in the CEA data, but it has no NASA-9 "
                 "polynomial intervals. It is a CEA reactant definition rather "
@@ -211,15 +179,16 @@ class CombustionGas:
             )
 
         transport_index = None
-        if species_name in _CEA_TRANS_INDEX:
-            transport_index = int(_CEA_TRANS_INDEX[species_name])
+
+        if CEA.has_transport(species_name):
+            transport_index = CEA.transport_index(species_name)
 
         return species_name, display_name, thermo_index, transport_index
 
     @staticmethod
     def _elemental_composition_from_index(index: int) -> dict[str, float]:
-        symbols = _CEA_THERMO["element_symbols"][index]
-        counts = _CEA_THERMO["element_counts"][index]
+        symbols = CEA.raw_by_index("element_symbols", index)
+        counts = CEA.raw_by_index("element_counts", index)
 
         return {
             str(symbol): float(count)
@@ -230,14 +199,13 @@ class CombustionGas:
     @staticmethod
     def _mw_from_index(index: int) -> float:
         """Return molecular weight [kg/kmol], numerically equal to g/mol."""
-        return float(_CEA_THERMO["mw"][index])
+        return float(CEA.raw_by_index("mw", index))
 
     @classmethod
     def _species_molar_mass(cls, species_name: str) -> float:
         """Return molar mass [kg/mol] for a direct CEA species name."""
-        if species_name not in _CEA_THERMO_INDEX:
-            raise ValueError(f"Unknown CEA species: {species_name!r}")
-        return cls._mw_from_index(int(_CEA_THERMO_INDEX[species_name])) / 1000.0
+        species_name = CEA.resolve_name(species_name)
+        return CEA.molar_mass(species_name)
 
     @property
     def pressure(self) -> float:
@@ -369,92 +337,33 @@ class CombustionGas:
             )
 
     def _temperature_limits(self) -> tuple[float, float]:
-        mins = []
-        maxs = []
-
-        for idx in self._thermo_indices:
-            n = int(_CEA_THERMO["n_intervals"][idx])
-            ranges = _CEA_THERMO["t_ranges"][idx, :n]
-            mins.append(float(np.nanmin(ranges[:, 0])))
-            maxs.append(float(np.nanmax(ranges[:, 1])))
-
-        return max(mins), min(maxs)
+        return CEA.temperature_limits(self._species_names)
 
     @staticmethod
     def _interval_index(thermo_index: int, temperature: float) -> int:
-        n = int(_CEA_THERMO["n_intervals"][thermo_index])
-        T = float(temperature)
-
-        for j in range(n):
-            Tmin, Tmax = _CEA_THERMO["t_ranges"][thermo_index, j]
-            if Tmin <= T <= Tmax:
-                return j
-
-        name = str(_CEA_THERMO["names"][thermo_index])
-        raise ValueError(f"No CEA polynomial interval for {name!r} at T={T:.6g} K.")
+        name = str(CEA.raw_by_index("names", thermo_index))
+        return CEA.interval_index(name, temperature)
 
     @classmethod
     def _species_thermo(cls, thermo_index: int, temperature: float) -> tuple[float, float, float]:
-        T = float(temperature)
-        j = cls._interval_index(thermo_index, T)
-
-        a = _CEA_THERMO["coeffs"][thermo_index, j]
-        a0, a1, a2, a3, a4, a5, a6, b1, b2 = a
-        lnT = np.log(T)
-
-        cp_over_R = (
-            a0 / T**2
-            + a1 / T
-            + a2
-            + a3 * T
-            + a4 * T**2
-            + a5 * T**3
-            + a6 * T**4
-        )
-
-        h_over_RT = (
-            -a0 / T**2
-            + a1 * lnT / T
-            + a2
-            + a3 * T / 2.0
-            + a4 * T**2 / 3.0
-            + a5 * T**3 / 4.0
-            + a6 * T**4 / 5.0
-            + b1 / T
-        )
-
-        s_over_R = (
-            -a0 / (2.0 * T**2)
-            - a1 / T
-            + a2 * lnT
-            + a3 * T
-            + a4 * T**2 / 2.0
-            + a5 * T**3 / 3.0
-            + a6 * T**4 / 4.0
-            + b2
-        )
-
-        cp = cp_over_R * cls._RU_KMOL
-        h = h_over_RT * cls._RU_KMOL * T
-        s0 = s_over_R * cls._RU_KMOL
-
-        return float(cp), float(h), float(s0)
+        name = str(CEA.raw_by_index("names", thermo_index))
+        return CEA.thermo_molar(name, temperature)
 
     def _pure_cp_mass(self) -> np.ndarray:
         return np.array(
-            [self._species_thermo(i, self.temperature)[0] / self._M[k] for k, i in enumerate(self._thermo_indices)],
+            [CEA.cp_mass(name, self.temperature) for name in self._species_names],
             dtype=float,
         )
 
     def _pure_h_mass(self) -> np.ndarray:
         return np.array(
-            [self._species_thermo(i, self.temperature)[1] / self._M[k] for k, i in enumerate(self._thermo_indices)],
+            [CEA.enthalpy_mass(name, self.temperature) for name in self._species_names],
             dtype=float,
         )
 
     def _pure_s0_mass(self) -> np.ndarray:
         return np.array(
-            [self._species_thermo(i, self.temperature)[2] / self._M[k] for k, i in enumerate(self._thermo_indices)],
+            [CEA.entropy_mass_standard(name, self.temperature) for name in self._species_names],
             dtype=float,
         )
 
@@ -491,7 +400,7 @@ class CombustionGas:
         pressure_correction_molar = -self._RU_KMOL * np.log(p_i / self._P_REF)
 
         pure_s0_molar = np.array(
-            [self._species_thermo(i, self.temperature)[2] for i in self._thermo_indices],
+            [CEA.entropy_molar_standard(name, self.temperature) for name in self._species_names],
             dtype=float,
         )
 
@@ -516,46 +425,13 @@ class CombustionGas:
 
     @staticmethod
     def _transport_interval_index(transport_index: int, temperature: float, kind: str) -> int:
-        if _CEA_TRANS is None:
-            raise FileNotFoundError(
-                "CEA transport files were not found. Expected "
-                f"{_TRANS_PATH} and {_TRANS_INDEX_PATH}."
-            )
-
-        T = float(temperature)
-
-        if kind == "viscosity":
-            n = int(_CEA_TRANS["n_v"][transport_index])
-            ranges = _CEA_TRANS["v_ranges"][transport_index]
-        elif kind == "conductivity":
-            n = int(_CEA_TRANS["n_c"][transport_index])
-            ranges = _CEA_TRANS["c_ranges"][transport_index]
-        else:
-            raise ValueError(f"Unknown transport kind: {kind!r}")
-
-        for j in range(n):
-            Tmin, Tmax = ranges[j]
-            if Tmin <= T <= Tmax:
-                return j
-
-        raise ValueError(
-            f"No CEA {kind} transport interval for transport index "
-            f"{transport_index} at T={T:.6g} K."
-        )
+        name = str(CEA.transport_names[transport_index])
+        return CEA.transport_interval_index(name, temperature, kind)
 
     @classmethod
     def _transport_fit(cls, transport_index: int, temperature: float, kind: str) -> float:
-        j = cls._transport_interval_index(transport_index, temperature, kind)
-        T = float(temperature)
-
-        if kind == "viscosity":
-            A, B, C, D = _CEA_TRANS["v_coeffs"][transport_index, j]
-        elif kind == "conductivity":
-            A, B, C, D = _CEA_TRANS["c_coeffs"][transport_index, j]
-        else:
-            raise ValueError(f"Unknown transport kind: {kind!r}")
-
-        return float(np.exp(A * np.log(T) + B / T + C / T**2 + D))
+        name = str(CEA.transport_names[transport_index])
+        return CEA.transport_fit(name, temperature, kind)
 
     def _require_transport(self, species_index: int, kind: str) -> int:
         transport_index = self._transport_indices[species_index]
@@ -571,20 +447,18 @@ class CombustionGas:
     def _pure_viscosities(self) -> np.ndarray:
         values = []
 
-        for k in range(len(self._species_names)):
-            idx = self._require_transport(k, "viscosity")
-            mu_micro_poise = self._transport_fit(idx, self.temperature, "viscosity")
-            values.append(mu_micro_poise * 1e-7)
+        for k, name in enumerate(self._species_names):
+            self._require_transport(k, "viscosity")
+            values.append(CEA.viscosity(name, self.temperature))
 
         return np.asarray(values, dtype=float)
 
     def _pure_conductivities(self) -> np.ndarray:
         values = []
 
-        for k in range(len(self._species_names)):
-            idx = self._require_transport(k, "conductivity")
-            k_micro_w_cm_k = self._transport_fit(idx, self.temperature, "conductivity")
-            values.append(k_micro_w_cm_k * 1e-4)
+        for k, name in enumerate(self._species_names):
+            self._require_transport(k, "conductivity")
+            values.append(CEA.conductivity(name, self.temperature))
 
         return np.asarray(values, dtype=float)
 
@@ -778,14 +652,7 @@ class CombustionGas:
     @classmethod
     def get_available_species(cls) -> list[str]:
         """Return direct CEA species names with NASA-9 polynomial data."""
-        names = []
-
-        for name, i in _CEA_THERMO_INDEX.items():
-            idx = int(i)
-            if int(_CEA_THERMO["n_intervals"][idx]) > 0 and not np.isnan(_CEA_THERMO["coeffs"][idx]).all():
-                names.append(name)
-
-        return sorted(names)
+        return CEA.product_species
 
     @classmethod
     def show_available_species(cls) -> list[str]:
@@ -809,20 +676,11 @@ class CombustionGas:
 
     @staticmethod
     def mole_to_mass(species_names: List[str], mole_fractions: List[float]):
-        if not np.isclose(sum(mole_fractions), 1.0, atol=1e-6):
-            raise ValueError("Mole fractions must sum to 1.0.")
-        x = np.asarray(mole_fractions, dtype=float)
-        M = np.array([CombustionGas._species_molar_mass(name) * 1000.0 for name in species_names])
-        return x * M / np.dot(x, M)
+        return CEA.mole_to_mass(species_names, mole_fractions)
 
     @staticmethod
     def mass_to_mole(species_names: List[str], mass_fractions: List[float]):
-        if not np.isclose(sum(mass_fractions), 1.0, atol=1e-6):
-            raise ValueError("Mass fractions must sum to 1.0.")
-        w = np.asarray(mass_fractions, dtype=float)
-        M = np.array([CombustionGas._species_molar_mass(name) * 1000.0 for name in species_names])
-        inv = w / M
-        return inv / inv.sum()
+        return CEA.mass_to_mole(species_names, mass_fractions)
 
     @classmethod
     def supported_properties(cls) -> list[str]:

@@ -1,9 +1,5 @@
-from src.thermoprop import Propellant, CombustionGas
+from src.thermoprop import Propellant, CombustionGas, IdealGas
 from CEADatabase import CEA
-
-p = Propellant("rp-1", temperature=100)
-
-print(p.specific_heat_cp)
 
 gas = CombustionGas(
     {
@@ -14,7 +10,6 @@ gas = CombustionGas(
         "O2": 0.02,
         "N2": 0.23,
     },
-    #basis="mole",
     temperature=3200.0,
     pressure=2.0e6,
 )
@@ -32,4 +27,24 @@ print(gas.thermal_conductivity)
 print(gas.prandtl)
 print(gas)
 
-print(CEA.describe("RP-1"))
+
+ig = IdealGas(
+    {
+        "H2O": 0.35,
+        "CO2": 0.25,
+        "CO": 0.10,
+        "H2": 0.05,
+        "O2": 0.02,
+        "N2": 0.23,
+    },
+    temperature=3200.0,
+    pressure=2.0e6,
+)
+
+print(ig)
+
+print(CEA.molar_mass("RP-1"))
+
+p = Propellant("lox", temperature=100)
+
+print(p.reference_temperature)

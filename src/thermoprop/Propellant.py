@@ -1,42 +1,11 @@
 from __future__ import annotations
 
 from typing import Tuple
-from pathlib import Path
-import json
 
 import numpy as np
 
+from CEADatabase import CEA
 from .CombustionRegistry import CombustionRegistry
-
-
-CEA_DATA_FOLDER = "cea_data"
-
-_CEA_DATA_DIR = Path(__file__).resolve().parents[2] / CEA_DATA_FOLDER
-_CEA_THERMO_PATH = _CEA_DATA_DIR / "thermo_ceam.npz"
-_CEA_THERMO_INDEX_PATH = _CEA_DATA_DIR / "thermo_name_index.json"
-
-
-def _load_cea_thermo_data():
-    """Load CEA reactant/species data once at module import.
-
-    The Propellant wrapper still uses RocketProps for liquid correlations.
-    CEA data are only used for reactant bookkeeping properties needed by
-    combustion calculations, such as elemental composition and heat of
-    formation.
-    """
-    if not _CEA_THERMO_PATH.exists() or not _CEA_THERMO_INDEX_PATH.exists():
-        return None, {}
-
-    thermo = np.load(_CEA_THERMO_PATH, allow_pickle=False)
-
-    with open(_CEA_THERMO_INDEX_PATH, "r") as f:
-        index = json.load(f)
-
-    return thermo, index
-
-
-_CEA_THERMO, _CEA_THERMO_INDEX = _load_cea_thermo_data()
-
 
 class Propellant:
     """
@@ -210,23 +179,18 @@ class Propellant:
         except Exception:
             return None, None
 
-        if _CEA_THERMO is None:
+        if not CEA.has_species(reactant_name):
             return reactant_name, None
 
-        index = _CEA_THERMO_INDEX.get(reactant_name)
-
-        if index is None:
-            return reactant_name, None
-
-        return reactant_name, int(index)
+        return reactant_name, CEA.index(reactant_name)
 
     def _cea_value(self, key: str):
         """Return one raw CEA database value for the cached reactant row."""
-        if self._cea_reactant_index is None or _CEA_THERMO is None:
+        if self._cea_reactant_index is None:
             return None
 
-        return _CEA_THERMO[key][self._cea_reactant_index]
-
+        return CEA.raw_by_index(key, self._cea_reactant_index)
+    
     def _call(self, *names: str, default=None):
         """Return the first available backend attribute or no-argument method."""
         for name in names:
