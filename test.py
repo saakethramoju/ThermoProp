@@ -41,7 +41,7 @@ ig = IdealGas(
     pressure=2.0e6,
 )
 
-#print(ig)
+print(ig)
 
 fuel = Propellant("C2H4", temperature=300, pressure=300*6894)
 print(fuel.speed_of_sound)

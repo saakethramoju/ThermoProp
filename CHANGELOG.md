@@ -1,5 +1,195 @@
 # Changelog
 
+## 1.0.0
+
+### Added
+
+* Added `CEADatabase`, a native NASA CEA / CEAM thermodynamic and transport database interface.
+
+* Added support for:
+
+  * NASA-9 thermodynamic polynomials
+  * NASA CEA transport-property correlations
+  * Species thermodynamic lookup
+  * Species transport-property lookup
+  * Species elemental composition lookup
+  * Species molecular-weight lookup
+  * Species discovery and inspection utilities
+
+* Added the `CombustionGas` wrapper for fixed-composition combustion-product gas mixtures.
+
+* Added support for:
+
+  * Pure combustion-product species
+  * Multi-species gas mixtures
+  * Mass-fraction compositions
+  * Mole-fraction compositions
+  * Thermodynamic property evaluation from NASA CEA data
+  * Transport-property evaluation from NASA CEA data
+  * Wilke mixture transport-property mixing
+
+* Added `CombustionRegistry` for combustion-species and reactant name management.
+
+* Added support for common combustion-species aliases.
+
+* Added support for CEA reactant discovery and lookup.
+
+* Added gas-species inspection utilities:
+
+  * `get_available_species()`
+  * `show_available_species()`
+
+* Added support for:
+
+  * Gas viscosity from NASA CEA transport data
+  * Gas thermal conductivity from NASA CEA transport data
+  * Gas Prandtl number
+  * Gas speed of sound
+  * Gas heat-capacity ratio
+  * Gas constant evaluation
+
+---
+
+### Improved
+
+* Reworked `IdealGas` transport-property support to use NASA CEA transport data when available.
+
+* Retained Sutherland-law viscosity as a fallback for gases without available CEA transport data.
+
+* Added thermal-conductivity support to `IdealGas`.
+
+* Added Prandtl-number support to `IdealGas`.
+
+* Added speed-of-sound support to `IdealGas`.
+
+* Added specific-heat-ratio support to `IdealGas`.
+
+* Improved ideal-gas transport-property accuracy through NASA CEA transport correlations.
+
+* Improved ideal-gas mixture transport calculations through Wilke mixing methods.
+
+* Improved consistency between `IdealGas` and `CombustionGas` thermodynamic property calculations.
+
+* Improved backend interoperability between PYroMat, RocketProps, CoolProp, and NASA CEA.
+
+* Improved internal caching and property-evaluation performance throughout ThermoProp.
+
+---
+
+### Propellant Improvements
+
+* Expanded `Propellant` beyond RocketProps-only fluids.
+
+* Added support for all available NASA CEA species and reactants.
+
+* Added automatic backend selection between RocketProps and NASA CEA.
+
+* Added automatic phase selection when multiple NASA CEA phases are available for a species.
+
+* Added seamless RocketProps + CEA integration for species supported by both databases.
+
+* Added support for:
+
+  * CEA species thermodynamic data
+  * CEA reactant reference data
+  * CEA transport-property data
+  * RocketProps liquid-property data
+
+* Added support for CEA reference-state properties:
+
+  * Heat of formation
+  * Reference temperature
+  * Elemental composition
+  * Formula molecular weight
+
+* Added support for:
+
+  * Standard entropy
+  * Entropy
+  * Internal energy
+  * Enthalpy
+
+* Added thermodynamic integration support for liquid propellants using RocketProps property data and CEA reference states.
+
+* Added speed-of-sound support for gaseous propellants.
+
+* Added specific-heat-ratio support for gaseous propellants.
+
+* Added backend source tracking for all supported properties.
+
+* Improved property availability reporting for mixed RocketProps / CEA species.
+
+* Improved support for gaseous propellants such as:
+
+  * Methane
+  * Hydrogen
+  * Oxygen
+  * Nitrogen
+  * Carbon monoxide
+  * Carbon dioxide
+  * Water vapor
+
+* Improved support for CEA reactant-only fuels such as:
+
+  * RP-1
+  * Jet-A
+  * JP-4
+  * JP-10
+
+---
+
+### API Improvements
+
+* Improved API consistency across:
+
+  * `Fluid`
+  * `IdealGas`
+  * `CombustionGas`
+  * `Propellant`
+  * `Material`
+
+* Standardized property naming and wrapper behavior across all ThermoProp backends.
+
+* Expanded wrapper introspection and species-discovery capabilities.
+
+* Improved error messages and backend reporting.
+
+* Improved registry-based species and propellant lookup infrastructure.
+
+---
+
+### Documentation
+
+* Added CEADatabase documentation.
+
+* Added CombustionGas documentation and examples.
+
+* Added CombustionRegistry documentation and examples.
+
+* Added NASA CEA transport-property documentation.
+
+* Added Propellant backend-selection documentation.
+
+* Added documentation describing RocketProps and CEA interoperability.
+
+* Added combustion-species examples.
+
+* Added fixed-composition combustion-gas examples.
+
+* Added gaseous-propellant examples.
+
+* Expanded supported-species documentation.
+
+* Expanded backend-reference documentation.
+
+* Updated README to reflect support for:
+
+  * Real fluids
+  * Ideal gases
+  * Combustion gases
+  * Rocket propellants
+  * Engineering materials
+
 ## 0.3.3
 
 ### Added

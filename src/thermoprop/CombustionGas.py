@@ -66,6 +66,7 @@ class CombustionGas:
         self._display_names: List[str] = []
         self._thermo_indices: List[int] = []
         self._transport_indices: List[int | None] = []
+        self._property_cache: dict[str, object] = {}
 
         if isinstance(composition, str):
             species_name, display_name, thermo_index, transport_index = self._resolve_species(composition)
@@ -207,6 +208,16 @@ class CombustionGas:
         species_name = CEA.resolve_name(species_name)
         return CEA.molar_mass(species_name)
 
+    def _cache_get(self, property_name: str):
+        return self._property_cache.get(property_name, None)
+
+    def _cache_set(self, property_name: str, value):
+        self._property_cache[property_name] = value
+        return value
+
+    def _clear_property_cache(self) -> None:
+        self._property_cache.clear()
+
     @property
     def pressure(self) -> float:
         return self._pressure
@@ -214,6 +225,7 @@ class CombustionGas:
     @pressure.setter
     def pressure(self, value: float):
         self._pressure = float(value)
+        self._clear_property_cache()
 
     @property
     def temperature(self) -> float:
@@ -222,6 +234,7 @@ class CombustionGas:
     @temperature.setter
     def temperature(self, value: float):
         self._temperature = float(value)
+        self._clear_property_cache()
         self._validate_temperature()
 
     @property
@@ -234,6 +247,7 @@ class CombustionGas:
             raise ValueError("pressure_temperature must be set with (pressure, temperature).")
         self._pressure = float(values[0])
         self._temperature = float(values[1])
+        self._clear_property_cache()
         self._validate_temperature()
 
     @property
@@ -271,6 +285,7 @@ class CombustionGas:
             raise ValueError("Mole fractions must sum to 1.0.")
         self._mole_fractions = np.asarray(value, dtype=float)
         self._mass_fractions = self._mole_fractions * self._M / np.dot(self._mole_fractions, self._M)
+        self._clear_property_cache()
 
     @property
     def mass_fractions(self) -> dict[str, float]:
@@ -288,17 +303,26 @@ class CombustionGas:
         self._mass_fractions = np.asarray(value, dtype=float)
         inv = self._mass_fractions / self._M
         self._mole_fractions = inv / inv.sum()
+        self._clear_property_cache()
 
     @property
     def molar_mass(self) -> float:
         """Mixture molar mass [kg/mol]."""
+        cached = self._cache_get("molar_mass")
+        if cached is not None:
+            return cached
+
         mw_kg_per_kmol = float(np.dot(self._mole_fractions, self._M))
-        return mw_kg_per_kmol / 1000.0
+        return self._cache_set("molar_mass", mw_kg_per_kmol / 1000.0)
 
     @property
     def gas_constant(self) -> float:
         """Mixture gas constant [J/kg-K]."""
-        return self._RU / self.molar_mass
+        cached = self._cache_get("gas_constant")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("gas_constant", self._RU / self.molar_mass)
 
     @property
     def universal_gas_constant(self) -> float:
@@ -310,15 +334,24 @@ class CombustionGas:
 
     @property
     def density(self) -> float:
-        return self.pressure / (self.gas_constant * self.temperature)
+        cached = self._cache_get("density")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("density", self.pressure / (self.gas_constant * self.temperature))
 
     @density.setter
     def density(self, value: float):
         self._pressure = float(value) * self.gas_constant * self.temperature
+        self._clear_property_cache()
 
     @property
     def specific_volume(self) -> float:
-        return 1.0 / self.density
+        cached = self._cache_get("specific_volume")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("specific_volume", 1.0 / self.density)
 
     @property
     def quality(self) -> float:
@@ -350,30 +383,53 @@ class CombustionGas:
         return CEA.thermo_molar(name, temperature)
 
     def _pure_cp_mass(self) -> np.ndarray:
-        return np.array(
+        cached = self._cache_get("_pure_cp_mass")
+        if cached is not None:
+            return cached
+
+        value = np.array(
             [CEA.cp_mass(name, self.temperature) for name in self._species_names],
             dtype=float,
         )
+        return self._cache_set("_pure_cp_mass", value)
 
     def _pure_h_mass(self) -> np.ndarray:
-        return np.array(
+        cached = self._cache_get("_pure_h_mass")
+        if cached is not None:
+            return cached
+
+        value = np.array(
             [CEA.enthalpy_mass(name, self.temperature) for name in self._species_names],
             dtype=float,
         )
+        return self._cache_set("_pure_h_mass", value)
 
     def _pure_s0_mass(self) -> np.ndarray:
-        return np.array(
+        cached = self._cache_get("_pure_s0_mass")
+        if cached is not None:
+            return cached
+
+        value = np.array(
             [CEA.entropy_mass_standard(name, self.temperature) for name in self._species_names],
             dtype=float,
         )
+        return self._cache_set("_pure_s0_mass", value)
 
     @property
     def specific_heat_cp(self) -> float:
-        return float(np.dot(self._mass_fractions, self._pure_cp_mass()))
+        cached = self._cache_get("specific_heat_cp")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("specific_heat_cp", float(np.dot(self._mass_fractions, self._pure_cp_mass())))
 
     @property
     def specific_heat_cv(self) -> float:
-        return self.specific_heat_cp - self.gas_constant
+        cached = self._cache_get("specific_heat_cv")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("specific_heat_cv", self.specific_heat_cp - self.gas_constant)
 
     @property
     def specific_heat(self) -> float:
@@ -381,19 +437,35 @@ class CombustionGas:
 
     @property
     def specific_heat_ratio(self) -> float:
+        cached = self._cache_get("specific_heat_ratio")
+        if cached is not None:
+            return cached
+
         cv = self.specific_heat_cv
-        return None if cv == 0.0 else self.specific_heat_cp / cv
+        return self._cache_set("specific_heat_ratio", None if cv == 0.0 else self.specific_heat_cp / cv)
 
     @property
     def enthalpy(self) -> float:
-        return float(np.dot(self._mass_fractions, self._pure_h_mass()))
+        cached = self._cache_get("enthalpy")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("enthalpy", float(np.dot(self._mass_fractions, self._pure_h_mass())))
 
     @property
     def internal_energy(self) -> float:
-        return self.enthalpy - self.gas_constant * self.temperature
+        cached = self._cache_get("internal_energy")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("internal_energy", self.enthalpy - self.gas_constant * self.temperature)
 
     @property
     def entropy(self) -> float:
+        cached = self._cache_get("entropy")
+        if cached is not None:
+            return cached
+
         p_i = self._mole_fractions * self.pressure
         p_i = np.maximum(p_i, np.finfo(float).tiny)
 
@@ -405,11 +477,15 @@ class CombustionGas:
         )
 
         pure_s_mass_at_pi = (pure_s0_molar + pressure_correction_molar) / self._M
-        return float(np.dot(self._mass_fractions, pure_s_mass_at_pi))
+        return self._cache_set("entropy", float(np.dot(self._mass_fractions, pure_s_mass_at_pi)))
 
     @property
     def gibbs_energy(self) -> float:
-        return self.enthalpy - self.temperature * self.entropy
+        cached = self._cache_get("gibbs_energy")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("gibbs_energy", self.enthalpy - self.temperature * self.entropy)
 
     @property
     def free_energy(self) -> float:
@@ -417,11 +493,19 @@ class CombustionGas:
 
     @property
     def helmholtz_energy(self) -> float:
-        return self.internal_energy - self.temperature * self.entropy
+        cached = self._cache_get("helmholtz_energy")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("helmholtz_energy", self.internal_energy - self.temperature * self.entropy)
 
     @property
     def speed_of_sound(self) -> float:
-        return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self.temperature))
+        cached = self._cache_get("speed_of_sound")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("speed_of_sound", float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self.temperature)))
 
     @staticmethod
     def _transport_interval_index(transport_index: int, temperature: float, kind: str) -> int:
@@ -445,35 +529,42 @@ class CombustionGas:
         return int(transport_index)
 
     def _pure_viscosities(self) -> np.ndarray:
+        cached = self._cache_get("_pure_viscosities")
+        if cached is not None:
+            return cached
+
         values = []
 
         for k, name in enumerate(self._species_names):
             self._require_transport(k, "viscosity")
             values.append(CEA.viscosity(name, self.temperature))
 
-        return np.asarray(values, dtype=float)
+        return self._cache_set("_pure_viscosities", np.asarray(values, dtype=float))
 
     def _pure_conductivities(self) -> np.ndarray:
+        cached = self._cache_get("_pure_conductivities")
+        if cached is not None:
+            return cached
+
         values = []
 
         for k, name in enumerate(self._species_names):
             self._require_transport(k, "conductivity")
             values.append(CEA.conductivity(name, self.temperature))
 
-        return np.asarray(values, dtype=float)
+        return self._cache_set("_pure_conductivities", np.asarray(values, dtype=float))
 
     @staticmethod
     def _wilke_phi(property_values: np.ndarray, molecular_weights: np.ndarray) -> np.ndarray:
-        phi = np.zeros((len(property_values), len(property_values)))
+        values_i = property_values[:, None]
+        values_j = property_values[None, :]
+        weights_i = molecular_weights[:, None]
+        weights_j = molecular_weights[None, :]
 
-        for i in range(len(property_values)):
-            for j in range(len(property_values)):
-                phi[i, j] = (
-                    (1.0 + np.sqrt(property_values[i] / property_values[j]) * (molecular_weights[j] / molecular_weights[i]) ** 0.25) ** 2
-                    / np.sqrt(8.0 * (1.0 + molecular_weights[i] / molecular_weights[j]))
-                )
-
-        return phi
+        return (
+            (1.0 + np.sqrt(values_i / values_j) * (weights_j / weights_i) ** 0.25) ** 2
+            / np.sqrt(8.0 * (1.0 + weights_i / weights_j))
+        )
 
     @staticmethod
     def _wilke_mix(mole_fractions: np.ndarray, values: np.ndarray, molecular_weights: np.ndarray) -> float:
@@ -488,21 +579,29 @@ class CombustionGas:
 
     @property
     def dynamic_viscosity(self) -> float:
+        cached = self._cache_get("dynamic_viscosity")
+        if cached is not None:
+            return cached
+
         mu = self._pure_viscosities()
 
         if not self._mixture:
-            return float(mu[0])
+            return self._cache_set("dynamic_viscosity", float(mu[0]))
 
-        return self._wilke_mix(self._mole_fractions, mu, self._M)
+        return self._cache_set("dynamic_viscosity", self._wilke_mix(self._mole_fractions, mu, self._M))
 
     @property
     def conductivity(self) -> float:
+        cached = self._cache_get("conductivity")
+        if cached is not None:
+            return cached
+
         k = self._pure_conductivities()
 
         if not self._mixture:
-            return float(k[0])
+            return self._cache_set("conductivity", float(k[0]))
 
-        return self._wilke_mix(self._mole_fractions, k, self._M)
+        return self._cache_set("conductivity", self._wilke_mix(self._mole_fractions, k, self._M))
 
     @property
     def thermal_conductivity(self) -> float:
@@ -510,16 +609,24 @@ class CombustionGas:
 
     @property
     def kinematic_viscosity(self) -> float:
-        return self.dynamic_viscosity / self.density
+        cached = self._cache_get("kinematic_viscosity")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("kinematic_viscosity", self.dynamic_viscosity / self.density)
 
     @property
     def prandtl(self) -> float:
+        cached = self._cache_get("prandtl")
+        if cached is not None:
+            return cached
+
         k = self.thermal_conductivity
 
         if k is None or k == 0.0:
             return None
 
-        return self.specific_heat_cp * self.dynamic_viscosity / k
+        return self._cache_set("prandtl", self.specific_heat_cp * self.dynamic_viscosity / k)
 
     @property
     def thermal_expansion_coefficient(self) -> float:
@@ -614,28 +721,44 @@ class CombustionGas:
         def format_dict(d: dict, decimals=5):
             return {k: round(v, decimals) for k, v in d.items()}
 
+        mole_fractions = self.mole_fractions
+        mass_fractions = self.mass_fractions
+        density = self.density
+        internal_energy = self.internal_energy
+        enthalpy = self.enthalpy
+        entropy = self.entropy
+        specific_heat_cp = self.specific_heat_cp
+        specific_heat_cv = self.specific_heat_cv
+        specific_heat_ratio = self.specific_heat_ratio
+        gas_constant = self.gas_constant
+        molar_mass = self.molar_mass
+        dynamic_viscosity = self.dynamic_viscosity
+        thermal_conductivity = self.thermal_conductivity
+        prandtl = self.prandtl
+        speed_of_sound = self.speed_of_sound
+
         rows = [
             ("Gas(es)", ", ".join(self._species_names)),
             ("Backend", self.backend),
-            ("Mole fractions", format_dict(self.mole_fractions, 5)),
-            ("Mass fractions", format_dict(self.mass_fractions, 5)),
+            ("Mole fractions", format_dict(mole_fractions, 5)),
+            ("Mass fractions", format_dict(mass_fractions, 5)),
             ("Phase", self.phase),
             ("Pressure [Pa]", self._safe(self.pressure, ".3e")),
             ("Temperature [K]", self._safe(self.temperature, ".2f")),
-            ("Density [kg/m³]", self._safe(self.density, ".3f")),
+            ("Density [kg/m³]", self._safe(density, ".3f")),
             ("Compressibility Z", self._safe(self.compressibility, ".3f")),
-            ("Internal energy [J/kg]", self._safe(self.internal_energy, ".3e")),
-            ("Enthalpy [J/kg]", self._safe(self.enthalpy, ".3e")),
-            ("Entropy [J/kg-K]", self._safe(self.entropy, ".3e")),
-            ("Cp [J/kg-K]", self._safe(self.specific_heat_cp, ".3f")),
-            ("Cv [J/kg-K]", self._safe(self.specific_heat_cv, ".3f")),
-            ("Specific heat ratio", self._safe(self.specific_heat_ratio, ".5f")),
-            ("Gas constant [J/kg-K]", self._safe(self.gas_constant, ".3f")),
-            ("Molar mass [kg/mol]", self._safe(self.molar_mass, ".6f")),
-            ("Dynamic viscosity [Pa·s]", self._safe(self.dynamic_viscosity, ".3e")),
-            ("Conductivity [W/m-K]", self._safe(self.thermal_conductivity, ".3f")),
-            ("Prandtl number", self._safe(self.prandtl, ".5f")),
-            ("Speed of sound [m/s]", self._safe(self.speed_of_sound, ".3f")),
+            ("Internal energy [J/kg]", self._safe(internal_energy, ".3e")),
+            ("Enthalpy [J/kg]", self._safe(enthalpy, ".3e")),
+            ("Entropy [J/kg-K]", self._safe(entropy, ".3e")),
+            ("Cp [J/kg-K]", self._safe(specific_heat_cp, ".3f")),
+            ("Cv [J/kg-K]", self._safe(specific_heat_cv, ".3f")),
+            ("Specific heat ratio", self._safe(specific_heat_ratio, ".5f")),
+            ("Gas constant [J/kg-K]", self._safe(gas_constant, ".3f")),
+            ("Molar mass [kg/mol]", self._safe(molar_mass, ".6f")),
+            ("Dynamic viscosity [Pa·s]", self._safe(dynamic_viscosity, ".3e")),
+            ("Conductivity [W/m-K]", self._safe(thermal_conductivity, ".3f")),
+            ("Prandtl number", self._safe(prandtl, ".5f")),
+            ("Speed of sound [m/s]", self._safe(speed_of_sound, ".3f")),
         ]
 
         width = max(len(r[0]) for r in rows)

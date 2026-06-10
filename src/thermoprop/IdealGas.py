@@ -161,6 +161,7 @@ class IdealGas:
         self._enthalpy: float | None = None
         self._temperature: float | None = None
         self._last_state_values: dict | None = None
+        self._property_cache: dict[str, object] = {}
 
         self._set_state(
             pressure=pressure,
@@ -199,6 +200,8 @@ class IdealGas:
         internal_energy: float | None = None,
         density: float | None = None,
     ) -> None:
+        self._clear_property_cache()
+
         self._last_state_values = {
             "pressure": pressure,
             "temperature": temperature,
@@ -260,6 +263,16 @@ class IdealGas:
     def _require_pressure(self, property_name: str = "This property"):
         if self._pressure is None:
             raise ValueError(f"{property_name} requires pressure. Set gas.pressure first.")
+
+    def _cache_get(self, property_name: str):
+        return self._property_cache.get(property_name, None)
+
+    def _cache_set(self, property_name: str, value):
+        self._property_cache[property_name] = value
+        return value
+
+    def _clear_property_cache(self) -> None:
+        self._property_cache.clear()
 
     def _mix_mass_weighted(
         self,
@@ -374,6 +387,7 @@ class IdealGas:
 
         self._mole_fractions = np.array(value, dtype=float)
         self._mass_fractions = self._mole_fractions * self._M / np.dot(self._mole_fractions, self._M)
+        self._clear_property_cache()
 
         if self._last_state_values is not None:
             self._set_state(**self._last_state_values)
@@ -396,6 +410,7 @@ class IdealGas:
         self._mass_fractions = np.array(value, dtype=float)
         inv = self._mass_fractions / self._M
         self._mole_fractions = inv / inv.sum()
+        self._clear_property_cache()
 
         if self._last_state_values is not None:
             self._set_state(**self._last_state_values)
@@ -409,6 +424,7 @@ class IdealGas:
     @pressure.setter
     def pressure(self, value: float):
         self._pressure = float(value)
+        self._clear_property_cache()
 
     @property
     def enthalpy(self) -> float:
@@ -416,15 +432,24 @@ class IdealGas:
 
     @enthalpy.setter
     def enthalpy(self, value: float):
+        self._clear_property_cache()
         self._enthalpy = float(value)
         self._temperature = self._temperature_from_enthalpy(self._enthalpy)
 
     @property
     def internal_energy(self) -> float:
-        return self._internal_energy_from_temperature(self._temperature)
+        cached = self._cache_get("internal_energy")
+        if cached is not None:
+            return cached
+
+        return self._cache_set(
+            "internal_energy",
+            self._internal_energy_from_temperature(self._temperature),
+        )
 
     @internal_energy.setter
     def internal_energy(self, value: float):
+        self._clear_property_cache()
         self._temperature = self._temperature_from_internal_energy(float(value))
         self._enthalpy = self._enthalpy_from_temperature(self._temperature)
 
@@ -434,19 +459,28 @@ class IdealGas:
 
     @temperature.setter
     def temperature(self, value: float):
+        self._clear_property_cache()
         self._temperature = float(value)
         self._enthalpy = self._enthalpy_from_temperature(self._temperature)
 
     @property
     def density(self) -> float:
+        cached = self._cache_get("density")
+        if cached is not None:
+            return cached
+
         self._require_pressure("Density")
-        return self._pressure / (self.gas_constant * self._temperature)
+        return self._cache_set(
+            "density",
+            self._pressure / (self.gas_constant * self._temperature),
+        )
 
     @density.setter
     def density(self, value: float):
         if self._temperature is None:
             raise ValueError("Cannot set density without temperature.")
         self._pressure = float(value) * self.gas_constant * self._temperature
+        self._clear_property_cache()
 
     @property
     def pressure_temperature(self) -> Tuple[float | None, float]:
@@ -561,7 +595,11 @@ class IdealGas:
 
     @property
     def specific_volume(self) -> float:
-        return 1.0 / self.density
+        cached = self._cache_get("specific_volume")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("specific_volume", 1.0 / self.density)
             
     @property
     def thermal_expansion_coefficient(self) -> float:
@@ -581,19 +619,44 @@ class IdealGas:
 
     @property
     def molar_mass(self) -> float:
-        return float(1.0 / np.sum(self._mass_fractions / self._M))
+        cached = self._cache_get("molar_mass")
+        if cached is not None:
+            return cached
+
+        return self._cache_set(
+            "molar_mass",
+            float(1.0 / np.sum(self._mass_fractions / self._M)),
+        )
 
     @property
     def gas_constant(self) -> float:
-        return self._RU / self.molar_mass
+        cached = self._cache_get("gas_constant")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("gas_constant", self._RU / self.molar_mass)
 
     @property
     def specific_heat_cp(self) -> float:
-        return self._mix_mass_weighted("cp", temperature=self._temperature)
+        cached = self._cache_get("specific_heat_cp")
+        if cached is not None:
+            return cached
+
+        return self._cache_set(
+            "specific_heat_cp",
+            self._mix_mass_weighted("cp", temperature=self._temperature),
+        )
 
     @property
     def specific_heat_cv(self) -> float:
-        return self._mix_mass_weighted("cv", temperature=self._temperature)
+        cached = self._cache_get("specific_heat_cv")
+        if cached is not None:
+            return cached
+
+        return self._cache_set(
+            "specific_heat_cv",
+            self._mix_mass_weighted("cv", temperature=self._temperature),
+        )
 
     @property
     def specific_heat(self) -> float:
@@ -601,32 +664,48 @@ class IdealGas:
 
     @property
     def specific_heat_ratio(self) -> float:
+        cached = self._cache_get("specific_heat_ratio")
+        if cached is not None:
+            return cached
+
         cp = self.specific_heat_cp
         cv = self.specific_heat_cv
-        return None if cv == 0 else cp / cv
+        value = None if cv == 0 else cp / cv
+        return self._cache_set("specific_heat_ratio", value)
 
     @property
     def free_energy(self) -> float:
+        cached = self._cache_get("free_energy")
+        if cached is not None:
+            return cached
+
         self._require_pressure("Free energy")
         try:
-            return self._mix_mass_weighted(
+            value = self._mix_mass_weighted(
                 "f",
                 temperature=self._temperature,
                 pressure=self._pressure,
             )
         except Exception:
-            return self.internal_energy - self._temperature * self.entropy
+            value = self.internal_energy - self._temperature * self.entropy
+
+        return self._cache_set("free_energy", value)
 
     @property
     def gibbs_energy(self) -> float:
+        cached = self._cache_get("gibbs_energy")
+        if cached is not None:
+            return cached
+
         self._require_pressure("Gibbs energy")
         try:
             if not self._mixture:
-                return self._mix_mass_weighted(
+                value = self._mix_mass_weighted(
                     "g",
                     temperature=self._temperature,
                     pressure=self._pressure,
                 )
+                return self._cache_set("gibbs_energy", value)
 
             vals = []
             for wi, sp, pi in zip(
@@ -635,21 +714,28 @@ class IdealGas:
                 self._partial_pressures(),
             ):
                 vals.append(wi * float(np.asarray(sp.g(T=self._temperature, p=pi)).squeeze()))
-            return float(sum(vals))
+            value = float(sum(vals))
 
         except Exception:
-            return self.enthalpy - self._temperature * self.entropy
+            value = self.enthalpy - self._temperature * self.entropy
+
+        return self._cache_set("gibbs_energy", value)
 
     @property
     def entropy(self) -> float:
+        cached = self._cache_get("entropy")
+        if cached is not None:
+            return cached
+
         self._require_pressure("Entropy")
 
         if not self._mixture:
-            return self._mix_mass_weighted(
+            value = self._mix_mass_weighted(
                 "s",
                 temperature=self._temperature,
                 pressure=self._pressure,
             )
+            return self._cache_set("entropy", value)
 
         vals = []
         for wi, sp, pi in zip(
@@ -658,7 +744,8 @@ class IdealGas:
             self._partial_pressures(),
         ):
             vals.append(wi * float(np.asarray(sp.s(T=self._temperature, p=pi)).squeeze()))
-        return float(sum(vals))
+
+        return self._cache_set("entropy", float(sum(vals)))
 
     @property
     def quality(self) -> float:
@@ -670,7 +757,14 @@ class IdealGas:
 
     @property
     def speed_of_sound(self) -> float:
-        return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self._temperature))
+        cached = self._cache_get("speed_of_sound")
+        if cached is not None:
+            return cached
+
+        return self._cache_set(
+            "speed_of_sound",
+            float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self._temperature)),
+        )
         
     def _build_cea_transport_names(self) -> list[str | None]:
         """Return cached strict CEA names for species with transport data.
@@ -771,21 +865,17 @@ class IdealGas:
             dtype=float,
         )
 
-        phi = np.zeros((len(mu), len(mu)))
+        mu_i = mu[:, None]
+        mu_j = mu[None, :]
+        M_i = M[:, None]
+        M_j = M[None, :]
 
-        for i in range(len(mu)):
-            for j in range(len(mu)):
-                phi[i, j] = (
-                    (1.0 + np.sqrt(mu[i] / mu[j]) * (M[j] / M[i]) ** 0.25) ** 2
-                    / np.sqrt(8.0 * (1.0 + M[i] / M[j]))
-                )
-
-        return float(
-            sum(
-                x[i] * mu[i] / sum(x[j] * phi[i, j] for j in range(len(mu)))
-                for i in range(len(mu))
-            )
+        phi = (
+            (1.0 + np.sqrt(mu_i / mu_j) * (M_j / M_i) ** 0.25) ** 2
+            / np.sqrt(8.0 * (1.0 + M_i / M_j))
         )
+
+        return float(np.sum(x * mu / np.dot(phi, x)))
 
     @property
     def dynamic_viscosity(self) -> float:
@@ -795,15 +885,25 @@ class IdealGas:
         Pure gases use CEADatabase transport fits when available.
         Mixtures use Wilke's rule with those pure-species viscosities.
         """
-        if self._mixture:
-            return self._mixture_viscosity_wilke()
+        cached = self._cache_get("dynamic_viscosity")
+        if cached is not None:
+            return cached
 
-        return self._species_viscosity(self._species_ids[0], 0)
+        if self._mixture:
+            value = self._mixture_viscosity_wilke()
+        else:
+            value = self._species_viscosity(self._species_ids[0], 0)
+
+        return self._cache_set("dynamic_viscosity", value)
 
     @property
     def kinematic_viscosity(self) -> float:
         """Kinematic viscosity [m^2/s]."""
-        return self.dynamic_viscosity / self.density
+        cached = self._cache_get("kinematic_viscosity")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("kinematic_viscosity", self.dynamic_viscosity / self.density)
 
     @property
     def prandtl(self) -> float:
@@ -813,16 +913,20 @@ class IdealGas:
         Pr = Cp * mu / k. Otherwise it falls back to the older Eucken-style
         approximation so existing IdealGas behavior is preserved.
         """
+        cached = self._cache_get("prandtl")
+        if cached is not None:
+            return cached
+
         if not self._mixture:
             try:
                 k = self._species_conductivity(0)
 
                 if k is not None and k != 0.0:
-                    return self.specific_heat_cp * self.dynamic_viscosity / k
+                    return self._cache_set("prandtl", self.specific_heat_cp * self.dynamic_viscosity / k)
             except Exception:
                 pass
 
-        return self._eucken_prandtl
+        return self._cache_set("prandtl", self._eucken_prandtl)
 
     @property
     def conductivity(self) -> float:
@@ -832,9 +936,13 @@ class IdealGas:
         If CEA conductivity is unavailable, this preserves the previous
         approximation k = Cp * mu / Pr.
         """
+        cached = self._cache_get("conductivity")
+        if cached is not None:
+            return cached
+
         if not self._mixture:
             try:
-                return self._species_conductivity(0)
+                return self._cache_set("conductivity", self._species_conductivity(0))
             except Exception:
                 pass
 
@@ -843,7 +951,7 @@ class IdealGas:
         if Pr is None or Pr == 0.0:
             return None
 
-        return self.specific_heat_cp * self.dynamic_viscosity / Pr
+        return self._cache_set("conductivity", self.specific_heat_cp * self.dynamic_viscosity / Pr)
 
     @property
     def thermal_conductivity(self) -> float:
@@ -958,24 +1066,37 @@ class IdealGas:
         def format_dict(d: dict, decimals=3):
             return {k: round(v, decimals) for k, v in d.items()}
 
+        pressure = self.pressure
+        temperature = self.temperature
+        density = self.density if self._pressure is not None else None
+        internal_energy = self.internal_energy
+        enthalpy = self.enthalpy
+        entropy = self.entropy if self._pressure is not None else None
+        cp = self.specific_heat_cp
+        cv = self.specific_heat_cv
+        gamma = self.specific_heat_ratio
+        gas_constant = self.gas_constant
+        molar_mass = self.molar_mass
+        speed_of_sound = self.speed_of_sound
+
         rows = [
             ("Gas(es)", ", ".join(self._display_names)),
             ("Mole fractions", format_dict(self.mole_fractions, 3)),
             ("Mass fractions", format_dict(self.mass_fractions, 3)),
             ("Phase", self.phase),
-            ("Pressure [Pa]", self._safe(self.pressure, ".3e")),
-            ("Temperature [K]", self._safe(self.temperature, ".2f")),
-            ("Density [kg/m³]", self._safe(self.density, ".3f") if self._pressure is not None else "N/A"),
+            ("Pressure [Pa]", self._safe(pressure, ".3e")),
+            ("Temperature [K]", self._safe(temperature, ".2f")),
+            ("Density [kg/m³]", self._safe(density, ".3f") if self._pressure is not None else "N/A"),
             ("Compressibility Z", self._safe(self.compressibility, ".3f")),
-            ("Internal energy [J/kg]", self._safe(self.internal_energy, ".3e")),
-            ("Enthalpy [J/kg]", self._safe(self.enthalpy, ".3e")),
-            ("Entropy [J/kg-K]", self._safe(self.entropy, ".3e") if self._pressure is not None else "N/A"),
-            ("Cp [J/kg-K]", self._safe(self.specific_heat_cp, ".3f")),
-            ("Cv [J/kg-K]", self._safe(self.specific_heat_cv, ".3f")),
-            ("Specific heat ratio", self._safe(self.specific_heat_ratio, ".5f")),
-            ("Gas constant [J/kg-K]", self._safe(self.gas_constant, ".3f")),
-            ("Molar mass [kg/mol]", self._safe(self.molar_mass, ".6f")),
-            ("Speed of sound [m/s]", self._safe(self.speed_of_sound, ".3f")),
+            ("Internal energy [J/kg]", self._safe(internal_energy, ".3e")),
+            ("Enthalpy [J/kg]", self._safe(enthalpy, ".3e")),
+            ("Entropy [J/kg-K]", self._safe(entropy, ".3e") if self._pressure is not None else "N/A"),
+            ("Cp [J/kg-K]", self._safe(cp, ".3f")),
+            ("Cv [J/kg-K]", self._safe(cv, ".3f")),
+            ("Specific heat ratio", self._safe(gamma, ".5f")),
+            ("Gas constant [J/kg-K]", self._safe(gas_constant, ".3f")),
+            ("Molar mass [kg/mol]", self._safe(molar_mass, ".6f")),
+            ("Speed of sound [m/s]", self._safe(speed_of_sound, ".3f")),
         ]
 
         width = max(len(r[0]) for r in rows)

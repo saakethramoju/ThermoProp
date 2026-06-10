@@ -64,6 +64,7 @@ class Propellant:
     _BTU_PER_HR_FT_R_TO_W_PER_M_K = 1.730735
     _LBF_PER_IN_TO_N_PER_M = 175.126835
     _RU = 8.31446261815324
+    _CACHE_MISS = object()
 
     def __init__(
         self,
@@ -257,7 +258,7 @@ class Propellant:
         return value
 
     def _cache_get(self, property_name: str):
-        return self._property_cache.get(property_name, None)
+        return self._property_cache.get(property_name, self._CACHE_MISS)
 
     def _cache_set(self, property_name: str, value: Any):
         self._property_cache[property_name] = value
@@ -597,42 +598,8 @@ class Propellant:
 
     @property
     def specific_heat_cv(self) -> float | None:
-        if not (
-            self._cea_name is not None
-            and self.has_cea_thermo
-            and CEA.is_gas(self._cea_name)
-        ):
-            return None
-
-        cp = self.specific_heat_cp
-        R = self.gas_constant
-
-        if cp is None or R is None:
-            return None
-
-        cv = cp - R
-
-        if cv <= 0.0:
-            return None
-
-        return self._source("specific_heat_cv", cv, "CEA ideal gas")
-
-
-    @property
-    def specific_heat_ratio(self) -> float | None:
-        cp = self.specific_heat_cp
-        cv = self.specific_heat_cv
-
-        if cp is None or cv is None or cv <= 0.0:
-            return None
-
-        return self._source("specific_heat_ratio", cp / cv, "CEA ideal gas")
-
-
-    @property
-    def speed_of_sound(self) -> float | None:
-        cached = self._cache_get("speed_of_sound")
-        if cached is not None:
+        cached = self._cache_get("specific_heat_cv")
+        if cached is not self._CACHE_MISS:
             return cached
 
         if not (
@@ -640,18 +607,60 @@ class Propellant:
             and self.has_cea_thermo
             and CEA.is_gas(self._cea_name)
         ):
-            return None
+            return self._cache_set("specific_heat_cv", None)
+
+        cp = self.specific_heat_cp
+        R = self.gas_constant
+
+        if cp is None or R is None:
+            return self._cache_set("specific_heat_cv", None)
+
+        cv = cp - R
+
+        if cv <= 0.0:
+            return self._cache_set("specific_heat_cv", None)
+
+        return self._cache_set("specific_heat_cv", self._source("specific_heat_cv", cv, "CEA ideal gas"))
+
+
+    @property
+    def specific_heat_ratio(self) -> float | None:
+        cached = self._cache_get("specific_heat_ratio")
+        if cached is not self._CACHE_MISS:
+            return cached
+
+        cp = self.specific_heat_cp
+        cv = self.specific_heat_cv
+
+        if cp is None or cv is None or cv <= 0.0:
+            return self._cache_set("specific_heat_ratio", None)
+
+        return self._cache_set("specific_heat_ratio", self._source("specific_heat_ratio", cp / cv, "CEA ideal gas"))
+
+
+    @property
+    def speed_of_sound(self) -> float | None:
+        cached = self._cache_get("speed_of_sound")
+        if cached is not self._CACHE_MISS:
+            return cached
+
+        if not (
+            self._cea_name is not None
+            and self.has_cea_thermo
+            and CEA.is_gas(self._cea_name)
+        ):
+            return self._cache_set("speed_of_sound", None)
 
         gamma = self.specific_heat_ratio
         R = self.gas_constant
 
         if gamma is None or R is None:
-            return None
+            return self._cache_set("speed_of_sound", None)
 
         value = gamma * R * self.temperature
 
         if value <= 0.0:
-            return None
+            return self._cache_set("speed_of_sound", None)
 
         return self._cache_set("speed_of_sound", self._source("speed_of_sound", float(np.sqrt(value)), "CEA ideal gas"))
     # ---------------- Thermodynamic/reference properties ---------------- #
@@ -667,7 +676,7 @@ class Propellant:
         instead, because it is not the real fluid molecular weight.
         """
         cached = self._cache_get("molar_mass")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         value = self._call("MolWt", "MolecularWt", "MolarMass", default=None)
@@ -685,7 +694,7 @@ class Propellant:
             value = self._cea_call("molar_mass", default=None)
             return self._cache_set("molar_mass", self._source("molar_mass", value, "CEA"))
 
-        return None
+        return self._cache_set("molar_mass", None)
 
     @property
     def molecular_weight(self) -> float | None:
@@ -704,7 +713,7 @@ class Propellant:
         for stoichiometry, not necessarily the real propellant molecular weight.
         """
         cached = self._cache_get("cea_formula_molar_mass")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         value = self._cea_call("molar_mass", default=None)
@@ -724,7 +733,7 @@ class Propellant:
     @property
     def gas_constant(self) -> float | None:
         cached = self._cache_get("gas_constant")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         if (
@@ -734,17 +743,17 @@ class Propellant:
         ):
             mw = self.cea_formula_molar_mass
             if mw is None or mw == 0.0:
-                return None
+                return self._cache_set("gas_constant", None)
             return self._cache_set("gas_constant", self._source("gas_constant", self._RU / mw, "CEA"))
 
         if self._rocketprops_name is not None:
             mw = self.molar_mass
             if mw is None or mw == 0.0:
-                return None
+                return self._cache_set("gas_constant", None)
             source = self.property_source("molar_mass") or "RocketProps"
             return self._cache_set("gas_constant", self._source("gas_constant", self._RU / mw, source))
 
-        return None
+        return self._cache_set("gas_constant", None)
 
     @property
     def elemental_composition(self) -> dict[str, float] | None:
@@ -759,14 +768,14 @@ class Propellant:
     @property
     def heat_of_formation(self) -> float | None:
         cached = self._cache_get("heat_of_formation")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         h_molar = self.heat_of_formation_molar
         mw = self.cea_formula_molar_mass
 
         if h_molar is None or mw is None or mw == 0.0:
-            return None
+            return self._cache_set("heat_of_formation", None)
 
         return self._cache_set("heat_of_formation", self._source("heat_of_formation", h_molar / mw, "CEA"))
 
@@ -777,7 +786,7 @@ class Propellant:
     @property
     def specific_heat_cp(self) -> float | None:
         cached = self._cache_get("specific_heat_cp")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         value = self._call_at_temperature("CpAtTdegR", "CpAtT", default=None) if self._active_is_liquid_model else None
@@ -814,7 +823,7 @@ class Propellant:
             dh = Cp dT + [v - T (dv/dT)_P] dP
         """
         cached = self._cache_get("enthalpy")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         value = self._cea_call("enthalpy_mass", self.temperature, default=None)
@@ -822,13 +831,13 @@ class Propellant:
             return self._cache_set("enthalpy", self._source("enthalpy", value, "CEA"))
 
         if not self._active_is_liquid_model or self._backend is None:
-            return None
+            return self._cache_set("enthalpy", None)
 
         hf = self.heat_of_formation
         tref = self.reference_temperature
 
         if hf is None or tref is None:
-            return None
+            return self._cache_set("enthalpy", None)
 
         pref = self.vapor_pressure_at_temperature(tref)
         if pref is None or not np.isfinite(pref) or pref <= 0.0:
@@ -864,27 +873,34 @@ class Propellant:
 
     @property
     def internal_energy(self) -> float | None:
+        cached = self._cache_get("internal_energy")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         h = self.enthalpy
 
         if h is None:
-            return None
+            return self._cache_set("internal_energy", None)
 
         if self._cea_name is not None and CEA.is_gas(self._cea_name):
             R = self.gas_constant
             if R is not None:
-                return self._source("internal_energy", h - R * self.temperature, "CEA")
+                return self._cache_set("internal_energy", self._source("internal_energy", h - R * self.temperature, "CEA"))
 
         rho = self.density
         pressure = self.pressure
 
         if pressure is not None and rho is not None and rho != 0.0:
-            return self._source(
+            return self._cache_set(
                 "internal_energy",
-                h - pressure / rho,
-                self.property_source("enthalpy") or "CEA Hf + RocketProps",
+                self._source(
+                    "internal_energy",
+                    h - pressure / rho,
+                    self.property_source("enthalpy") or "CEA Hf + RocketProps",
+                ),
             )
 
-        return None
+        return self._cache_set("internal_energy", None)
 
     def _cp_at_temperature(self, temperature: float, pressure: float | None = None) -> float | None:
         """RocketProps liquid Cp at a temporary temperature and optional pressure.
@@ -976,7 +992,7 @@ class Propellant:
     @property
     def standard_entropy(self) -> float | None:
         cached = self._cache_get("standard_entropy")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         value = self._cea_call("entropy_mass_standard", self.temperature, default=None)
@@ -984,10 +1000,14 @@ class Propellant:
 
     @property
     def entropy(self) -> float | None:
+        cached = self._cache_get("entropy")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         value = self.standard_entropy
 
         if value is None:
-            return None
+            return self._cache_set("entropy", None)
 
         if (
             self.pressure is not None
@@ -998,17 +1018,21 @@ class Propellant:
             mw = self.cea_formula_molar_mass
 
             if mw is None or mw == 0.0:
-                return None
+                return self._cache_set("entropy", None)
 
             R_cea = self._RU / mw
             value = value - R_cea * np.log(self.pressure / self._P0_CEA)
 
-        return self._source("entropy", value, "CEA")
+        return self._cache_set("entropy", self._source("entropy", value, "CEA"))
 
     @property
     def reference_temperature(self) -> float | None:
+        cached = self._cache_get("reference_temperature")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         if self._cea_name is None or self._cea_index is None:
-            return None
+            return self._cache_set("reference_temperature", None)
 
         if CEA.is_reactant(self._cea_name):
             ranges = CEA.raw_by_index("t_ranges", self._cea_index)
@@ -1017,24 +1041,29 @@ class Propellant:
                 value = float(ranges[0, 0])
 
                 if np.isfinite(value):
-                    return self._source("reference_temperature", value, "CEA")
+                    return self._cache_set("reference_temperature", self._source("reference_temperature", value, "CEA"))
 
-        return self._source("reference_temperature", 298.15, "CEA")
+        return self._cache_set("reference_temperature", self._source("reference_temperature", 298.15, "CEA"))
 
     @property
     def cea_polynomial_temperature_range(self) -> tuple[float, float] | None:
+        cached = self._cache_get("cea_polynomial_temperature_range")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         if self._cea_name is None or not CEA.has_thermo(self._cea_name):
-            return None
+            return self._cache_set("cea_polynomial_temperature_range", None)
 
         ranges = CEA.temperature_ranges(self._cea_name)
 
         if not ranges:
-            return None
+            return self._cache_set("cea_polynomial_temperature_range", None)
 
-        return (
+        value = (
             self._source("cea_polynomial_minimum_temperature", min(r[0] for r in ranges), "CEA"),
             self._source("cea_polynomial_maximum_temperature", max(r[1] for r in ranges), "CEA"),
         )
+        return self._cache_set("cea_polynomial_temperature_range", value)
 
     @property
     def minimum_temperature(self) -> float | None:
@@ -1079,7 +1108,7 @@ class Propellant:
     @property
     def density(self) -> float | None:
         cached = self._cache_get("density")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         value = self._call_compressed("SG_compressed", default=None) if self._active_is_liquid_model else None
@@ -1100,21 +1129,25 @@ class Propellant:
             if R is not None and R != 0.0:
                 return self._cache_set("density", self._source("density", self.pressure / (R * self.temperature), "CEA ideal gas"))
 
-        return None
+        return self._cache_set("density", None)
 
     @property
     def specific_volume(self) -> float | None:
+        cached = self._cache_get("specific_volume")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         rho = self.density
 
         if rho is None or rho == 0:
-            return None
+            return self._cache_set("specific_volume", None)
 
-        return self._source("specific_volume", 1.0 / rho, self.property_source("density") or "Unknown")
+        return self._cache_set("specific_volume", self._source("specific_volume", 1.0 / rho, self.property_source("density") or "Unknown"))
 
     @property
     def dynamic_viscosity(self) -> float | None:
         cached = self._cache_get("dynamic_viscosity")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         value = self._call_compressed("Visc_compressed", default=None) if self._active_is_liquid_model else None
@@ -1130,31 +1163,45 @@ class Propellant:
 
     @property
     def kinematic_viscosity(self) -> float | None:
+        cached = self._cache_get("kinematic_viscosity")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         mu = self.dynamic_viscosity
         rho = self.density
 
         if mu is None or rho is None or rho == 0:
-            return None
+            return self._cache_set("kinematic_viscosity", None)
 
-        return self._source(
+        return self._cache_set(
             "kinematic_viscosity",
-            mu / rho,
-            f"{self.property_source('dynamic_viscosity')} + {self.property_source('density')}",
+            self._source(
+                "kinematic_viscosity",
+                mu / rho,
+                f"{self.property_source('dynamic_viscosity')} + {self.property_source('density')}",
+            ),
         )
 
     @property
     def conductivity(self) -> float | None:
+        cached = self._cache_get("conductivity")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         value = self._call_at_temperature("CondAtTdegR", "CondAtT", default=None) if self._active_is_liquid_model else None
 
         if value is not None:
-            return self._source(
+            return self._cache_set(
                 "conductivity",
-                float(value) * self._BTU_PER_HR_FT_R_TO_W_PER_M_K,
-                "RocketProps",
+                self._source(
+                    "conductivity",
+                    float(value) * self._BTU_PER_HR_FT_R_TO_W_PER_M_K,
+                    "RocketProps",
+                ),
             )
 
         value = self._cea_call("conductivity", self.temperature, default=None)
-        return self._source("conductivity", value, "CEA")
+        return self._cache_set("conductivity", self._source("conductivity", value, "CEA"))
 
     @property
     def thermal_conductivity(self) -> float | None:
@@ -1163,7 +1210,7 @@ class Propellant:
     @property
     def vapor_pressure(self) -> float | None:
         cached = self._cache_get("vapor_pressure")
-        if cached is not None:
+        if cached is not self._CACHE_MISS:
             return cached
 
         value = self._rocketprops_vapor_pressure_no_source()
@@ -1175,11 +1222,15 @@ class Propellant:
 
     @property
     def saturation_temperature(self) -> float | None:
+        cached = self._cache_get("saturation_temperature")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         if self._backend is None:
-            return None
+            return self._cache_set("saturation_temperature", None)
 
         if self.pressure is None:
-            return self.temperature
+            return self._cache_set("saturation_temperature", self.temperature)
 
         Ppsia = self._psia_from_Pa(self.pressure)
 
@@ -1190,46 +1241,61 @@ class Propellant:
                 continue
 
             try:
-                return self._source("saturation_temperature", self._K_from_degR(fn(Ppsia)), "RocketProps")
+                return self._cache_set("saturation_temperature", self._source("saturation_temperature", self._K_from_degR(fn(Ppsia)), "RocketProps"))
             except Exception:
                 continue
 
-        return None
+        return self._cache_set("saturation_temperature", None)
 
     @property
     def heat_of_vaporization(self) -> float | None:
+        cached = self._cache_get("heat_of_vaporization")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         if not self._active_is_liquid_model:
-            return None
+            return self._cache_set("heat_of_vaporization", None)
         value = self._call_at_temperature("HvapAtTdegR", "HvapAtT", default=None)
 
         if value is None:
-            return None
+            return self._cache_set("heat_of_vaporization", None)
 
-        return self._source(
+        return self._cache_set(
             "heat_of_vaporization",
-            float(value) * self._BTU_PER_LBM_TO_J_PER_KG,
-            "RocketProps",
+            self._source(
+                "heat_of_vaporization",
+                float(value) * self._BTU_PER_LBM_TO_J_PER_KG,
+                "RocketProps",
+            ),
         )
 
     @property
     def surface_tension(self) -> float | None:
+        cached = self._cache_get("surface_tension")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         if not self._active_is_liquid_model:
-            return None
+            return self._cache_set("surface_tension", None)
         value = self._call_at_temperature("SurfAtTdegR", "SurfAtT", default=None)
 
         if value is None:
-            return None
+            return self._cache_set("surface_tension", None)
 
-        return self._source("surface_tension", float(value) * self._LBF_PER_IN_TO_N_PER_M, "RocketProps")
+        return self._cache_set("surface_tension", self._source("surface_tension", float(value) * self._LBF_PER_IN_TO_N_PER_M, "RocketProps"))
 
     @property
     def saturated_liquid_compressibility_factor(self) -> float | None:
+        cached = self._cache_get("saturated_liquid_compressibility_factor")
+        if cached is not self._CACHE_MISS:
+            return cached
+
         value = self._call_at_temperature("ZLiqAtTdegR", "ZLiqAtT", default=None)
 
         if value is None:
-            return None
+            return self._cache_set("saturated_liquid_compressibility_factor", None)
 
-        return self._source("saturated_liquid_compressibility_factor", float(value), "RocketProps")
+        return self._cache_set("saturated_liquid_compressibility_factor", self._source("saturated_liquid_compressibility_factor", float(value), "RocketProps"))
 
     @property
     def compressibility(self) -> float | None:
@@ -1334,6 +1400,31 @@ class Propellant:
         return f" [{source}]" if source else ""
 
     def __str__(self):
+        density = self.density
+        specific_volume = self.specific_volume
+        internal_energy = self.internal_energy
+        enthalpy = self.enthalpy
+        standard_entropy = self.standard_entropy
+        entropy = self.entropy
+        dynamic_viscosity = self.dynamic_viscosity
+        kinematic_viscosity = self.kinematic_viscosity
+        conductivity = self.conductivity
+        surface_tension = self.surface_tension
+        vapor_pressure = self.vapor_pressure
+        saturation_temperature = self.saturation_temperature
+        heat_of_vaporization = self.heat_of_vaporization
+        specific_heat_cp = self.specific_heat_cp
+        specific_heat_cv = self.specific_heat_cv
+        specific_heat_ratio = self.specific_heat_ratio
+        molar_mass = self.molar_mass
+        cea_formula_molar_mass = self.cea_formula_molar_mass
+        heat_of_formation = self.heat_of_formation
+        reference_temperature = self.reference_temperature
+        cea_thermo_range = self.cea_polynomial_temperature_range
+        gas_constant = self.gas_constant
+        elemental_composition = self.elemental_composition
+        speed_of_sound = self.speed_of_sound
+
         rows = [
             ("Propellant", self.propellant),
             ("Input name", self.input_name),
@@ -1354,31 +1445,31 @@ class Propellant:
             ("Phase model", self.phase_model),
             ("Pressure [Pa]", self._safe(self.pressure, ".3e") if self.pressure is not None else "Saturation/None"),
             ("Temperature [K]", self._safe(self.temperature, ".2f")),
-            ("Density [kg/m³]" + self._source_label("density"), self._safe(self.density, ".3f")),
-            ("Specific volume [m³/kg]" + self._source_label("specific_volume"), self._safe(self.specific_volume, ".3e")),
+            ("Density [kg/m³]" + self._source_label("density"), self._safe(density, ".3f")),
+            ("Specific volume [m³/kg]" + self._source_label("specific_volume"), self._safe(specific_volume, ".3e")),
             ("Quality", self._safe(self.quality, ".3f")),
-            ("Internal energy [J/kg]" + self._source_label("internal_energy"), self._safe_property("internal_energy", ".3e")),
-            ("Enthalpy [J/kg]" + self._source_label("enthalpy"), self._safe_property("enthalpy", ".3e")),
-            ("Standard entropy [J/kg-K]" + self._source_label("standard_entropy"), self._safe(self.standard_entropy, ".3e")),
-            ("Entropy [J/kg-K]" + self._source_label("entropy"), self._safe_property("entropy", ".3e")),
-            ("Dynamic viscosity [Pa·s]" + self._source_label("dynamic_viscosity"), self._safe(self.dynamic_viscosity, ".3e")),
-            ("Kinematic viscosity [m²/s]" + self._source_label("kinematic_viscosity"), self._safe(self.kinematic_viscosity, ".3e")),
-            ("Conductivity [W/m-K]" + self._source_label("conductivity"), self._safe(self.conductivity, ".3f")),
-            ("Surface tension [N/m]" + self._source_label("surface_tension"), self._safe(self.surface_tension, ".3e")),
-            ("Vapor pressure [Pa]" + self._source_label("vapor_pressure"), self._safe(self.vapor_pressure, ".3e")),
-            ("Saturation temperature [K]" + self._source_label("saturation_temperature"), self._safe(self.saturation_temperature, ".2f")),
-            ("Heat of vaporization [J/kg]" + self._source_label("heat_of_vaporization"), self._safe(self.heat_of_vaporization, ".3e")),
-            ("Cp [J/kg-K]" + self._source_label("specific_heat_cp"), self._safe(self.specific_heat_cp, ".3f")),
-            ("Cv [J/kg-K]" + self._source_label("specific_heat_cv"), self._safe_property("specific_heat_cv", ".3f")),
-            ("Specific heat ratio" + self._source_label("specific_heat_ratio"), self._safe_property("specific_heat_ratio", ".5f")),
-            ("Molar mass [kg/mol]" + self._source_label("molar_mass"), self._safe(self.molar_mass, ".6f")),
-            ("CEA formula MW [kg/mol]" + self._source_label("cea_formula_molar_mass"), self._safe(self.cea_formula_molar_mass, ".6f")),
-            ("CEA Hf [J/kg]" + self._source_label("heat_of_formation"), self._safe(self.heat_of_formation, ".3e")),
-            ("CEA reference T [K]" + self._source_label("reference_temperature"), self._safe(self.reference_temperature, ".2f")),
-            ("CEA thermo range [K]", self.cea_polynomial_temperature_range or "N/A"),
-            ("Gas constant [J/kg-K]" + self._source_label("gas_constant"), self._safe(self.gas_constant, ".3f")),
-            ("Elemental composition" + self._source_label("elemental_composition"), self.elemental_composition or "N/A"),
-            ("Speed of sound [m/s]" + self._source_label("speed_of_sound"), self._safe_property("speed_of_sound", ".3f")),
+            ("Internal energy [J/kg]" + self._source_label("internal_energy"), self._safe(internal_energy, ".3e")),
+            ("Enthalpy [J/kg]" + self._source_label("enthalpy"), self._safe(enthalpy, ".3e")),
+            ("Standard entropy [J/kg-K]" + self._source_label("standard_entropy"), self._safe(standard_entropy, ".3e")),
+            ("Entropy [J/kg-K]" + self._source_label("entropy"), self._safe(entropy, ".3e")),
+            ("Dynamic viscosity [Pa·s]" + self._source_label("dynamic_viscosity"), self._safe(dynamic_viscosity, ".3e")),
+            ("Kinematic viscosity [m²/s]" + self._source_label("kinematic_viscosity"), self._safe(kinematic_viscosity, ".3e")),
+            ("Conductivity [W/m-K]" + self._source_label("conductivity"), self._safe(conductivity, ".3f")),
+            ("Surface tension [N/m]" + self._source_label("surface_tension"), self._safe(surface_tension, ".3e")),
+            ("Vapor pressure [Pa]" + self._source_label("vapor_pressure"), self._safe(vapor_pressure, ".3e")),
+            ("Saturation temperature [K]" + self._source_label("saturation_temperature"), self._safe(saturation_temperature, ".2f")),
+            ("Heat of vaporization [J/kg]" + self._source_label("heat_of_vaporization"), self._safe(heat_of_vaporization, ".3e")),
+            ("Cp [J/kg-K]" + self._source_label("specific_heat_cp"), self._safe(specific_heat_cp, ".3f")),
+            ("Cv [J/kg-K]" + self._source_label("specific_heat_cv"), self._safe(specific_heat_cv, ".3f")),
+            ("Specific heat ratio" + self._source_label("specific_heat_ratio"), self._safe(specific_heat_ratio, ".5f")),
+            ("Molar mass [kg/mol]" + self._source_label("molar_mass"), self._safe(molar_mass, ".6f")),
+            ("CEA formula MW [kg/mol]" + self._source_label("cea_formula_molar_mass"), self._safe(cea_formula_molar_mass, ".6f")),
+            ("CEA Hf [J/kg]" + self._source_label("heat_of_formation"), self._safe(heat_of_formation, ".3e")),
+            ("CEA reference T [K]" + self._source_label("reference_temperature"), self._safe(reference_temperature, ".2f")),
+            ("CEA thermo range [K]", cea_thermo_range or "N/A"),
+            ("Gas constant [J/kg-K]" + self._source_label("gas_constant"), self._safe(gas_constant, ".3f")),
+            ("Elemental composition" + self._source_label("elemental_composition"), elemental_composition or "N/A"),
+            ("Speed of sound [m/s]" + self._source_label("speed_of_sound"), self._safe(speed_of_sound, ".3f")),
         ]
 
         width = max(len(r[0]) for r in rows)
