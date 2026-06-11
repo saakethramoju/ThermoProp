@@ -6,14 +6,14 @@ import numpy as np
 from scipy.integrate import quad
 
 from CEADatabase import CEA
-from .CombustionRegistry import CombustionRegistry
+from SpeciesDatabase import SpeciesDatabase
 
 
 class Propellant:
     """
     Combined RocketProps / CEA propellant and reactant property wrapper.
 
-    Propellant resolves names through CombustionRegistry first. When the
+    Propellant resolves names through SpeciesDatabase first. When the
     registry maps a name to RocketProps, RocketProps is used for liquid
     engineering properties. When the registry maps a name to a CEA reactant, or
     when the input is an exact strict CEA database name, CEA is used for
@@ -65,6 +65,33 @@ class Propellant:
     _LBF_PER_IN_TO_N_PER_M = 175.126835
     _RU = 8.31446261815324
     _CACHE_MISS = object()
+    _CEA_REFERENCE_HINTS = {
+        "Ammonia": "NH3(L)",
+        "NH3": "NH3(L)",
+        "CLF5": "CLF5",
+        "Ethanol": "C2H5OH(L)",
+        "F2": "F2(L)",
+        "Fluorine": "F2(L)",
+        "H2O2": "H2O2(L)",
+        "Hydrogen": "H2(L)",
+        "PH2": "H2(L)",
+        "IRFNA": "IRFNA",
+        "MMH": "CH6N2(L)",
+        "Methane": "CH4(L)",
+        "Methanol": "CH3OH(L)",
+        "N2H4": "N2H4(L)",
+        "N2O4": "N2O4(L)",
+        "NitrousOxide": "N2O",
+        "N2O": "N2O",
+        "Oxygen": "O2(L)",
+        "LOX": "O2(L)",
+        "RP1": "RP-1",
+        "UDMH": "C2H8N2(L),UDMH",
+        "Water": "H2O(L)",
+        "n-Propane": "C3H8(L)",
+        "Propane": "C3H8(L)",
+    }
+
 
     def __init__(
         self,
@@ -99,7 +126,7 @@ class Propellant:
                 f"Unknown propellant or CEA species: {propellant!r}. "
                 "Use Propellant.show_available_propellants(), "
                 "Propellant.show_available_cea_species(), or "
-                "CombustionRegistry.show_propellant_aliases() to inspect names."
+                "SpeciesDatabase.supported_species('Propellant') to inspect names."
             )
 
         if self._rocketprops_name is not None:
@@ -111,27 +138,73 @@ class Propellant:
     # ---------------- Resolution ---------------- #
 
     def _resolve_backends(self, propellant: str) -> None:
-        """Resolve RocketProps and CEA names without applying CEA aliases."""
+        """Resolve RocketProps and CEA names.
+
+        The registry no longer stores CEA reactant cards. It only supplies
+        durable cross-backend species names and RocketProps names. Liquid or
+        reference CEA rows are discovered here from the input name, registry
+        name, RocketProps name, CEA species name, exact CEA names, and a small
+        legacy hint table for propellants whose CEA reference name is not
+        directly recoverable from the RocketProps name.
+        """
+        raw = str(propellant).strip()
+
         try:
-            record = CombustionRegistry.propellant_record(propellant)
+            record = SpeciesDatabase._record(raw)
             self._registry_name = record.name
             self._rocketprops_name = record.rocketprops
 
             if record.cea is not None:
                 self._set_cea_species_name_if_present(record.cea)
 
-            if record.cea_reactant is not None:
-                self._set_cea_reactant_name_if_present(record.cea_reactant)
+            self._set_discovered_cea_reference_name(
+                raw,
+                self._registry_name,
+                self._rocketprops_name,
+                self._cea_species_name,
+            )
 
-            return
+            if self._rocketprops_name is not None or self._cea_species_name is not None or self._cea_reactant_name is not None:
+                return
+
         except Exception:
             pass
-
-        raw = str(propellant).strip()
 
         if CEA.has_species(raw):
             self._set_exact_cea_name(raw)
             return
+
+        try:
+            record = SpeciesDatabase._record(raw)
+            self._registry_name = record.name
+
+            if record.cea is not None:
+                self._set_cea_species_name_if_present(record.cea)
+
+            try:
+                self._rocketprops_name = SpeciesDatabase._rocketprops_name(raw)
+            except Exception:
+                pass
+
+            self._set_discovered_cea_reference_name(
+                raw,
+                self._registry_name,
+                self._rocketprops_name,
+                self._cea_species_name,
+            )
+
+            if self._rocketprops_name is not None or self._cea_species_name is not None or self._cea_reactant_name is not None:
+                return
+
+        except Exception:
+            pass
+
+        try:
+            self._rocketprops_name = SpeciesDatabase._rocketprops_name(raw)
+            self._set_discovered_cea_reference_name(raw, self._rocketprops_name)
+            return
+        except Exception:
+            pass
 
         try:
             from rocketprops.rocket_prop import get_prop
@@ -141,6 +214,96 @@ class Propellant:
         backend = get_prop(raw)
         if backend is not None:
             self._rocketprops_name = raw
+            self._set_discovered_cea_reference_name(raw)
+
+    @classmethod
+    def _normalize_cea_search_key(cls, value: str) -> str:
+        return (
+            str(value)
+            .strip()
+            .lower()
+            .replace(" ", "")
+            .replace("_", "")
+            .replace("-", "")
+        )
+
+    @classmethod
+    def _cea_reference_candidates(cls, *values: str | None) -> list[str]:
+        """Return likely CEA condensed/reference names for the supplied names."""
+        candidates: list[str] = []
+
+        def add(value):
+            if value is None:
+                return
+            value = str(value).strip()
+            if not value or value in candidates:
+                return
+            candidates.append(value)
+
+        for value in values:
+            if value is None:
+                continue
+
+            raw = str(value).strip()
+            upper = raw.upper()
+
+            add(raw)
+            add(upper)
+
+            hint = cls._CEA_REFERENCE_HINTS.get(raw) or cls._CEA_REFERENCE_HINTS.get(upper)
+            add(hint)
+
+            if upper == "RP1":
+                add("RP-1")
+            if upper == "LOX":
+                add("O2(L)")
+            if upper in {"PH2", "LH2"}:
+                add("H2(L)")
+
+            if raw and not raw.endswith(")"):
+                add(f"{raw}(L)")
+                add(f"{upper}(L)")
+
+        return candidates
+
+    def _set_discovered_cea_reference_name(self, *values: str | None) -> None:
+        """Find a CEA condensed/reference row without registry reactant cards."""
+        if self._cea_reactant_name is not None:
+            return
+
+        candidates = self._cea_reference_candidates(*values)
+
+        for candidate in candidates:
+            if candidate is not None and CEA.has_species(candidate):
+                name = CEA.resolve_name(candidate)
+                if not (CEA.has_thermo(name) and CEA.is_gas(name)):
+                    self._set_cea_reactant_name_if_present(name)
+                    return
+
+        try:
+            reactant_names = list(CEA.reactant_names)
+        except Exception:
+            reactant_names = []
+
+        candidate_keys = {
+            self._normalize_cea_search_key(candidate)
+            for candidate in candidates
+            if candidate is not None
+        }
+
+        for name in reactant_names:
+            key = self._normalize_cea_search_key(name)
+            if key in candidate_keys:
+                self._set_cea_reactant_name_if_present(name)
+                return
+
+        # Last pass: allow named CEA cards like C2H8N2(L),UDMH to match UDMH.
+        for name in reactant_names:
+            key = self._normalize_cea_search_key(name)
+            for candidate_key in candidate_keys:
+                if candidate_key and candidate_key in key:
+                    self._set_cea_reactant_name_if_present(name)
+                    return
 
     def _set_cea_species_name_if_present(self, name: str) -> None:
         if CEA.has_species(name):
@@ -1487,8 +1650,8 @@ class Propellant:
 
     @staticmethod
     def get_available_propellants() -> list[str]:
-        names = set(CombustionRegistry.propellant_supported_names)
-        names.update(CombustionRegistry.cea_reactant_supported_names)
+        names = set(SpeciesDatabase.supported_species("Propellant"))
+        names.update(CEA.reactant_names)
         names.update(CEA.names)
         return sorted(names)
 
@@ -1517,7 +1680,11 @@ class Propellant:
 
     @staticmethod
     def get_available_rocketprops() -> list[str]:
-        return sorted(CombustionRegistry.propellant_supported_names)
+        return sorted(
+            name
+            for name in SpeciesDatabase.species()
+            if SpeciesDatabase._record(name).rocketprops is not None
+        )
 
     @staticmethod
     def show_available_rocketprops() -> list[str]:
@@ -1536,7 +1703,7 @@ class Propellant:
 
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
-        return CombustionRegistry.show_propellant_aliases()
+        return {}
 
     @classmethod
     def available_flash_inputs(cls) -> list[str]:

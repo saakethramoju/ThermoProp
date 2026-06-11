@@ -6,7 +6,7 @@ from functools import lru_cache
 
 import CoolProp.CoolProp as CP
 
-from .FluidRegistry import FluidRegistry
+from SpeciesDatabase import SpeciesDatabase
 
 
 class Fluid:
@@ -1104,13 +1104,67 @@ class Fluid:
 
     # ---------------- Utilities ---------------- #
     @classmethod
+    def _database_name(cls, user_name: str) -> str:
+        """Return the canonical ThermoProp species name from SpeciesDatabase."""
+        for method_name in ("_name", "name", "resolve"):
+            method = getattr(SpeciesDatabase, method_name, None)
+            if method is not None:
+                return method(user_name)
+
+        species = getattr(SpeciesDatabase, "species", None)
+        if species is not None and str(user_name) in species():
+            return str(user_name)
+
+        raise ValueError(f"Unknown ThermoProp species name or alias: {user_name!r}")
+
+    @classmethod
+    def _database_coolprop_name(cls, user_name: str) -> str:
+        """Return the CoolProp backend name from SpeciesDatabase."""
+        for method_name in ("_coolprop_name", "coolprop_name"):
+            method = getattr(SpeciesDatabase, method_name, None)
+            if method is not None:
+                return method(user_name)
+
+        raise ValueError(f"{user_name!r} is not supported by Fluid/CoolProp.")
+
+    @classmethod
+    def _database_supported_fluid_species(cls) -> list[str]:
+        """Return ThermoProp species names that support the Fluid wrapper."""
+        supported_species = getattr(SpeciesDatabase, "supported_species", None)
+        if supported_species is not None:
+            return list(supported_species("Fluid"))
+
+        supported_names = getattr(SpeciesDatabase, "supported_names", None)
+        if supported_names is not None:
+            return list(supported_names("Fluid"))
+
+        names = getattr(SpeciesDatabase, "coolprop_supported_names", None)
+        if names is not None:
+            return list(names)
+
+        raise AttributeError(
+            "SpeciesDatabase must expose supported_species('Fluid') or an "
+            "equivalent internal Fluid-support list."
+        )
+
+    @classmethod
+    def _database_supported_coolprop_names(cls) -> list[str]:
+        """Return CoolProp backend names supported by the Fluid wrapper."""
+        backend_names: set[str] = set()
+
+        for name in cls._database_supported_fluid_species():
+            try:
+                backend_names.add(cls._database_coolprop_name(name))
+            except Exception:
+                continue
+
+        return sorted(backend_names)
+
+    @classmethod
     def _normalize_name(cls, user_name: str) -> Tuple[str, str]:
-        """
-        Return (backend_name, display_name). If user_name is an alias, map it to
-        the CoolProp backend name but preserve user input for display.
-        """
-        backend = FluidRegistry.coolprop_name(user_name)
-        display = FluidRegistry.name(user_name)
+        """Return (CoolProp backend name, ThermoProp display name)."""
+        backend = cls._database_coolprop_name(user_name)
+        display = cls._database_name(user_name)
         return backend, display
 
 
@@ -1224,11 +1278,8 @@ class Fluid:
 
     @staticmethod
     def get_available_fluids() -> List[str]:
-        """Return available CoolProp fluid names."""
-        return sorted(
-            FluidRegistry.coolprop_name(name)
-            for name in FluidRegistry.coolprop_supported_names
-        )
+        """Return available CoolProp backend fluid names."""
+        return Fluid._database_supported_coolprop_names()
 
     @staticmethod
     def show_available_fluids() -> List[str]:

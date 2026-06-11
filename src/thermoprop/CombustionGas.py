@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple, Union
 import numpy as np
 
 from CEADatabase import CEA
-from .CombustionRegistry import CombustionRegistry
+from SpeciesDatabase import SpeciesDatabase
 
 
 class CombustionGas:
@@ -127,17 +127,12 @@ class CombustionGas:
 
     @classmethod
     def _resolve_species(cls, value: str) -> tuple[str, str, int, int | None]:
-        """Resolve a user species name/alias to CEA species and table indices."""
+        """Resolve a user species name/alias to a CEA gas species and table indices."""
         raw_name = str(value).strip()
 
         try:
-            reactant_name = CombustionRegistry.cea_reactant_name(raw_name)
-        except Exception:
-            reactant_name = None
-
-        try:
-            species_name = CombustionRegistry.cea_name(raw_name)
-            display_name = CombustionRegistry.name(raw_name)
+            species_name = SpeciesDatabase._cea_name(raw_name)
+            display_name = SpeciesDatabase._name(raw_name)
         except Exception:
             try:
                 species_name = CEA.resolve_name(raw_name)
@@ -145,19 +140,10 @@ class CombustionGas:
                 species_name = raw_name
             display_name = species_name
 
-        if not CEA.has_species(species_name) and reactant_name is not None:
-            raise ValueError(
-                f"{value!r} maps to CEA reactant {reactant_name!r}, not a "
-                "gas-phase CEA product species. CombustionGas is a fixed-"
-                "composition gas-property wrapper, so it needs product species "
-                "such as 'H2O', 'CO2', 'CO', 'H2', 'O2', 'OH', or a dict of "
-                "their fractions."
-            )
-
         if not CEA.has_species(species_name):
             raise ValueError(
                 f"{value!r} could not be resolved to a CEA thermo species. "
-                "Use a supported CombustionRegistry CEA alias or a direct CEA product "
+                "Use a supported SpeciesDatabase alias or a direct CEA product "
                 "species name."
             )
 
@@ -166,17 +152,18 @@ class CombustionGas:
 
         if not CEA.has_thermo(species_name):
             elements = CEA.elemental_composition(species_name)
-            extra = ""
-
-            if reactant_name is not None:
-                extra = f" It also maps to CEA reactant {reactant_name!r}."
-
             raise ValueError(
                 f"{species_name!r} is present in the CEA data, but it has no NASA-9 "
-                "polynomial intervals. It is a CEA reactant definition rather "
-                "than a gas-phase thermodynamic species. "
-                f"Elemental composition: {elements}.{extra} "
+                "polynomial intervals. It is a CEA reactant/reference definition "
+                "rather than a gas-phase thermodynamic species. "
+                f"Elemental composition: {elements}. "
                 "CombustionGas only accepts product/species entries with polynomial data."
+            )
+
+        if not CEA.is_gas(species_name):
+            raise ValueError(
+                f"{species_name!r} is a CEA condensed/reference entry, not a gas species. "
+                "CombustionGas only accepts gas-phase CEA product species."
             )
 
         transport_index = None
@@ -774,8 +761,8 @@ class CombustionGas:
 
     @classmethod
     def get_available_species(cls) -> list[str]:
-        """Return direct CEA species names with NASA-9 polynomial data."""
-        return CEA.product_species
+        """Return ThermoProp species supported by CombustionGas."""
+        return SpeciesDatabase.supported_species("CombustionGas")
 
     @classmethod
     def show_available_species(cls) -> list[str]:

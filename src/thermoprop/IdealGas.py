@@ -6,7 +6,7 @@ import numpy as np
 from scipy.optimize import root_scalar
 import pyromat as pm
 
-from .FluidRegistry import FluidRegistry
+from SpeciesDatabase import SpeciesDatabase
 from CEADatabase import CEA
 
 
@@ -777,7 +777,7 @@ class IdealGas:
 
         for display_name in self._display_names:
             try:
-                cea_name = FluidRegistry.cea_name(display_name)
+                cea_name = self._database_cea_name(display_name)
 
                 if CEA.has_transport(cea_name):
                     names.append(CEA.resolve_name(cea_name))
@@ -1115,10 +1115,71 @@ class IdealGas:
     # ---------------- Utilities ---------------- #
 
     @classmethod
+    def _database_name(cls, user_name: str) -> str:
+        """Return the canonical ThermoProp species name from SpeciesDatabase."""
+        for method_name in ("_name", "name", "resolve"):
+            method = getattr(SpeciesDatabase, method_name, None)
+            if method is not None:
+                return method(user_name)
+
+        species = getattr(SpeciesDatabase, "species", None)
+        if species is not None and str(user_name) in species():
+            return str(user_name)
+
+        raise ValueError(f"Unknown ThermoProp species name or alias: {user_name!r}")
+
+    @classmethod
+    def _database_pyromat_name(cls, user_name: str, *, include_prefix: bool = False) -> str:
+        """Return the PYroMat backend species name from SpeciesDatabase."""
+        for method_name in ("_pyromat_name", "pyromat_name"):
+            method = getattr(SpeciesDatabase, method_name, None)
+            if method is not None:
+                try:
+                    return method(user_name, include_prefix=include_prefix)
+                except TypeError:
+                    name = method(user_name)
+                    if include_prefix and not str(name).startswith("ig."):
+                        return f"ig.{name}"
+                    return name
+
+        raise ValueError(f"{user_name!r} is not supported by IdealGas/PYroMat.")
+
+    @classmethod
+    def _database_cea_name(cls, user_name: str) -> str:
+        """Return the CEA backend species name from SpeciesDatabase."""
+        for method_name in ("_cea_name", "cea_name"):
+            method = getattr(SpeciesDatabase, method_name, None)
+            if method is not None:
+                return method(user_name)
+
+        raise ValueError(f"{user_name!r} is not supported by CEA.")
+
+    @classmethod
+    def _database_supported_ideal_gas_species(cls) -> list[str]:
+        """Return ThermoProp species names that support the IdealGas wrapper."""
+        supported_species = getattr(SpeciesDatabase, "supported_species", None)
+        if supported_species is not None:
+            return list(supported_species("IdealGas"))
+
+        supported_names = getattr(SpeciesDatabase, "supported_names", None)
+        if supported_names is not None:
+            return list(supported_names("IdealGas"))
+
+        names = getattr(SpeciesDatabase, "pyromat_supported_names", None)
+        if names is not None:
+            return list(names)
+
+        raise AttributeError(
+            "SpeciesDatabase must expose supported_species('IdealGas') or an "
+            "equivalent internal IdealGas-support list."
+        )
+
+
+    @classmethod
     def _normalize_name(cls, user_name: str) -> Tuple[str, str]:
         """Return the PYroMat species ID and display name for a user name."""
-        sid = FluidRegistry.pyromat_name(user_name, include_prefix=True)
-        display = FluidRegistry.name(user_name)
+        sid = cls._database_pyromat_name(user_name, include_prefix=True)
+        display = cls._database_name(user_name)
 
         try:
             pm.get(sid)
@@ -1133,7 +1194,7 @@ class IdealGas:
     @staticmethod
     def get_available_gases() -> List[str]:
         """Return available PYroMat ideal-gas names."""
-        return sorted(FluidRegistry.pyromat_supported_names)
+        return IdealGas._database_supported_ideal_gas_species()
 
     @staticmethod
     def show_available_gases() -> List[str]:
