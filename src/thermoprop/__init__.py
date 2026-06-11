@@ -3,60 +3,57 @@ from .IdealGas import IdealGas
 from .Propellant import Propellant
 from .CombustionGas import CombustionGas
 from .Material import Material
-from .MaterialRegistry import MaterialRegistry
 
 from SpeciesDatabase import SpeciesDatabase
+from MaterialDatabase import MaterialDatabase
 
 
 def species() -> list[str]:
-    """
-    Return all ThermoProp-supported species.
-    """
+    """Return all ThermoProp-supported fluid/gas/propellant species."""
     return SpeciesDatabase.species()
 
 
 def supported_species(wrapper: str | None = None) -> list[str]:
-    """
-    Return species supported by a wrapper.
-
-    Parameters
-    ----------
-    wrapper : str | None
-        Wrapper name:
-
-        - "Fluid"
-        - "IdealGas"
-        - "Propellant"
-        - "CombustionGas"
-
-        If None, all ThermoProp species are returned.
-    """
+    """Return species supported by a ThermoProp species wrapper."""
     if wrapper is None:
         return SpeciesDatabase.species()
 
     return SpeciesDatabase.supported_species(wrapper)
 
 
-def aliases() -> dict[str, str]:
-    """
-    Return all registered ThermoProp aliases.
-    """
+def species_aliases() -> dict[str, str]:
+    """Return all registered ThermoProp species aliases."""
     return SpeciesDatabase.aliases()
 
 
-def add_alias(alias: str, species_name: str) -> None:
-    """
-    Add a runtime ThermoProp alias.
-
-    Parameters
-    ----------
-    alias : str
-        Alias to register.
-
-    species_name : str
-        ThermoProp species name.
-    """
+def add_species_alias(alias: str, species_name: str) -> None:
+    """Add a runtime ThermoProp species alias."""
     SpeciesDatabase.add_alias(alias, species_name)
+
+
+def materials() -> list[str]:
+    """Return all ThermoProp-supported materials."""
+    return MaterialDatabase.materials()
+
+
+def supported_materials() -> list[str]:
+    """Return all ThermoProp-supported materials."""
+    return MaterialDatabase.materials()
+
+
+def material_aliases() -> dict[str, str]:
+    """Return all registered ThermoProp material aliases."""
+    return MaterialDatabase.aliases()
+
+
+def add_material_alias(alias: str, material_name: str) -> None:
+    """Add a runtime ThermoProp material alias."""
+    MaterialDatabase.add_alias(alias, material_name)
+
+
+# Convenience aliases.
+aliases = species_aliases
+add_alias = add_species_alias
 
 
 __all__ = [
@@ -65,9 +62,16 @@ __all__ = [
     "Propellant",
     "CombustionGas",
     "Material",
-    "MaterialRegistry",
+    "SpeciesDatabase",
+    "MaterialDatabase",
     "species",
     "supported_species",
+    "species_aliases",
+    "add_species_alias",
+    "materials",
+    "supported_materials",
+    "material_aliases",
+    "add_material_alias",
     "aliases",
     "add_alias",
 ]

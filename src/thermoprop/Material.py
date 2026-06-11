@@ -6,8 +6,7 @@ from typing import Tuple
 
 import numpy as np
 
-from .MaterialData import MATERIAL_DATA
-from .MaterialRegistry import MaterialRegistry
+from MaterialDatabase import MaterialDatabase
 
 
 class Material:
@@ -30,7 +29,7 @@ class Material:
     mat.yield_strength
     """
 
-    _BACKEND_NAME = "ThermoProp MaterialData"
+    _BACKEND_NAME = "ThermoProp MaterialDatabase"
 
     _UNSUPPORTED_PROPERTIES = {
         "enthalpy",
@@ -66,16 +65,16 @@ class Material:
         self,
         material: str,
         temperature: float = 298.15,
-        allow_extrapolation: bool = False,
+        allow_extrapolation: bool = True,
     ):
         self._material_name = self._normalize_name(material)
 
         try:
-            self._data = MATERIAL_DATA[self._material_name]
+            self._data = MaterialDatabase._data(self._material_name)
         except KeyError:
             raise ValueError(
-                f"Material {self._material_name!r} exists in MaterialRegistry, "
-                "but has no data block in MaterialData.py."
+                f"Material {self._material_name!r} exists in MaterialDatabase, "
+                "but has no data block in MATERIAL_DATA."
             )
 
         self._temperature = float(temperature)
@@ -101,7 +100,7 @@ class Material:
 
     @property
     def category(self) -> str:
-        return self._data.get("category", MaterialRegistry.category(self.material))
+        return self._data.get("category", MaterialDatabase._category(self.material))
 
     @property
     def default_condition(self) -> str:
@@ -169,7 +168,7 @@ class Material:
 
     def has_property(self, property_name: str) -> bool:
         try:
-            prop_name = MaterialRegistry.normalize_property(property_name)
+            prop_name = MaterialDatabase._normalize_property(property_name)
         except ValueError:
             return False
 
@@ -177,7 +176,7 @@ class Material:
 
     def _get_property_data(self, property_name: str) -> tuple[str, dict]:
         try:
-            prop_name = MaterialRegistry.normalize_property(property_name)
+            prop_name = MaterialDatabase._normalize_property(property_name)
         except ValueError as exc:
             raise AttributeError(str(exc)) from None
 
@@ -378,7 +377,7 @@ class Material:
         raise NotImplementedError(
             f"Material.{property_name} is not supported. "
             "Material only provides temperature-dependent isotropic solid "
-            "property curves from MaterialData.py."
+            "property curves from MaterialDatabase.py."
         )
 
     @property
@@ -472,12 +471,12 @@ class Material:
 
     @classmethod
     def _normalize_name(cls, user_name: str) -> str:
-        return MaterialRegistry.name(user_name)
+        return MaterialDatabase._name(user_name)
 
     @staticmethod
     def get_available_materials() -> list[str]:
         """Return available ThermoProp material names."""
-        return sorted(MaterialRegistry.names)
+        return MaterialDatabase.materials()
 
     @staticmethod
     def show_available_materials() -> list[str]:
@@ -489,7 +488,7 @@ class Material:
     @staticmethod
     def get_available_properties() -> list[str]:
         """Return normalized material-property names known by the registry."""
-        return sorted(MaterialRegistry.properties)
+        return sorted(MaterialDatabase._properties())
 
     @staticmethod
     def show_available_properties() -> list[str]:
@@ -500,7 +499,7 @@ class Material:
 
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
-        return MaterialRegistry.show_aliases()
+        return MaterialDatabase._show_aliases()
         
 
     @classmethod

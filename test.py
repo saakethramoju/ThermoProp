@@ -1,4 +1,5 @@
-from src.thermoprop import aliases, species
-print(aliases())
+from src.thermoprop import Material, material_aliases
 
-print(species())
+grcop = Material("grcop42", temperature=300)
+
+print(grcop.yield_strength)
