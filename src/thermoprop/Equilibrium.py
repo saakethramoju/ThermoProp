@@ -170,8 +170,9 @@ class Equilibrium:
         trace_moles: float = 1e-300,
         min_temperature: float = 200.0,
         max_temperature: float = 20000.0,
-        combustion_gas_trace: float = 1e-8,
-        combustion_gas_max_species: int | None = 25,
+        combustion_gas_trace: float = 1e-11,
+        combustion_gas_max_species: int | None = 50,
+        equilibrium_derivative_temperature_step: float = 1.0,
     ):
         self._mode = str(mode).lower()
         self._pressure = None if pressure is None else float(pressure)
@@ -195,6 +196,8 @@ class Equilibrium:
 
         self._combustion_gas_trace = float(combustion_gas_trace)
         self._combustion_gas_max_species = combustion_gas_max_species
+        self._equilibrium_derivative_temperature_step = float(equilibrium_derivative_temperature_step)
+        self._equilibrium_property_cache: dict[str, object] = {}
 
         self._species: list[str] = []
         self._elements: list[str] = []
@@ -347,6 +350,7 @@ class Equilibrium:
     def _solve(self) -> None:
         self._validate_inputs()
         self._gas_cache = None
+        self._equilibrium_property_cache.clear()
 
         product_temperature = (
             self._temperature_input
@@ -845,6 +849,127 @@ class Equilibrium:
     def internal_energy(self) -> float:
         return self.enthalpy - self.gas_constant * self.temperature
 
+    def _cache_get_equilibrium_property(self, property_name: str):
+        return self._equilibrium_property_cache.get(property_name, None)
+
+    def _cache_set_equilibrium_property(self, property_name: str, value):
+        self._equilibrium_property_cache[property_name] = value
+        return value
+
+    def _tp_neighbor(
+        self,
+        temperature: float,
+        *,
+        initial_moles: np.ndarray | None = None,
+    ) -> "Equilibrium":
+        """
+        Fast internal TP solve at a neighboring temperature.
+
+        This avoids rebuilding the whole object and reuses the current species
+        set, element matrix, element vector, tolerances, and product filtering.
+        It is used for equilibrium derivative properties such as Cp_eq.
+        """
+        obj = object.__new__(self.__class__)
+
+        obj._mode = "tp"
+        obj._pressure = self.pressure
+        obj._temperature_input = float(temperature)
+        obj._guess_temperature = float(temperature)
+
+        obj._input = self._input
+        obj._reactants = self._reactants
+
+        obj._candidates = self._candidates
+        obj._include_all_valid_gases = self._include_all_valid_gases
+        obj._verbose = False
+
+        obj._element_tol = self._element_tol
+        obj._enthalpy_tol = self._enthalpy_tol
+        obj._correction_tol = self._correction_tol
+        obj._max_iterations = self._max_iterations
+        obj._trace_moles = self._trace_moles
+        obj._min_temperature = self._min_temperature
+        obj._max_temperature = self._max_temperature
+
+        obj._combustion_gas_trace = self._combustion_gas_trace
+        obj._combustion_gas_max_species = self._combustion_gas_max_species
+        obj._equilibrium_derivative_temperature_step = self._equilibrium_derivative_temperature_step
+        obj._equilibrium_property_cache = {}
+
+        obj._species = list(self._species)
+        obj._elements = list(self._elements)
+        obj._molar_masses = self._molar_masses.copy()
+        obj._A = self._A.copy()
+        obj._b = self._b.copy()
+        obj._moles = (
+            self._moles.copy()
+            if initial_moles is None
+            else np.asarray(initial_moles, dtype=float).copy()
+        )
+
+        obj._result = None
+        obj._gas_cache = None
+
+        obj._temperature = float(temperature)
+        obj._result = obj._solve_tp()
+
+        if not obj._result.success:
+            raise RuntimeError(
+                f"Equilibrium derivative TP solve failed at T={temperature:.6g} K: "
+                f"{obj._result.message}"
+            )
+
+        return obj
+
+    @property
+    def specific_heat_cp_frozen(self) -> float:
+        """
+        Frozen-composition Cp [J/kg-K].
+
+        This matches the CEA frozen transport-property Cp when the same gas
+        species set is passed into CombustionGas.
+        """
+        return self.combustion_gas.specific_heat_cp
+
+    @property
+    def cp_equilibrium(self) -> float:
+        """
+        Equilibrium Cp [J/kg-K] from a cached central TP derivative.
+
+        Cp_eq = (dh/dT)_P with composition allowed to re-equilibrate.
+        This is intentionally evaluated only on demand and cached.
+        """
+        cached = self._cache_get_equilibrium_property("cp_equilibrium")
+        if cached is not None:
+            return cached
+
+        dT = self._equilibrium_derivative_temperature_step
+        T0 = self.temperature
+
+        if dT <= 0.0:
+            raise ValueError("equilibrium_derivative_temperature_step must be positive.")
+
+        if T0 - dT < self._min_temperature:
+            plus = self._tp_neighbor(T0 + dT, initial_moles=self._moles)
+            value = (plus.enthalpy - self.enthalpy) / dT
+        elif T0 + dT > self._max_temperature:
+            minus = self._tp_neighbor(T0 - dT, initial_moles=self._moles)
+            value = (self.enthalpy - minus.enthalpy) / dT
+        else:
+            plus = self._tp_neighbor(T0 + dT, initial_moles=self._moles)
+            minus = self._tp_neighbor(T0 - dT, initial_moles=self._moles)
+            value = (plus.enthalpy - minus.enthalpy) / (2.0 * dT)
+
+        return self._cache_set_equilibrium_property("cp_equilibrium", float(value))
+
+    @property
+    def specific_heat_cp_equilibrium(self) -> float:
+        return self.cp_equilibrium
+
+    @property
+    def cp_reaction(self) -> float:
+        return self.cp_equilibrium - self.cp_frozen
+
     @property
     def cp_frozen(self) -> float:
         cp_kmol, _, _, _ = self._thermo_arrays(self.temperature)
@@ -853,19 +978,32 @@ class Equilibrium:
 
     @property
     def specific_heat_cp(self) -> float:
-        return self.combustion_gas.specific_heat_cp
+        return self.cp_equilibrium
+
+    @property
+    def specific_heat_cv_frozen(self) -> float:
+        return self.combustion_gas.specific_heat_cv
 
     @property
     def specific_heat_cv(self) -> float:
-        return self.combustion_gas.specific_heat_cv
+        return self.cp_equilibrium - self.gas_constant
 
     @property
     def specific_heat(self) -> float:
         return self.specific_heat_cp
 
     @property
-    def specific_heat_ratio(self) -> float:
+    def specific_heat_ratio_frozen(self) -> float:
         return self.combustion_gas.specific_heat_ratio
+
+    @property
+    def specific_heat_ratio(self) -> float:
+        cv = self.specific_heat_cv
+
+        if cv == 0.0:
+            return None
+
+        return self.specific_heat_cp / cv
 
     @property
     def entropy(self) -> float:
@@ -973,26 +1111,214 @@ class Equilibrium:
         return mu / self.density
 
     @property
-    def conductivity(self) -> float | None:
+    def conductivity_frozen(self) -> float | None:
         try:
             return self.combustion_gas.conductivity
         except Exception:
             return None
 
     @property
+    def thermal_conductivity_frozen(self) -> float | None:
+        return self.conductivity_frozen
+
+    def _transport_species_data(self):
+        cached = self._cache_get_equilibrium_property("_transport_species_data")
+        if cached is not None:
+            return cached
+
+        composition = self.combustion_gas_composition()
+        names = list(composition.keys())
+        x = np.array([composition[name] for name in names], dtype=float)
+
+        total = float(np.sum(x))
+
+        if total <= 0.0:
+            raise RuntimeError("Transport composition has zero total mole fraction.")
+
+        x = x / total
+
+        M = np.array(
+            [CEA.molar_mass(name) for name in names],
+            dtype=float,
+        )
+
+        A = np.array(
+            [
+                [
+                    CEA.elemental_composition(name).get(element, 0.0)
+                    for name in names
+                ]
+                for element in self.elements
+            ],
+            dtype=float,
+        )
+
+        h = np.array(
+            [
+                CEA.thermo_molar(name, self.temperature)[1] / 1000.0
+                for name in names
+            ],
+            dtype=float,
+        )
+
+        data = {
+            "names": names,
+            "x": x,
+            "M": M,
+            "A": A,
+            "h": h,
+        }
+
+        return self._cache_set_equilibrium_property("_transport_species_data", data)
+
+    @staticmethod
+    def _nullspace(matrix: np.ndarray, tolerance: float = 1e-12) -> np.ndarray:
+        _, singular_values, vh = np.linalg.svd(matrix, full_matrices=True)
+
+        if singular_values.size == 0:
+            rank = 0
+        else:
+            scale = max(matrix.shape) * singular_values[0]
+            rank = int(np.sum(singular_values > tolerance * scale))
+
+        return vh[rank:, :]
+
+    @property
+    def reaction_conductivity(self) -> float:
+        """
+        Reaction contribution to equilibrium thermal conductivity [W/m-K].
+
+        This follows the CEA/Svehla-Brokaw form used for equation (5.8):
+        solve the reaction-diffusion linear system over the same gas species
+        used for transport, then add the reaction contribution to frozen
+        conductivity.
+        """
+        cached = self._cache_get_equilibrium_property("reaction_conductivity")
+        if cached is not None:
+            return cached
+
+        data = self._transport_species_data()
+        x = data["x"]
+        M = data["M"]
+        A = data["A"]
+        h = data["h"]
+
+        alpha = self._nullspace(A)
+        nr = alpha.shape[0]
+
+        if nr == 0:
+            return self._cache_set_equilibrium_property("reaction_conductivity", 0.0)
+
+        gas = self.combustion_gas
+
+        try:
+            eta_ij = gas._binary_viscosity_interaction_matrix()
+        except AttributeError as exc:
+            raise AttributeError(
+                "CombustionGas must provide _binary_viscosity_interaction_matrix() "
+                "for CEA reaction conductivity."
+            ) from exc
+
+        T = float(self.temperature)
+        RT = RU * T
+        astar = 1.1
+
+        G = np.zeros((nr, nr), dtype=float)
+        ns = len(x)
+
+        x_safe = np.maximum(x, 1e-300)
+
+        for k in range(ns - 1):
+            for l in range(k + 1, ns):
+                eta_kl = float(eta_ij[k, l])
+
+                if eta_kl <= 0.0 or not np.isfinite(eta_kl):
+                    continue
+
+                diffusion_factor = (
+                    5.0 * M[k] * M[l]
+                    / (3.0 * astar * eta_kl * (M[k] + M[l]))
+                )
+
+                delta = alpha[:, k] / x_safe[k] - alpha[:, l] / x_safe[l]
+                G += diffusion_factor * x[k] * x[l] * np.outer(delta, delta)
+
+        heat_of_reaction_over_RT = alpha @ h / RT
+
+        try:
+            lambda_r = np.linalg.solve(G, heat_of_reaction_over_RT)
+        except np.linalg.LinAlgError:
+            lambda_r = np.linalg.lstsq(G, heat_of_reaction_over_RT, rcond=None)[0]
+
+        value = RU * float(np.dot(heat_of_reaction_over_RT, lambda_r))
+
+        if not np.isfinite(value):
+            value = 0.0
+
+        value = max(0.0, value)
+
+        return self._cache_set_equilibrium_property("reaction_conductivity", value)
+
+    @property
+    def conductivity_reaction(self) -> float:
+        return self.reaction_conductivity
+
+    @property
+    def thermal_conductivity_reaction(self) -> float:
+        return self.reaction_conductivity
+
+    @property
+    def conductivity_equilibrium(self) -> float:
+        k_frozen = self.conductivity_frozen
+
+        if k_frozen is None:
+            return None
+
+        return k_frozen + self.reaction_conductivity
+
+    @property
+    def thermal_conductivity_equilibrium(self) -> float:
+        return self.conductivity_equilibrium
+
+    @property
+    def conductivity(self) -> float | None:
+        return self.conductivity_equilibrium
+
+    @property
     def thermal_conductivity(self) -> float | None:
         return self.conductivity
 
     @property
-    def prandtl(self) -> float | None:
-        try:
-            return self.combustion_gas.prandtl
-        except Exception:
+    def prandtl_frozen(self) -> float | None:
+        k = self.conductivity_frozen
+        mu = self.dynamic_viscosity
+
+        if k is None or mu is None or k == 0.0:
             return None
+
+        return self.cp_frozen * mu / k
+
+    @property
+    def prandtl_equilibrium(self) -> float | None:
+        k = self.conductivity_equilibrium
+        mu = self.dynamic_viscosity
+
+        if k is None or mu is None or k == 0.0:
+            return None
+
+        return self.cp_equilibrium * mu / k
+
+    @property
+    def prandtl(self) -> float | None:
+        return self.prandtl_equilibrium
+
+    @property
+    def speed_of_sound_frozen(self) -> float:
+        return self.combustion_gas.speed_of_sound
 
     @property
     def speed_of_sound(self) -> float:
-        return self.combustion_gas.speed_of_sound
+        return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self.temperature))
 
     @property
     def thermal_expansion_coefficient(self) -> float:
@@ -1122,8 +1448,12 @@ class Equilibrium:
             "internal_energy": self.internal_energy,
             "entropy": self.entropy,
             "specific_heat_cp": self.specific_heat_cp,
+            "specific_heat_cp_frozen": self.specific_heat_cp_frozen,
+            "specific_heat_cp_equilibrium": self.specific_heat_cp_equilibrium,
             "specific_heat_cv": self.specific_heat_cv,
+            "specific_heat_cv_frozen": self.specific_heat_cv_frozen,
             "specific_heat_ratio": self.specific_heat_ratio,
+            "specific_heat_ratio_frozen": self.specific_heat_ratio_frozen,
             "gas_constant": self.gas_constant,
             "molar_mass": self.molar_mass,
             "molecular_weight": self.molecular_weight,
@@ -1144,6 +1474,12 @@ class Equilibrium:
             "max_total_mole_correction": self.max_total_mole_correction,
             "enthalpy_error": self.enthalpy_error,
             "temperature_correction": self.temperature_correction,
+            "dynamic_viscosity": self.dynamic_viscosity,
+            "conductivity_frozen": self.conductivity_frozen,
+            "conductivity_reaction": self.conductivity_reaction,
+            "conductivity_equilibrium": self.conductivity_equilibrium,
+            "prandtl_frozen": self.prandtl_frozen,
+            "prandtl_equilibrium": self.prandtl_equilibrium,
         }
 
     def _safe(self, value, fmt=".3e"):
@@ -1178,14 +1514,20 @@ class Equilibrium:
             ("Internal energy [J/kg]", self._safe(self.internal_energy, ".3e")),
             ("Enthalpy [J/kg]", self._safe(self.enthalpy, ".3e")),
             ("Entropy [J/kg-K]", self._safe(self.entropy, ".3e")),
-            ("Cp [J/kg-K]", self._safe(self.specific_heat_cp, ".3f")),
-            ("Cv [J/kg-K]", self._safe(self.specific_heat_cv, ".3f")),
-            ("Specific heat ratio", self._safe(self.specific_heat_ratio, ".5f")),
+            ("Cp eq [J/kg-K]", self._safe(self.specific_heat_cp, ".3f")),
+            ("Cp frozen [J/kg-K]", self._safe(self.cp_frozen, ".3f")),
+            ("Cv eq [J/kg-K]", self._safe(self.specific_heat_cv, ".3f")),
+            ("Cv frozen [J/kg-K]", self._safe(self.specific_heat_cv_frozen, ".3f")),
+            ("Specific heat ratio eq", self._safe(self.specific_heat_ratio, ".5f")),
+            ("Specific heat ratio frozen", self._safe(self.specific_heat_ratio_frozen, ".5f")),
             ("Gas constant [J/kg-K]", self._safe(self.gas_constant, ".3f")),
             ("Molar mass [kg/mol]", self._safe(self.molar_mass, ".6f")),
             ("Dynamic viscosity [Pa·s]", self._safe(self.dynamic_viscosity, ".3e")),
-            ("Conductivity [W/m-K]", self._safe(self.conductivity, ".3f")),
-            ("Prandtl number", self._safe(self.prandtl, ".5f")),
+            ("Conductivity eq [W/m-K]", self._safe(self.conductivity_equilibrium, ".3f")),
+            ("Conductivity frozen [W/m-K]", self._safe(self.conductivity_frozen, ".3f")),
+            ("Conductivity reaction [W/m-K]", self._safe(self.conductivity_reaction, ".3f")),
+            ("Prandtl eq", self._safe(self.prandtl_equilibrium, ".5f")),
+            ("Prandtl frozen", self._safe(self.prandtl_frozen, ".5f")),
             ("Speed of sound [m/s]", self._safe(self.speed_of_sound, ".3f")),
             ("Max element error", self._safe(self.max_element_error, ".3e")),
             ("Max mole correction", self._safe(self.max_mole_correction, ".3e")),
