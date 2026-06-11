@@ -138,9 +138,78 @@
 
 ---
 
-### API Improvements
+### Database & Registry Architecture
 
-* Improved API consistency across:
+* Added `SpeciesDatabase`, a unified immutable species database covering:
+
+  * CoolProp fluids
+  * PYroMat species
+  * NASA CEA species
+  * NASA CEA reactants
+  * RocketProps propellants
+
+* Added cross-backend species mapping infrastructure.
+
+* Added ThermoProp canonical species names independent of backend naming conventions.
+
+* Added unified species support discovery across:
+
+  * `Fluid`
+  * `IdealGas`
+  * `Propellant`
+  * `CombustionGas`
+
+* Added user-configurable runtime species aliases.
+
+* Added package-level species discovery utilities:
+
+  * `species()`
+  * `supported_species()`
+  * `aliases()`
+  * `add_alias()`
+
+* Added `MaterialDatabase`, a unified material database containing:
+
+  * Material property data
+  * Material metadata
+  * Material aliases
+
+* Added package-level material discovery utilities:
+
+  * `materials()`
+  * `supported_materials()`
+  * `material_aliases()`
+  * `add_material_alias()`
+
+* Migrated all wrappers to database-driven name resolution.
+
+* Removed separate registry-based species and material lookup infrastructure.
+
+  * `FluidRegistry`
+  * `CombustionRegistry`
+  * `MaterialRegistry`
+
+---
+
+### Improved
+
+* Improved backend interoperability between CoolProp, PYroMat, RocketProps, and NASA CEA.
+
+* Unified species management through a single ThermoProp species database.
+
+* Unified material management through a single ThermoProp material database.
+
+* Improved support discovery and backend inspection.
+
+* Simplified wrapper implementation by eliminating redundant registry layers.
+
+* Reduced duplicate species and alias definitions across backends.
+
+* Improved maintainability of backend mappings and alias management.
+
+* Improved internal caching and property-evaluation performance throughout ThermoProp.
+
+* Improved consistency between:
 
   * `Fluid`
   * `IdealGas`
@@ -148,14 +217,9 @@
   * `Propellant`
   * `Material`
 
-* Standardized property naming and wrapper behavior across all ThermoProp backends.
+* Standardized species and material naming across the package.
 
-* Expanded wrapper introspection and species-discovery capabilities.
-
-* Improved error messages and backend reporting.
-
-* Improved registry-based species and propellant lookup infrastructure.
-
+* Improved package organization by moving large static databases outside the source tree.
 ---
 
 ### Documentation
@@ -189,6 +253,18 @@
   * Combustion gases
   * Rocket propellants
   * Engineering materials
+
+* Added SpeciesDatabase documentation and examples.
+
+* Added MaterialDatabase documentation and examples.
+
+* Added species-discovery examples.
+
+* Added material-discovery examples.
+
+* Added alias-management examples.
+
+* Updated documentation to reflect the new database-driven architecture.
 
 ## 0.3.3
 
