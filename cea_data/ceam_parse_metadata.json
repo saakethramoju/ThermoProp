@@ -1,12 +1,17 @@
 {
   "thermo_format": {
     "source": "NASA CEA / NASA Glenn thermo.inp",
+    "fortran_reader": {
+      "interval_header": "FORMAT (2F11.3,i1,8F5.1,2x,f15.3)",
+      "interval_coefficients": "FORMAT (5D16.8/2D16.8,16x,2D16.8)"
+    },
     "coefficient_model": "CEA_NASA_Glenn_9_number_interval",
     "coeffs_layout": {
-      "coeffs[:, :, 0:7]": "Cp/R coefficients with powers stored in cp_powers",
+      "coeffs[:, :, 0:7]": "Cp/R coefficients mapped to cp_powers",
       "coeffs[:, :, 7]": "enthalpy integration constant",
       "coeffs[:, :, 8]": "entropy integration constant"
     },
+    "skipped_interval_field": "The 16-character field between coefficient 7 and the two integration constants is intentionally skipped, matching CEA2 UTHERM FORMAT 99006.",
     "usual_cp_powers": [
       -2,
       -1,

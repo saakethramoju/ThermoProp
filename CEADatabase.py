@@ -371,7 +371,16 @@ class CEADatabase:
 
     def thermo_molar(self, name: str, temperature: float) -> tuple[float, float, float]:
         T = float(temperature)
-        a0, a1, a2, a3, a4, a5, a6, b1, b2 = self.nasa9_coefficients(name, T)
+        coeffs = self.nasa9_coefficients(name, T)
+
+        if len(coeffs) == 10:
+            a0, a1, a2, a3, a4, a5, a6, unused, b1, b2 = coeffs
+        elif len(coeffs) == 9:
+            a0, a1, a2, a3, a4, a5, a6, b1, b2 = coeffs
+        else:
+            raise ValueError(
+                f"{name!r} has {len(coeffs)} thermo coefficients; expected 9 or 10."
+            )
 
         lnT = np.log(T)
 
