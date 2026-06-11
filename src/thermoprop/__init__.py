@@ -6,9 +6,9 @@ from .Material import Material
 from .Reactants import Reactants
 from .Equilibrium import Equilibrium
 
-from CEADatabase import CEA
-from SpeciesDatabase import SpeciesDatabase
-from MaterialDatabase import MaterialDatabase
+from .CEADatabase import CEA
+from .SpeciesDatabase import SpeciesDatabase
+from .MaterialDatabase import MaterialDatabase
 
 
 def species() -> list[str]:

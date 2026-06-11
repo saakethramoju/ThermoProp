@@ -6,7 +6,7 @@ from typing import Tuple
 
 import numpy as np
 
-from MaterialDatabase import MaterialDatabase
+from .MaterialDatabase import MaterialDatabase
 
 
 class Material:
@@ -79,6 +79,7 @@ class Material:
 
         self._temperature = float(temperature)
         self.allow_extrapolation = bool(allow_extrapolation)
+        self._curve_cache: dict[str, tuple[str, np.ndarray, np.ndarray]] = {}
 
     # ---------------- Core package-style API ---------------- #
 
@@ -193,6 +194,10 @@ class Material:
     def _get_curve_arrays(self, property_name: str) -> tuple[str, np.ndarray, np.ndarray]:
         prop_name, prop = self._get_property_data(property_name)
 
+        cached = self._curve_cache.get(prop_name)
+        if cached is not None:
+            return cached
+
         temperatures = np.asarray(prop["temperature"], dtype=float)
         values = np.asarray(prop["value"], dtype=float)
 
@@ -209,7 +214,9 @@ class Material:
             )
 
         order = np.argsort(temperatures)
-        return prop_name, temperatures[order], values[order]
+        cached = prop_name, temperatures[order], values[order]
+        self._curve_cache[prop_name] = cached
+        return cached
 
     def temperature_range(self, property_name: str) -> tuple[float, float]:
         _, temperatures, _ = self._get_curve_arrays(property_name)

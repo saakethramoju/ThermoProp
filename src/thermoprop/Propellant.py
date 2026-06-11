@@ -5,8 +5,8 @@ from typing import Any, Tuple
 import numpy as np
 from scipy.integrate import quad
 
-from CEADatabase import CEA
-from SpeciesDatabase import SpeciesDatabase
+from .CEADatabase import CEA
+from .SpeciesDatabase import SpeciesDatabase
 
 
 class Propellant:

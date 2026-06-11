@@ -1,35 +1,43 @@
 [project]
 name = "thermoprop"
-version = "0.3.3"
-description = "A Python thermophysical property wrapper for real fluids, ideal gases, liquid rocket propellants, and isotropic engineering materials."
+version = "1.0.0"
+description = "A Python thermophysical property and chemical-equilibrium library for fluids, gases, propellants, combustion products, and engineering materials."
 readme = "README.md"
 license = "GPL-3.0-only"
 authors = [
     { name = "Saaketh Ramoju", email = "skramoju@gmail.com" }
 ]
 requires-python = ">=3.11"
+
 keywords = [
     "thermodynamics",
     "thermophysical-properties",
+    "chemical-equilibrium",
+    "equilibrium-chemistry",
+    "nasa-cea",
+    "cea",
+    "combustion",
+    "combustion-gas",
+    "rocket-propulsion",
+    "rocket-engineering",
+    "propellants",
+    "materials",
     "material-properties",
-    "isotropic-materials",
     "coolprop",
     "pyromat",
     "rocketprops",
-    "fluids",
-    "ideal-gas",
-    "propellants",
-    "engineering",
-    "rocket-propulsion",
 ]
+
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Education",
+    "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -50,9 +58,15 @@ Homepage = "https://github.com/saakethramoju/ThermoProp"
 Repository = "https://github.com/saakethramoju/ThermoProp"
 Issues = "https://github.com/saakethramoju/ThermoProp/issues"
 Changelog = "https://github.com/saakethramoju/ThermoProp/blob/main/CHANGELOG.md"
+Documentation = "https://saakethramoju.github.io/softwares/thermoprop/"
 
 [tool.thermoprop.credits]
 material_properties_database = "Material property database adapted from data compiled by Tyson Tran."
+cea_thermochemical_database = "Thermochemical and transport data adapted from NASA CEA datasets."
+
+[tool.uv.build-backend]
+module-name = "thermoprop"
+source-include = ["src/thermoprop/cea_data/**"]
 
 [build-system]
 requires = ["uv_build>=0.11.18,<0.12.0"]

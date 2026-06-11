@@ -58,6 +58,14 @@ class CEADatabase:
             self._transport = None
             self._transport_index = {}
 
+        self._names_cache: list[str] | None = None
+        self._transport_names_cache: list[str] | None = None
+        self._product_names_cache: list[str] | None = None
+        self._reactant_names_cache: list[str] | None = None
+        self._gas_species_cache: list[str] | None = None
+        self._condensed_species_cache: list[str] | None = None
+        self._all_elements_cache: set[str] | None = None
+
     @staticmethod
     def _load_npz_required(path: Path) -> dict[str, np.ndarray]:
         if not path.exists():
@@ -97,7 +105,10 @@ class CEADatabase:
     @property
     def names(self) -> list[str]:
         """Return every strict CEA database name."""
-        return sorted(self._thermo_index.keys())
+        if self._names_cache is None:
+            self._names_cache = sorted(self._thermo_index.keys())
+
+        return list(self._names_cache)
 
     @property
     def species_names(self) -> list[str]:
@@ -107,17 +118,30 @@ class CEADatabase:
     @property
     def transport_names(self) -> list[str]:
         """Return every strict CEA name with transport data."""
-        return sorted(self._transport_index.keys())
+        if self._transport_names_cache is None:
+            self._transport_names_cache = sorted(self._transport_index.keys())
+
+        return list(self._transport_names_cache)
 
     @property
     def product_names(self) -> list[str]:
         """Return species with NASA polynomial thermo data."""
-        return sorted(name for name in self.names if self.has_thermo(name))
+        if self._product_names_cache is None:
+            self._product_names_cache = sorted(
+                name for name in self.names if self.has_thermo(name)
+            )
+
+        return list(self._product_names_cache)
 
     @property
     def reactant_names(self) -> list[str]:
         """Return predefined CEA reactant cards."""
-        return sorted(name for name in self.names if self.is_reactant(name))
+        if self._reactant_names_cache is None:
+            self._reactant_names_cache = sorted(
+                name for name in self.names if self.is_reactant(name)
+            )
+
+        return list(self._reactant_names_cache)
 
     @property
     def product_species(self) -> list[str]:
@@ -125,11 +149,21 @@ class CEADatabase:
 
     @property
     def gas_species(self) -> list[str]:
-        return sorted(name for name in self.product_names if self.is_gas(name))
+        if self._gas_species_cache is None:
+            self._gas_species_cache = sorted(
+                name for name in self.product_names if self.is_gas(name)
+            )
+
+        return list(self._gas_species_cache)
 
     @property
     def condensed_species(self) -> list[str]:
-        return sorted(name for name in self.product_names if self.is_condensed(name))
+        if self._condensed_species_cache is None:
+            self._condensed_species_cache = sorted(
+                name for name in self.product_names if self.is_condensed(name)
+            )
+
+        return list(self._condensed_species_cache)
 
     @property
     def predefined_reactants(self) -> list[str]:
@@ -137,12 +171,15 @@ class CEADatabase:
 
     @property
     def all_elements(self) -> set[str]:
-        elements: set[str] = set()
+        if self._all_elements_cache is None:
+            elements: set[str] = set()
 
-        for name in self.names:
-            elements.update(self.element_set(name))
+            for name in self.names:
+                elements.update(self.element_set(name))
 
-        return elements
+            self._all_elements_cache = elements
+
+        return set(self._all_elements_cache)
 
     def find_species(self, text: str, *, case_sensitive: bool = False) -> list[str]:
         """

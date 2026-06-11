@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from CEADatabase import CEA
+from .CEADatabase import CEA
 from .Reactants import Reactants
 from .CombustionGas import CombustionGas
 

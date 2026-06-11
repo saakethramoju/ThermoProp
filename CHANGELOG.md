@@ -4,6 +4,8 @@
 
 ### Added
 
+#### NASA CEA / CEAM Integration
+
 * Added `CEADatabase`, a native NASA CEA / CEAM thermodynamic and transport database interface.
 
 * Added support for:
@@ -15,130 +17,79 @@
   * Species elemental composition lookup
   * Species molecular-weight lookup
   * Species discovery and inspection utilities
+  * Strict NASA CEA species naming and resolution
+
+* Added support for:
+
+  * Gas-phase product species
+  * Condensed-phase species
+  * Predefined CEA reactants
+  * Binary transport interaction coefficients
+  * Mixture molecular-weight calculations
+  * Mixture composition conversions
+
+---
+
+#### Combustion Products
 
 * Added the `CombustionGas` wrapper for fixed-composition combustion-product gas mixtures.
 
 * Added support for:
 
   * Pure combustion-product species
-  * Multi-species gas mixtures
+  * Multi-species combustion-gas mixtures
   * Mass-fraction compositions
   * Mole-fraction compositions
-  * Thermodynamic property evaluation from NASA CEA data
-  * Transport-property evaluation from NASA CEA data
-  * Wilke mixture transport-property mixing
-
-* Added `CombustionRegistry` for combustion-species and reactant name management.
-
-* Added support for common combustion-species aliases.
-
-* Added support for CEA reactant discovery and lookup.
-
-* Added gas-species inspection utilities:
-
-  * `get_available_species()`
-  * `show_available_species()`
+  * NASA CEA thermodynamic property evaluation
+  * NASA CEA transport-property evaluation
+  * CEA mixture transport-property mixing
+  * Estimated transport-property fallbacks when explicit transport data are unavailable
 
 * Added support for:
 
-  * Gas viscosity from NASA CEA transport data
-  * Gas thermal conductivity from NASA CEA transport data
-  * Gas Prandtl number
-  * Gas speed of sound
-  * Gas heat-capacity ratio
-  * Gas constant evaluation
-
----
-
-### Improved
-
-* Reworked `IdealGas` transport-property support to use NASA CEA transport data when available.
-
-* Retained Sutherland-law viscosity as a fallback for gases without available CEA transport data.
-
-* Added thermal-conductivity support to `IdealGas`.
-
-* Added Prandtl-number support to `IdealGas`.
-
-* Added speed-of-sound support to `IdealGas`.
-
-* Added specific-heat-ratio support to `IdealGas`.
-
-* Improved ideal-gas transport-property accuracy through NASA CEA transport correlations.
-
-* Improved ideal-gas mixture transport calculations through Wilke mixing methods.
-
-* Improved consistency between `IdealGas` and `CombustionGas` thermodynamic property calculations.
-
-* Improved backend interoperability between PYroMat, RocketProps, CoolProp, and NASA CEA.
-
-* Improved internal caching and property-evaluation performance throughout ThermoProp.
-
----
-
-### Propellant Improvements
-
-* Expanded `Propellant` beyond RocketProps-only fluids.
-
-* Added support for all available NASA CEA species and reactants.
-
-* Added automatic backend selection between RocketProps and NASA CEA.
-
-* Added automatic phase selection when multiple NASA CEA phases are available for a species.
-
-* Added seamless RocketProps + CEA integration for species supported by both databases.
-
-* Added support for:
-
-  * CEA species thermodynamic data
-  * CEA reactant reference data
-  * CEA transport-property data
-  * RocketProps liquid-property data
-
-* Added support for CEA reference-state properties:
-
-  * Heat of formation
-  * Reference temperature
-  * Elemental composition
-  * Formula molecular weight
-
-* Added support for:
-
-  * Standard entropy
-  * Entropy
-  * Internal energy
+  * Density
   * Enthalpy
-
-* Added thermodynamic integration support for liquid propellants using RocketProps property data and CEA reference states.
-
-* Added speed-of-sound support for gaseous propellants.
-
-* Added specific-heat-ratio support for gaseous propellants.
-
-* Added backend source tracking for all supported properties.
-
-* Improved property availability reporting for mixed RocketProps / CEA species.
-
-* Improved support for gaseous propellants such as:
-
-  * Methane
-  * Hydrogen
-  * Oxygen
-  * Nitrogen
-  * Carbon monoxide
-  * Carbon dioxide
-  * Water vapor
-
-* Improved support for CEA reactant-only fuels such as:
-
-  * RP-1
-  * Jet-A
-  * JP-4
-  * JP-10
+  * Internal energy
+  * Entropy
+  * Gibbs free energy
+  * Helmholtz free energy
+  * Specific heats
+  * Specific heat ratio
+  * Speed of sound
+  * Dynamic viscosity
+  * Thermal conductivity
+  * Prandtl number
 
 ---
 
-### Database & Registry Architecture
+#### Chemical Equilibrium
+
+* Added `Reactants` for defining reactant mixtures independently of equilibrium calculations.
+
+* Added support for:
+
+  * Reactant mass-fraction mixtures
+  * Reactant mole-fraction mixtures
+  * Reactant elemental composition tracking
+  * Reactant thermodynamic reference-state evaluation
+  * Reactant heat-of-formation calculations
+  * Mixture molecular-weight calculations
+
+* Added `Equilibrium`, a native Gibbs free-energy minimization equilibrium solver.
+
+* Added support for:
+
+  * NASA CEA species databases
+  * Arbitrary reactant mixtures
+  * Element conservation constraints
+  * Equilibrium-composition prediction
+  * Equilibrium thermodynamic properties
+  * Frozen-composition property evaluation
+  * Equilibrium combustion-gas generation
+
+---
+
+#### Species and Material Databases
 
 * Added `SpeciesDatabase`, a unified immutable species database covering:
 
@@ -148,66 +99,85 @@
   * NASA CEA reactants
   * RocketProps propellants
 
-* Added cross-backend species mapping infrastructure.
-
-* Added ThermoProp canonical species names independent of backend naming conventions.
-
-* Added unified species support discovery across:
-
-  * `Fluid`
-  * `IdealGas`
-  * `Propellant`
-  * `CombustionGas`
-
-* Added user-configurable runtime species aliases.
-
-* Added package-level species discovery utilities:
-
-  * `species()`
-  * `supported_species()`
-  * `aliases()`
-  * `add_alias()`
-
-* Added `MaterialDatabase`, a unified material database containing:
+* Added `MaterialDatabase`, a unified engineering-material database containing:
 
   * Material property data
   * Material metadata
-  * Material aliases
+  * Material lookup utilities
 
-* Added package-level material discovery utilities:
+* Added package-level discovery utilities:
 
+  * `species()`
+  * `supported_species()`
   * `materials()`
   * `supported_materials()`
-  * `material_aliases()`
-  * `add_material_alias()`
-
-* Migrated all wrappers to database-driven name resolution.
-
-* Removed separate registry-based species and material lookup infrastructure.
-
-  * `FluidRegistry`
-  * `CombustionRegistry`
-  * `MaterialRegistry`
 
 ---
 
 ### Improved
 
-* Improved backend interoperability between CoolProp, PYroMat, RocketProps, and NASA CEA.
+#### IdealGas
 
-* Unified species management through a single ThermoProp species database.
+* Reworked transport-property support to use NASA CEA transport data when available.
 
-* Unified material management through a single ThermoProp material database.
+* Retained Sutherland-law viscosity as a fallback when transport data are unavailable.
 
-* Improved support discovery and backend inspection.
+* Added support for:
 
-* Simplified wrapper implementation by eliminating redundant registry layers.
+  * Thermal conductivity
+  * Prandtl number
+  * Improved mixture viscosity calculations
+  * Improved mixture transport-property calculations
 
-* Reduced duplicate species and alias definitions across backends.
+* Improved consistency with NASA CEA thermodynamic and transport-property evaluations.
 
-* Improved maintainability of backend mappings and alias management.
+---
 
-* Improved internal caching and property-evaluation performance throughout ThermoProp.
+#### Propellant
+
+* Expanded `Propellant` beyond RocketProps-only fluids.
+
+* Added support for NASA CEA species and reactants.
+
+* Added automatic backend selection between RocketProps and NASA CEA.
+
+* Added support for:
+
+  * Heat of formation
+  * Standard entropy
+  * Enthalpy
+  * Internal energy
+  * Molecular-weight evaluation
+  * Elemental composition lookup
+  * Reference-state thermodynamic data
+
+* Improved support for gaseous propellants and CEA reactant definitions.
+
+---
+
+#### Architecture
+
+* Removed legacy registry architecture:
+
+  * `FluidRegistry`
+  * `MaterialRegistry`
+  * `CombustionRegistry`
+
+* Migrated all wrappers to database-driven name resolution.
+
+* Standardized species management through `SpeciesDatabase`.
+
+* Standardized material management through `MaterialDatabase`.
+
+* Moved CEA databases into the ThermoProp package structure for reliable installation and distribution.
+
+* Added validation for invalid mixture compositions, including negative mass and mole fractions.
+
+* Added internal caching of material-property curves.
+
+* Added internal caching of CEA species-discovery and lookup operations.
+
+* Improved property-evaluation performance throughout ThermoProp.
 
 * Improved consistency between:
 
@@ -217,54 +187,46 @@
   * `Propellant`
   * `Material`
 
-* Standardized species and material naming across the package.
-
-* Improved package organization by moving large static databases outside the source tree.
 ---
 
 ### Documentation
 
-* Added CEADatabase documentation.
+* Added documentation for:
 
-* Added CombustionGas documentation and examples.
+  * CEADatabase
+  * CombustionGas
+  * Reactants
+  * Equilibrium
+  * SpeciesDatabase
+  * MaterialDatabase
 
-* Added CombustionRegistry documentation and examples.
+* Added examples covering:
 
-* Added NASA CEA transport-property documentation.
+  * Combustion-gas evaluation
+  * Chemical-equilibrium calculations
+  * Reactant-mixture construction
+  * Species discovery
+  * Material-property lookup
+  * NASA CEA transport-property usage
 
-* Added Propellant backend-selection documentation.
-
-* Added documentation describing RocketProps and CEA interoperability.
-
-* Added combustion-species examples.
-
-* Added fixed-composition combustion-gas examples.
-
-* Added gaseous-propellant examples.
-
-* Expanded supported-species documentation.
-
-* Expanded backend-reference documentation.
-
-* Updated README to reflect support for:
+* Updated README and package documentation to reflect support for:
 
   * Real fluids
   * Ideal gases
-  * Combustion gases
   * Rocket propellants
+  * Combustion gases
+  * Chemical equilibrium
   * Engineering materials
 
-* Added SpeciesDatabase documentation and examples.
+---
 
-* Added MaterialDatabase documentation and examples.
+### Acknowledgments
 
-* Added species-discovery examples.
+* ThermoProp's engineering material database was adapted from material property data compiled and distributed through the MatProtLib project.
 
-* Added material-discovery examples.
+* Special thanks to Tyson Tran for making these engineering material datasets publicly available.
 
-* Added alias-management examples.
-
-* Updated documentation to reflect the new database-driven architecture.
+* NASA CEA thermodynamic and transport datasets were adapted from the NASA CEA / CEAM databases.
 
 ## 0.3.3
 

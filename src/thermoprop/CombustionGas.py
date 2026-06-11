@@ -4,8 +4,8 @@ from typing import Dict, List, Tuple, Union
 
 import numpy as np
 
-from CEADatabase import CEA
-from SpeciesDatabase import SpeciesDatabase
+from .CEADatabase import CEA
+from .SpeciesDatabase import SpeciesDatabase
 
 
 class CombustionGas:
@@ -100,8 +100,10 @@ class CombustionGas:
 
             fractions = np.array([item[0] for item in tmp.values()], dtype=float)
 
-            if not np.isclose(fractions.sum(), 1.0, atol=1e-6):
-                raise ValueError(f"{basis.capitalize()} fractions must sum to 1.0.")
+            fractions = self._validate_fractions(
+                fractions,
+                f"{basis.capitalize()} fractions",
+            )
 
             self._species_names = list(tmp.keys())
             self._display_names = [", ".join(sorted(set(item[4]))) for item in tmp.values()]
@@ -124,6 +126,24 @@ class CombustionGas:
         self._minimum_temperature, self._maximum_temperature = self._temperature_limits()
 
         self._validate_temperature()
+
+    @staticmethod
+    def _validate_fractions(fractions, label: str, *, atol: float = 1e-6) -> np.ndarray:
+        fractions = np.asarray(fractions, dtype=float)
+
+        if fractions.size == 0:
+            raise ValueError(f"{label} cannot be empty")
+
+        if not np.all(np.isfinite(fractions)):
+            raise ValueError(f"{label} must contain only finite values")
+
+        if np.any(fractions < 0.0):
+            raise ValueError(f"{label} must be nonnegative")
+
+        if not np.isclose(fractions.sum(), 1.0, atol=atol):
+            raise ValueError(f"{label} must sum to 1.0")
+
+        return fractions
 
     @classmethod
     def _resolve_species(cls, value: str) -> tuple[str, str, int, int | None]:
@@ -268,9 +288,7 @@ class CombustionGas:
     def mole_fractions(self, value: List[float]):
         if len(self._species_names) == 1:
             raise ValueError("Cannot change mole fractions for a pure gas.")
-        if not np.isclose(sum(value), 1.0, atol=1e-6):
-            raise ValueError("Mole fractions must sum to 1.0.")
-        self._mole_fractions = np.asarray(value, dtype=float)
+        self._mole_fractions = self._validate_fractions(value, "Mole fractions")
         self._mass_fractions = self._mole_fractions * self._M / np.dot(self._mole_fractions, self._M)
         self._clear_property_cache()
 
@@ -285,9 +303,7 @@ class CombustionGas:
     def mass_fractions(self, value: List[float]):
         if len(self._species_names) == 1:
             raise ValueError("Cannot change mass fractions for a pure gas.")
-        if not np.isclose(sum(value), 1.0, atol=1e-6):
-            raise ValueError("Mass fractions must sum to 1.0.")
-        self._mass_fractions = np.asarray(value, dtype=float)
+        self._mass_fractions = self._validate_fractions(value, "Mass fractions")
         inv = self._mass_fractions / self._M
         self._mole_fractions = inv / inv.sum()
         self._clear_property_cache()
@@ -972,10 +988,12 @@ class CombustionGas:
 
     @staticmethod
     def mole_to_mass(species_names: List[str], mole_fractions: List[float]):
+        mole_fractions = CombustionGas._validate_fractions(mole_fractions, "Mole fractions")
         return CEA.mole_to_mass(species_names, mole_fractions)
 
     @staticmethod
     def mass_to_mole(species_names: List[str], mass_fractions: List[float]):
+        mass_fractions = CombustionGas._validate_fractions(mass_fractions, "Mass fractions")
         return CEA.mass_to_mole(species_names, mass_fractions)
 
     @classmethod

@@ -6,7 +6,7 @@ from functools import lru_cache
 
 import CoolProp.CoolProp as CP
 
-from SpeciesDatabase import SpeciesDatabase
+from .SpeciesDatabase import SpeciesDatabase
 
 
 class Fluid:
@@ -145,8 +145,17 @@ class Fluid:
         elif isinstance(fluid, dict):
             if len(fluid) == 1:
                 f, frac = next(iter(fluid.items()))
+                frac = float(frac)
+
+                if not np.isfinite(frac):
+                    raise ValueError("Single-component fraction must be finite")
+
+                if frac < 0.0:
+                    raise ValueError("Single-component fraction must be nonnegative")
+
                 if not np.isclose(frac, 1.0, atol=1e-12):
                     raise ValueError(f"Single-component dict must have fraction = 1.0, got {frac}")
+
                 backend, display = Fluid._normalize_name(f)
                 if backend not in valid_fluids:
                     raise ValueError(
@@ -176,13 +185,11 @@ class Fluid:
                 self._display_names = [", ".join(sorted(set(names))) for _, names in tmp.values()]
 
                 if basis == "mole":
-                    if not np.isclose(fractions.sum(), 1.0, atol=1e-6):
-                        raise ValueError("Mole fractions must sum to 1.0")
+                    fractions = self._validate_fractions(fractions, "Mole fractions")
                     self._mole_fractions = fractions
                     self._mass_fractions = Fluid.mole_to_mass(self._fluids, fractions)
                 elif basis == "mass":
-                    if not np.isclose(fractions.sum(), 1.0, atol=1e-6):
-                        raise ValueError("Mass fractions must sum to 1.0")
+                    fractions = self._validate_fractions(fractions, "Mass fractions")
                     self._mass_fractions = fractions
                     self._mole_fractions = Fluid.mass_to_mole(self._fluids, fractions)
                 else:
@@ -233,6 +240,24 @@ class Fluid:
     def backend(self) -> str:
         """Name of the thermodynamic property backend."""
         return self._BACKEND_NAME
+
+    @staticmethod
+    def _validate_fractions(fractions, label: str, *, atol: float = 1e-6) -> np.ndarray:
+        fractions = np.asarray(fractions, dtype=float)
+
+        if fractions.size == 0:
+            raise ValueError(f"{label} cannot be empty")
+
+        if not np.all(np.isfinite(fractions)):
+            raise ValueError(f"{label} must contain only finite values")
+
+        if np.any(fractions < 0.0):
+            raise ValueError(f"{label} must be nonnegative")
+
+        if not np.isclose(fractions.sum(), 1.0, atol=atol):
+            raise ValueError(f"{label} must sum to 1.0")
+
+        return fractions
 
     def _build_state(self):
         """Create and configure a CoolProp AbstractState."""
@@ -383,11 +408,8 @@ class Fluid:
         if len(self._fluids) == 1:
             raise ValueError("Cannot change mole fractions for a pure fluid")
 
-        if not np.isclose(sum(value), 1.0, atol=1e-6):
-            raise ValueError("Mole fractions must sum to 1.0")
-
-        self._mole_fractions = np.array(value, dtype=float)
-        self._mass_fractions = Fluid.mole_to_mass(self._fluids, value)
+        self._mole_fractions = self._validate_fractions(value, "Mole fractions")
+        self._mass_fractions = Fluid.mole_to_mass(self._fluids, self._mole_fractions)
 
         self._backend = self._build_state()
         self._pyfluid = self._backend
@@ -406,11 +428,8 @@ class Fluid:
         if len(self._fluids) == 1:
             raise ValueError("Cannot change mass fractions for a pure fluid")
 
-        if not np.isclose(sum(value), 1.0, atol=1e-6):
-            raise ValueError("Mass fractions must sum to 1.0")
-
-        self._mass_fractions = np.array(value, dtype=float)
-        self._mole_fractions = Fluid.mass_to_mole(self._fluids, value)
+        self._mass_fractions = self._validate_fractions(value, "Mass fractions")
+        self._mole_fractions = Fluid.mass_to_mole(self._fluids, self._mass_fractions)
 
         self._backend = self._build_state()
         self._pyfluid = self._backend
@@ -1177,9 +1196,7 @@ class Fluid:
     @staticmethod
     def mole_to_mass(fluids: List[str], mole_fractions: List[float]):
         """Convert mole fractions to mass fractions."""
-        if not np.isclose(sum(mole_fractions), 1.0, atol=1e-6):
-            raise ValueError("Mole fractions must sum to 1.0")
-        mole_fractions = np.asarray(mole_fractions, dtype=float)
+        mole_fractions = Fluid._validate_fractions(mole_fractions, "Mole fractions")
         molar_masses = np.array([Fluid._molar_mass_of(f) for f in fluids])
         m_bar = np.dot(mole_fractions, molar_masses)
         return mole_fractions * molar_masses / m_bar
@@ -1187,9 +1204,7 @@ class Fluid:
     @staticmethod
     def mass_to_mole(fluids: List[str], mass_fractions: List[float]):
         """Convert mass fractions to mole fractions."""
-        if not np.isclose(sum(mass_fractions), 1.0, atol=1e-6):
-            raise ValueError("Mass fractions must sum to 1.0")
-        mass_fractions = np.asarray(mass_fractions, dtype=float)
+        mass_fractions = Fluid._validate_fractions(mass_fractions, "Mass fractions")
         molar_masses = np.array([Fluid._molar_mass_of(f) for f in fluids])
         inv = mass_fractions / molar_masses
         return inv / inv.sum()

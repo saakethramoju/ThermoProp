@@ -5,7 +5,7 @@ from types import MappingProxyType
 from typing import Any
 
 try:
-    from CEADatabase import CEA
+    from .CEADatabase import CEA
 except Exception:  # pragma: no cover
     CEA = None
 

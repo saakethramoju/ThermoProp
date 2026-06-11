@@ -6,8 +6,8 @@ import numpy as np
 from scipy.optimize import root_scalar
 import pyromat as pm
 
-from SpeciesDatabase import SpeciesDatabase
-from CEADatabase import CEA
+from .SpeciesDatabase import SpeciesDatabase
+from .CEADatabase import CEA
 
 
 class IdealGas:
@@ -128,8 +128,10 @@ class IdealGas:
                 for v in tmp.values()
             ]
 
-            if not np.isclose(fractions.sum(), 1.0, atol=1e-6):
-                raise ValueError(f"{basis.capitalize()} fractions must sum to 1.0")
+            fractions = self._validate_fractions(
+                fractions,
+                f"{basis.capitalize()} fractions",
+            )
 
             if basis == "mole":
                 self._mole_fractions = fractions
@@ -179,6 +181,25 @@ class IdealGas:
     def backend(self) -> str:
         """Name of the thermodynamic property backend."""
         return self._BACKEND_NAME
+
+    @staticmethod
+    def _validate_fractions(fractions, label: str, *, atol: float = 1e-6) -> np.ndarray:
+        fractions = np.asarray(fractions, dtype=float)
+
+        if fractions.size == 0:
+            raise ValueError(f"{label} cannot be empty")
+
+        if not np.all(np.isfinite(fractions)):
+            raise ValueError(f"{label} must contain only finite values")
+
+        if np.any(fractions < 0.0):
+            raise ValueError(f"{label} must be nonnegative")
+
+        if not np.isclose(fractions.sum(), 1.0, atol=atol):
+            raise ValueError(f"{label} must sum to 1.0")
+
+        return fractions
+
     # ---------------- Units ---------------- #
 
     @staticmethod
@@ -382,10 +403,7 @@ class IdealGas:
         if len(self._species_ids) == 1:
             raise ValueError("Cannot change mole fractions for a pure gas")
 
-        if not np.isclose(sum(value), 1.0, atol=1e-6):
-            raise ValueError("Mole fractions must sum to 1.0")
-
-        self._mole_fractions = np.array(value, dtype=float)
+        self._mole_fractions = self._validate_fractions(value, "Mole fractions")
         self._mass_fractions = self._mole_fractions * self._M / np.dot(self._mole_fractions, self._M)
         self._clear_property_cache()
 
@@ -404,10 +422,7 @@ class IdealGas:
         if len(self._species_ids) == 1:
             raise ValueError("Cannot change mass fractions for a pure gas")
 
-        if not np.isclose(sum(value), 1.0, atol=1e-6):
-            raise ValueError("Mass fractions must sum to 1.0")
-
-        self._mass_fractions = np.array(value, dtype=float)
+        self._mass_fractions = self._validate_fractions(value, "Mass fractions")
         inv = self._mass_fractions / self._M
         self._mole_fractions = inv / inv.sum()
         self._clear_property_cache()
@@ -1278,17 +1293,13 @@ class IdealGas:
 
     @staticmethod
     def mole_to_mass(species_ids: List[str], mole_fractions: List[float]):
-        if not np.isclose(sum(mole_fractions), 1.0, atol=1e-6):
-            raise ValueError("Mole fractions must sum to 1.0")
-        x = np.asarray(mole_fractions, dtype=float)
+        x = IdealGas._validate_fractions(mole_fractions, "Mole fractions")
         M = np.array([IdealGas._molar_mass_of(sid) for sid in species_ids])
         return x * M / np.dot(x, M)
 
     @staticmethod
     def mass_to_mole(species_ids: List[str], mass_fractions: List[float]):
-        if not np.isclose(sum(mass_fractions), 1.0, atol=1e-6):
-            raise ValueError("Mass fractions must sum to 1.0")
-        w = np.asarray(mass_fractions, dtype=float)
+        w = IdealGas._validate_fractions(mass_fractions, "Mass fractions")
         M = np.array([IdealGas._molar_mass_of(sid) for sid in species_ids])
         inv = w / M
         return inv / inv.sum()

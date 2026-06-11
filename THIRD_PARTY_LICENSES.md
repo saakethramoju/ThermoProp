@@ -96,6 +96,43 @@ The author gratefully acknowledges Tyson Tran and the MatProtLib project for mak
 
 ---
 
+## NASA CEA / CEAM Data
+
+ThermoProp includes thermodynamic and transport-property data adapted from the NASA Chemical Equilibrium with Applications (CEA) program and associated CEAM thermodynamic and transport databases.
+
+NASA CEA was developed by the National Aeronautics and Space Administration (NASA) to perform chemical-equilibrium, thermodynamic, and transport-property calculations for propulsion, combustion, and aerospace applications.
+
+Primary reference:
+
+McBride, B. J., Gordon, S., and Reno, M. A.,
+*NASA Glenn Coefficients for Calculating Thermodynamic Properties of Individual Species*,
+NASA/TP-2002-211556,
+National Aeronautics and Space Administration,
+2002.
+
+NASA CEA:
+
+McBride, B. J. and Gordon, S.,
+*Computer Program for Calculation of Complex Chemical Equilibrium Compositions and Applications (CEA)*,
+NASA Reference Publication 1311,
+1994.
+
+NASA publications are generally public-domain works of the United States Government.
+
+Project:
+https://www.nasa.gov/glenn/
+
+CEA Reference:
+https://ntrs.nasa.gov/citations/19950013764
+
+ThermoProp is not affiliated with NASA and does not distribute the original NASA CEA software.
+
+### Attribution
+
+ThermoProp's `CEADatabase` and equilibrium-combustion functionality utilize thermodynamic and transport datasets derived from NASA CEA / CEAM data products.
+
+The author gratefully acknowledges the NASA Glenn Research Center and the CEA development team for making these thermodynamic and transport datasets publicly available.
+
 ## Disclaimer
 
 ThermoProp is an independent project and is not affiliated with, endorsed by, or sponsored by the CoolProp, PYroMat, RocketProps, NumPy, SciPy, or MatProtLib projects.

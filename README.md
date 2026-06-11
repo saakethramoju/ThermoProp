@@ -4,24 +4,56 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/thermoprop/)
 [![License](https://img.shields.io/pypi/l/thermoprop)](https://github.com/saakethramoju/ThermoProp)
 
-ThermoProp is a Python thermophysical property library for real fluids, fluid mixtures, ideal gases, ideal gas mixtures, liquid rocket propellants, and isotropic engineering materials.
+ThermoProp is a Python thermophysical-property and chemical-equilibrium library for engineering analysis, propulsion, thermodynamics, heat transfer, and fluid systems.
 
-It provides a unified API around CoolProp, PYroMat, RocketProps, and a built-in engineering material property database.
+It provides a unified API for:
 
-It provides a clean interface around:
+* Real fluids
+* Fluid mixtures
+* Ideal gases
+* Ideal-gas mixtures
+* Liquid rocket propellants
+* Combustion-product gases
+* Chemical-equilibrium calculations
+* Engineering materials
+
+ThermoProp integrates multiple industry-standard databases and libraries behind a consistent interface:
 
 * CoolProp
 * PYroMat
 * RocketProps
-* Built-in Material Database
-* NumPy
-* SciPy
+* NASA CEA / CEAM thermochemical databases
+* Built-in engineering material databases
 
-## Why ThermoProp?
+---
 
-ThermoProp provides a unified API around CoolProp, PYroMat, RocketProps, and a built-in engineering material property database.
+# Installation
 
-Instead of remembering backend-specific syntax such as:
+```bash
+pip install thermoprop
+```
+
+Requires Python 3.11 or newer.
+
+---
+
+# Why ThermoProp?
+
+Engineering workflows often require multiple property libraries.
+
+A single project may need:
+
+* CoolProp for real-fluid properties
+* PYroMat for ideal-gas thermodynamics
+* RocketProps for propellant properties
+* NASA CEA for combustion products
+* Material databases for structural analysis
+
+Each library has its own API, naming conventions, units, and capabilities.
+
+ThermoProp provides a common interface across all of them.
+
+Instead of:
 
 ```python
 CP.PropsSI(...)
@@ -29,7 +61,7 @@ pm.get(...)
 get_prop(...)
 ```
 
-users can write:
+you can write:
 
 ```python
 from thermoprop import Fluid
@@ -42,23 +74,34 @@ water = Fluid(
 
 print(water.density)
 print(water.enthalpy)
+print(water.entropy)
 ```
 
-with a consistent interface for pure fluids, mixtures, ideal gases, liquid rocket propellants, and engineering materials.
+and use nearly identical syntax throughout the package.
 
-## Installation
+---
 
-```bash
-pip install thermoprop
-```
+# Wrapper Selection Guide
 
-## Features
+| Need                          | Wrapper       |
+| ----------------------------- | ------------- |
+| Real-fluid thermodynamics     | Fluid         |
+| Ideal-gas thermodynamics      | IdealGas      |
+| Liquid propellant properties  | Propellant    |
+| Combustion-product properties | CombustionGas |
+| Reactant mixture definition   | Reactants     |
+| Chemical equilibrium          | Equilibrium   |
+| Engineering materials         | Material      |
 
-### Fluid
+---
+
+# Core Wrappers
+
+## Fluid
 
 `Fluid` is a CoolProp-based real-fluid wrapper.
 
-It supports:
+Supported features include:
 
 * Pure fluids
 * Fluid mixtures
@@ -67,257 +110,13 @@ It supports:
 * Pressure-quality states
 * Temperature-quality states
 * Density-based states
-* Mass-fraction and mole-fraction mixtures
-
-### IdealGas
-
-`IdealGas` is a PYroMat-based ideal-gas wrapper.
-
-It supports:
-
-* Pure ideal gases
-* Ideal-gas mixtures
-* Temperature states
-* Enthalpy states
 * Internal-energy states
-* Pressure-density closure
-* Cp, Cv, gamma, entropy, Gibbs energy, Helmholtz energy, and speed of sound
-* Thermal expansion coefficient
-* Isothermal compressibility
-* Selected thermodynamic partial derivatives
-* Dynamic & kinematic viscosity (selected species only)
-* Approximate Prandtl number
-* Approximate thermal conductivity
-
-Transport properties are provided for engineering calculations.
-
-Dynamic viscosity is currently available only for species with
-implemented Sutherland-law coefficients. Thermal conductivity and
-Prandtl number are estimated using simple kinetic-theory-based
-correlations and should be considered approximate.
-
-### Propellant
-
-`Propellant` is a RocketProps-based liquid rocket propellant wrapper.
-
-It supports:
-
-* Liquid rocket propellants
-* Saturated-liquid properties
-* Compressed-liquid properties
-* Density
-* Dynamic viscosity
-* Kinematic viscosity
-* Thermal conductivity
-* Surface tension
-* Vapor pressure
-* Saturation temperature
-* Heat of vaporization
-* Critical properties
-
-`Propellant` is intended for liquid propellant engineering properties. It is not a thermodynamic flash solver and does not calculate vapor-state properties, two-phase states, enthalpy, internal energy, or entropy.
-
-### Material
-
-`Material` is a built-in isotropic engineering material-property wrapper.
-
-It provides temperature-dependent engineering material properties using ThermoProp's integrated material property database.
-
-Supported properties include:
-
-* Density
-* Yield strength
-* Ultimate strength
-* Elastic modulus
-* Torsional modulus
-* Poisson ratio
-* Thermal conductivity
-* Specific heat
-* Coefficient of thermal expansion
-* Thermal diffusivity
-* Melting point
-* Electrical resistivity
-
-Currently supported materials include:
-
-#### Aluminum Alloys
-
-* Aluminum 6061
-* Aluminum 7075
-
-#### Copper Alloys
-
-* Copper C101
-* Copper C11000
-* Copper C17200
-* GRCop-42
-* GRCop-84
-
-#### Carbon & Low-Alloy Steels
-
-* 1018 Carbon Steel
-* 1045 Carbon Steel
-* 3140 Low-Alloy Steel
-* 4140 Steel
-
-#### Stainless Steels
-
-* Stainless Steel 303
-* Stainless Steel 304
-* Stainless Steel 316
-* A286 Steel
-
-#### Nickel-Based Superalloys
-
-* Inconel 625
-* Inconel 718
-
-#### Ceramics & Non-Metals
-
-* Graphite
-
-### MaterialRegistry
-
-`MaterialRegistry` maps user-friendly aliases to canonical ThermoProp material names.
-
-Material names can be supplied using common aliases:
-
-```python
-from thermoprop import Material
-
-mat = Material("in718")
-mat = Material("6061")
-mat = Material("304ss")
-```
-
-`MaterialRegistry` can also be used directly:
-
-```python
-from thermoprop import MaterialRegistry
-
-print(MaterialRegistry.name("in718"))
-print(MaterialRegistry.name("6061"))
-print(MaterialRegistry.name("304ss"))
-```
-
-Example output:
-
-```text
-Inconel 718
-Aluminum 6061
-Stainless Steel 304
-```
-
-Custom aliases can be added at runtime:
-
-```python
-from thermoprop import Material
-from thermoprop import MaterialRegistry
-
-MaterialRegistry.add_alias(
-    "chamber alloy",
-    "Inconel 718",
-)
-
-mat = Material(
-    "chamber alloy",
-    temperature=300,
-)
-
-print(mat.yield_strength)
-```
-
-Aliases can be removed using:
-
-```python
-MaterialRegistry.remove_alias(
-    "chamber alloy"
-)
-```
-
-### FluidRegistry
-
-`FluidRegistry` maps user-friendly names and aliases to backend-specific names.
-
-For example:
-
-```python
-from thermoprop import FluidRegistry
-
-print(FluidRegistry.coolprop_name("rp-1"))
-print(FluidRegistry.propellant_name("rp-1"))
-```
-
-outputs different backend names:
-
-```text
-n-Dodecane
-RP1
-```
-
-This is intentional. `Fluid("rp-1")` uses CoolProp's `n-Dodecane` as an RP-1 surrogate, while `Propellant("rp-1")` uses RocketProps' actual `RP1` correlation.
-
-## Property Introspection
-
-All ThermoProp wrappers provide utilities for discovering supported
-properties programmatically.
-
-```python
-from thermoprop import Fluid
-
-print(Fluid.supported_properties())
-```
-
-Print supported properties:
-
-```python
-Fluid.show_supported_properties()
-```
-
-Check whether a property is supported:
-
-```python
-Fluid.supports_property("enthalpy")
-```
-
-The same interface is available for:
-
-* Fluid
-* IdealGas
-* Propellant
-* Material
-
-## Thermodynamic Reference States
-
-ThermoProp provides a unified interface to multiple thermodynamic backends.
-
-Different property libraries may use different reference states for properties such as:
-
-* Enthalpy
-* Internal energy
-* Entropy
-
-As a result, absolute values of these properties may differ between ThermoProp classes even when pressure, temperature, and composition are identical.
-
-For example, two wrappers representing the same physical state may report different absolute enthalpy values if their underlying thermodynamic libraries use different energy reference conventions.
-
-This behavior is expected and does not indicate an error.
-
-Most engineering calculations depend on property differences rather than absolute values. Properties such as:
-
-* Temperature
-* Pressure
-* Density
-* Specific heats
-* Speed of sound
-* Enthalpy differences (Δh)
-* Internal-energy differences (Δu)
-
-remain physically meaningful within each backend.
-
-Users combining results from multiple ThermoProp wrappers should establish a consistent thermodynamic reference basis if absolute values of enthalpy, internal energy, or entropy are required.
-
-## Pure Fluid Example
+* Entropy-based states
+* Transport properties
+* Thermodynamic derivatives
+* Advanced equation-of-state properties
+
+Example:
 
 ```python
 from thermoprop import Fluid
@@ -330,42 +129,44 @@ water = Fluid(
 
 print(water.density)
 print(water.enthalpy)
+print(water.entropy)
 print(water.phase)
 ```
 
-## Pressure-Enthalpy Example
+---
 
-```python
-from thermoprop import Fluid
+## IdealGas
 
-water = Fluid(
-    "water",
-    pressure=101325,
-    enthalpy=2.7e6,
-)
+`IdealGas` is a PYroMat-based ideal-gas wrapper.
 
-print(water.temperature)
-print(water.quality)
-print(water.phase)
-```
+Supported features include:
 
-## Mixture Example
+* Pure ideal gases
+* Ideal-gas mixtures
+* Temperature states
+* Enthalpy states
+* Internal-energy states
+* Pressure-density closure
+* Entropy calculations
+* Gibbs free energy
+* Helmholtz free energy
+* Speed of sound
+* Specific heat ratio
+* Thermal expansion coefficient
+* Isothermal compressibility
+* Thermodynamic derivatives
 
-```python
-from thermoprop import Fluid
+Transport-property support includes:
 
-air_like = Fluid(
-    {"nitrogen": 0.79, "oxygen": 0.21},
-    basis="mole",
-    pressure=101325,
-    temperature=300,
-)
+* Dynamic viscosity
+* Kinematic viscosity
+* Thermal conductivity
+* Prandtl number
+* Mixture transport-property calculations
 
-print(air_like.density)
-print(air_like.specific_heat_cp)
-```
+NASA CEA transport-property correlations are used whenever available.
 
-## Ideal Gas Example
+Example:
 
 ```python
 from thermoprop import IdealGas
@@ -376,12 +177,52 @@ nitrogen = IdealGas(
     temperature=300,
 )
 
-print(nitrogen.density)
 print(nitrogen.specific_heat_ratio)
 print(nitrogen.speed_of_sound)
+print(nitrogen.dynamic_viscosity)
 ```
 
-## Propellant Example
+---
+
+## Propellant
+
+`Propellant` provides engineering and thermodynamic properties for liquid rocket propellants, gaseous propellants, and NASA CEA reactants.
+
+Depending on the species, ThermoProp automatically selects the most appropriate backend:
+
+* RocketProps
+* NASA CEA
+
+Supported features include:
+
+* Density
+* Viscosity
+* Conductivity
+* Surface tension
+* Vapor pressure
+* Heat of vaporization
+* Heat of formation
+* Enthalpy
+* Internal energy
+* Entropy
+* Standard entropy
+* Molecular weight
+* Elemental composition
+* Critical properties
+
+Common propellants include:
+
+* LOX
+* RP-1
+* Methane
+* Hydrogen
+* MMH
+* UDMH
+* N₂O₄
+* MON blends
+* Aerozine-50
+
+Example:
 
 ```python
 from thermoprop import Propellant
@@ -393,10 +234,150 @@ rp1 = Propellant(
 
 print(rp1.density)
 print(rp1.dynamic_viscosity)
-print(rp1.vapor_pressure)
 ```
 
-## Material Example
+---
+
+## CombustionGas
+
+`CombustionGas` evaluates thermodynamic and transport properties using NASA CEA thermochemical and transport databases.
+
+Supported features include:
+
+* Pure species
+* Multi-species mixtures
+* Mole-fraction compositions
+* Mass-fraction compositions
+* Thermodynamic properties
+* Transport properties
+* Mixture viscosity
+* Mixture conductivity
+* Mixture Prandtl number
+* Speed of sound
+* Specific heat ratio
+
+Example:
+
+```python
+from thermoprop import CombustionGas
+
+gas = CombustionGas(
+    {
+        "CO2": 0.25,
+        "H2O": 0.35,
+        "CO": 0.05,
+        "N2": 0.35,
+    },
+    basis="mole",
+    pressure=2e6,
+    temperature=3000,
+)
+
+print(gas.specific_heat_ratio)
+print(gas.dynamic_viscosity)
+```
+
+---
+
+## Reactants
+
+`Reactants` defines reactant mixtures independently of equilibrium calculations.
+
+Supported features include:
+
+* Mass-fraction mixtures
+* Mole-fraction mixtures
+* Element accounting
+* Molecular-weight calculations
+* Heat-of-formation calculations
+* Thermodynamic-property evaluation
+* Mixture composition inspection
+
+Example:
+
+```python
+from thermoprop import Reactants
+
+reactants = Reactants(
+    {
+        "LOX": 0.70,
+        "RP-1": 0.30,
+    },
+    basis="mass",
+)
+
+print(reactants.elemental_composition)
+```
+
+---
+
+## Equilibrium
+
+`Equilibrium` performs chemical-equilibrium calculations using Gibbs free-energy minimization.
+
+Supported features include:
+
+* Arbitrary reactant mixtures
+* Element conservation constraints
+* Equilibrium composition prediction
+* Equilibrium thermodynamic properties
+* Frozen-composition evaluation
+* Combustion-product generation
+
+Example:
+
+```python
+from thermoprop import Reactants
+from thermoprop import Equilibrium
+
+reactants = Reactants(
+    {
+        "LOX": 0.70,
+        "RP-1": 0.30,
+    },
+    basis="mass",
+)
+
+eq = Equilibrium(
+    reactants,
+    pressure=2e6,
+    temperature=3500,
+)
+
+print(eq.composition)
+```
+
+---
+
+## Material
+
+`Material` provides temperature-dependent engineering material properties.
+
+Supported properties include:
+
+* Density
+* Yield strength
+* Ultimate strength
+* Elastic modulus
+* Shear modulus
+* Poisson ratio
+* Thermal conductivity
+* Specific heat
+* Thermal expansion coefficient
+* Thermal diffusivity
+* Electrical resistivity
+* Melting point
+
+Supported materials include:
+
+* Aluminum alloys
+* Copper alloys
+* Carbon steels
+* Stainless steels
+* Nickel superalloys
+* Graphite
+
+Example:
 
 ```python
 from thermoprop import Material
@@ -406,488 +387,244 @@ inc718 = Material(
     temperature=300,
 )
 
-print(inc718.density)
 print(inc718.yield_strength)
 print(inc718.thermal_conductivity)
 ```
 
-## Compressed-Liquid Propellant Example
+---
+
+# Built-In Databases
+
+## SpeciesDatabase
+
+ThermoProp includes a unified species database covering:
+
+* CoolProp fluids
+* PYroMat species
+* RocketProps propellants
+* NASA CEA species
+* NASA CEA reactants
+
+Example:
 
 ```python
-from thermoprop import Propellant
+from thermoprop import species
 
-lox = Propellant(
-    "lox",
-    pressure=3e6,
-    temperature=90,
-)
-
-print(lox.density)
-print(lox.dynamic_viscosity)
-print(lox.saturation_pressure)
+print(species())
 ```
 
-## Propellant Cavitation Margin Example
+---
+
+## MaterialDatabase
+
+ThermoProp includes a built-in engineering-material database.
+
+Example:
 
 ```python
-from thermoprop import Propellant
+from thermoprop import materials
 
-lox = Propellant(
-    "lox",
-    pressure=300000,
-    temperature=90,
-)
-
-margin = lox.pressure - lox.vapor_pressure
-
-print(margin)
+print(materials())
 ```
 
-## Fluid Registry Examples
+---
 
-`FluidRegistry` can be used to inspect supported names, check backend support, and add custom aliases.
+## CEADatabase
 
-### Check Backend Names
+ThermoProp includes direct access to NASA CEA / CEAM thermochemical and transport data.
+
+Supported features include:
+
+* NASA-9 thermodynamic polynomials
+* Transport-property correlations
+* Species discovery
+* Species inspection
+* Molecular-weight lookup
+* Elemental-composition lookup
+* Transport-coefficient lookup
+
+Example:
 
 ```python
-from thermoprop import FluidRegistry
+from thermoprop import CEA
 
-print(FluidRegistry.coolprop_name("water"))
-print(FluidRegistry.pyromat_name("gn2"))
-print(FluidRegistry.propellant_name("rp-1"))
+print(CEA.gas_species)
+print(CEA.elemental_composition("CO2"))
 ```
 
-Example output:
+---
 
-```text
-Water
-N2
-RP1
-```
+# NASA CEA Integration
 
-For PYroMat, the `ig.` prefix can also be requested:
+ThermoProp includes a native NASA CEA / CEAM database interface.
 
-```python
-print(FluidRegistry.pyromat_name("gn2", include_prefix=True))
-```
+Unlike workflows that require external Fortran executables or third-party wrappers, ThermoProp ships with parsed thermodynamic and transport databases directly accessible from Python.
 
-Example output:
+Supported NASA CEA functionality includes:
 
-```text
-ig.N2
-```
+* NASA-9 thermodynamic polynomials
+* Thermodynamic-property evaluation
+* Transport-property evaluation
+* Species discovery
+* Reactant definitions
+* Combustion-product properties
+* Chemical-equilibrium calculations
 
-### Check Backend Support
+---
 
-```python
-from thermoprop import FluidRegistry
+# Property Discovery
 
-print(FluidRegistry.supports_coolprop("water"))
-print(FluidRegistry.supports_pyromat("gn2"))
-print(FluidRegistry.supports_propellant("rp-1"))
-```
+All wrappers provide runtime introspection utilities.
 
-### List Supported Names
-
-```python
-from thermoprop import FluidRegistry
-
-print(FluidRegistry.names)
-print(FluidRegistry.coolprop_supported_names)
-print(FluidRegistry.pyromat_supported_names)
-print(FluidRegistry.propellant_supported_names)
-```
-
-You can also print supported species directly:
-
-```python
-FluidRegistry.show_species()
-FluidRegistry.show_coolprop_species()
-FluidRegistry.show_pyromat_species()
-FluidRegistry.show_propellant_species()
-```
-
-### Show Aliases
-
-ThermoProp keeps normal fluid aliases and propellant aliases separate.
-
-```python
-from thermoprop import FluidRegistry
-
-FluidRegistry.show_aliases()
-FluidRegistry.show_propellant_aliases()
-```
-
-This avoids ambiguity. For example:
-
-```python
-print(FluidRegistry.coolprop_name("rp-1"))
-print(FluidRegistry.propellant_name("rp-1"))
-```
-
-returns:
-
-```text
-n-Dodecane
-RP1
-```
-
-### Add Custom Aliases
-
-Use `add_alias()` for `Fluid` and `IdealGas` names:
-
-```python
-from thermoprop import Fluid, FluidRegistry
-
-FluidRegistry.add_alias("my-water", "Water")
-
-water = Fluid(
-    "my-water",
-    pressure=101325,
-    temperature=300,
-)
-
-print(water.density)
-```
-
-Use `add_propellant_alias()` for `Propellant` names:
-
-```python
-from thermoprop import Propellant, FluidRegistry
-
-FluidRegistry.add_propellant_alias("my-rp1", "RP1")
-
-rp1 = Propellant(
-    "my-rp1",
-    temperature=293.15,
-)
-
-print(rp1.density)
-```
-
-Removing aliases works the same way:
-
-```python
-FluidRegistry.remove_alias("my-water")
-FluidRegistry.remove_propellant_alias("my-rp1")
-```
-
-## Common Properties
+Discover supported properties:
 
 ```python
 from thermoprop import Fluid
 
-fluid = Fluid(
-    "water",
-    pressure=101325,
-    temperature=300,
-)
-
-print(fluid.pressure)
-print(fluid.temperature)
-print(fluid.density)
-print(fluid.enthalpy)
-print(fluid.entropy)
-print(fluid.specific_heat_cp)
-print(fluid.specific_heat_cv)
-print(fluid.specific_heat_ratio)
-print(fluid.speed_of_sound)
-print(fluid.dynamic_viscosity)
-print(fluid.conductivity)
+print(Fluid.supported_properties())
 ```
 
-## Advanced Thermodynamic Properties
-
-`Fluid` and `IdealGas` provide additional thermodynamic properties when supported by the underlying backend.
+Discover supported flash inputs:
 
 ```python
-from thermoprop import Fluid
-
-water = Fluid(
-    "water",
-    pressure=101325,
-    temperature=300,
-)
-
-print(water.thermal_expansion_coefficient)
-print(water.isothermal_compressibility)
-print(water.helmholtz_energy)
-print(water.gibbs_energy)
-print(water.joule_thomson_coefficient)
+print(Fluid.supported_flash_inputs())
 ```
 
-For `Fluid`, these properties are provided by CoolProp.
-
-For `IdealGas`, some properties are analytic ideal-gas results:
-
-* `thermal_expansion_coefficient = 1 / T`
-* `isothermal_compressibility = 1 / P`
-* `joule_thomson_coefficient = 0`
-
-`Propellant` and `Material` do not support all advanced thermodynamic properties because they are not full thermodynamic equation-of-state wrappers.
-
-## Thermodynamic Partial Derivatives
-
-`Fluid` provides access to CoolProp first partial derivatives using:
+Discover available species:
 
 ```python
-fluid.partial_derivative(
-    "Hmass",
-    "T",
-    "P",
-)
+print(Fluid.get_available_species())
 ```
 
-This evaluates:
-
-```text
-(∂h/∂T)_P
-```
-
-Common derivative shortcuts are also available:
+Discover available materials:
 
 ```python
-print(fluid.dhdT_const_p)
-print(fluid.dhdP_const_t)
+from thermoprop import Material
 
-print(fluid.drhodT_const_p)
-print(fluid.drhodP_const_t)
-
-print(fluid.dTdP_const_h)
+print(Material.get_available_materials())
 ```
 
-where:
+---
 
-* `dhdT_const_p` is `(∂h/∂T)_P`
-* `dhdP_const_t` is `(∂h/∂P)_T`
-* `drhodT_const_p` is `(∂ρ/∂T)_P`
-* `drhodP_const_t` is `(∂ρ/∂P)_T`
-* `dTdP_const_h` is `(∂T/∂P)_h`
+# Thermodynamic Reference States
 
-The Joule-Thomson coefficient is exposed as:
+ThermoProp provides a unified API across multiple thermodynamic backends.
 
-```python
-print(fluid.joule_thomson_coefficient)
-```
+Different libraries use different reference-state conventions for:
 
-which is equivalent to:
-
-```python
-fluid.dTdP_const_h
-```
-
-`IdealGas` also provides selected analytic partial derivatives for common ideal-gas relationships.
-
-## Updating State Properties
-
-ThermoProp states can be updated after creation.
-
-### Real Fluid
-
-```python
-from thermoprop import Fluid
-
-water = Fluid(
-    "water",
-    pressure=101325,
-    temperature=300,
-)
-
-water.pressure = 2e5
-water.temperature = 350
-
-print(water.density)
-print(water.enthalpy)
-```
-
-You can also update state pairs directly:
-
-```python
-water.pressure_temperature = (2e5, 350)
-water.pressure_enthalpy = (2e5, 1.5e6)
-water.pressure_quality = (101325, 0.5)
-water.temperature_quality = (373.15, 1.0)
-```
-
-### Ideal Gas
-
-Ideal gases only require a thermal state such as temperature, enthalpy, or internal energy.
-
-```python
-from thermoprop import IdealGas
-
-nitrogen = IdealGas(
-    "gn2",
-    temperature=300,
-)
-
-print(nitrogen.enthalpy)
-print(nitrogen.internal_energy)
-print(nitrogen.specific_heat_cp)
-```
-
-Pressure is optional, but it is required for pressure-dependent properties such as density and entropy:
-
-```python
-nitrogen.pressure = 101325
-
-print(nitrogen.density)
-print(nitrogen.entropy)
-```
-
-You can also update ideal-gas states:
-
-```python
-nitrogen.temperature = 500
-nitrogen.pressure_temperature = (101325, 300)
-nitrogen.pressure_enthalpy = (101325, nitrogen.enthalpy)
-```
-
-### Propellant
-
-Propellants require temperature. Pressure is optional.
-
-```python
-from thermoprop import Propellant
-
-rp1 = Propellant(
-    "rp1",
-    temperature=293.15,
-)
-
-print(rp1.density)
-print(rp1.specific_heat_cp)
-```
-
-If pressure is omitted, saturated-liquid properties are used.
-
-```python
-rp1.pressure = 2e6
-
-print(rp1.density)
-print(rp1.dynamic_viscosity)
-```
-
-You can also update the propellant state pair directly:
-
-```python
-rp1.pressure_temperature = (2e6, 300)
-```
-
-## Propellant Limitations
-
-`Propellant` wraps RocketProps liquid propellant correlations.
-
-It is intended for liquid engineering properties and does not calculate:
-
-* Mixture properties
-* Vapor-state properties
-* Two-phase flash states
 * Enthalpy
 * Internal energy
 * Entropy
-* Cv
-* Specific heat ratio
-* Speed of sound
 
-Unsupported properties raise `NotImplementedError`.
+As a result, absolute values of these properties may differ between wrappers even when pressure, temperature, and composition are identical.
 
-## Ideal-Gas Transport Properties
+This behavior is expected.
 
-`IdealGas` provides approximate transport-property support.
+Property differences remain physically meaningful within each backend.
 
-### Dynamic Viscosity
+When comparing results across wrappers, users should establish a consistent thermodynamic reference basis if absolute thermodynamic values are required.
 
-`IdealGas.dynamic_viscosity` uses Sutherland's law.
+Backends used by ThermoProp include:
 
-Viscosity is currently supported only for gases with available Sutherland-law constants. Supported gases include:
+* CoolProp
+* PYroMat
+* RocketProps
+* NASA CEA
 
-* Air
-* Argon
-* Carbon dioxide
-* Carbon monoxide
-* Nitrogen
-* Oxygen
-* Hydrogen
-* Water vapor
+Each backend may define its own thermodynamic reference state.
 
-Ideal-gas mixtures are supported using Wilke's viscosity mixing rule when viscosity data is available for all constituent species.
+---
+
+# Updating States
+
+ThermoProp wrappers support state updates after creation.
+
+Example:
 
 ```python
-from thermoprop import IdealGas
+water.pressure = 2e5
+water.temperature = 350
+```
 
-air = IdealGas(
-    "air",
-    pressure=101325,
-    temperature=300,
+or:
+
+```python
+water.pressure_temperature = (
+    2e5,
+    350,
 )
-
-print(air.dynamic_viscosity)
 ```
 
-If viscosity data is unavailable for a species, ThermoProp raises `NotImplementedError`.
+State-update capabilities depend on the wrapper and selected backend.
 
-### Prandtl Number
+---
 
-`IdealGas.prandtl` provides an approximate Prandtl number based on an Eucken-style kinetic-theory correlation.
+# Limitations
 
-```python
-print(air.prandtl)
-```
+## Fluid
 
-This approximation is intended for engineering calculations and should not be considered a replacement for detailed transport-property models.
+* Limited by CoolProp fluid availability.
+* Mixture support follows CoolProp capabilities.
 
-### Thermal Conductivity
+## IdealGas
 
-`IdealGas.conductivity` and `IdealGas.thermal_conductivity` provide approximate thermal conductivity estimates computed from:
+* Assumes ideal-gas behavior.
+* Not intended for dense-gas or near-critical states.
 
-```text
-k = Cp μ / Pr
-```
+## Propellant
 
-using the wrapper's specific heat, dynamic viscosity, and approximate Prandtl number.
+* Primarily intended for engineering propellant properties.
+* Property availability depends on the selected backend.
 
-```python
-print(air.conductivity)
-print(air.thermal_conductivity)
-```
+## Equilibrium
 
-These estimates are intended for engineering calculations and do not use detailed transport-property databases such as those employed by CEA, Cantera, or REFPROP.
+* Assumes chemical equilibrium.
+* Does not model finite-rate chemistry.
+* Does not model transient reaction kinetics.
 
-## Material Limitations
+## Material
 
-`Material` currently provides temperature-dependent isotropic engineering material properties.
+* Temperature dependent only.
+* No anisotropic material support.
+* No fatigue data.
+* No creep data.
+* No fracture-mechanics data.
 
-It does not currently support:
+---
 
-* Anisotropic materials
-* Composite materials
-* Stress-strain curves
-* Fatigue data
-* Fracture mechanics properties
-* Creep data
-* Pressure-dependent material behavior
+# Documentation
 
-Attempting to access unsupported thermodynamic properties such as enthalpy, entropy, viscosity, or vapor quality will raise `NotImplementedError`.
+Full documentation:
 
-## Acknowledgments
+https://saakethramoju.github.io/softwares/thermoprop/
 
-ThermoProp's isotropic material property database was adapted from material property data compiled and distributed through the MatProtLib project.
-
-The author gratefully acknowledges Tyson Tran and the MatProtLib project for making these engineering material datasets publicly available.
-
-MatProtLib:
-
-https://github.com/tysontran/MatProtLib
-
-## Source Code
-
-GitHub:
+Source code:
 
 https://github.com/saakethramoju/ThermoProp
 
-## License
+---
+
+# Acknowledgments
+
+ThermoProp incorporates or utilizes data from:
+
+* CoolProp
+* PYroMat
+* RocketProps
+* NASA CEA / CEAM
+* MatProtLib
+
+Special thanks to Tyson Tran and the MatProtLib project for making engineering material datasets publicly available.
+
+The author also gratefully acknowledges the NASA Glenn Research Center and the NASA CEA development team for making thermochemical and transport datasets publicly available.
+
+---
+
+# License
 
 ThermoProp is released under the GNU General Public License v3.0.
 
-See `LICENSE` and `THIRD_PARTY_LICENSES.md`.
+See:
+
+* LICENSE
+* THIRD_PARTY_LICENSES.md
