@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
+from scipy.optimize import root_scalar
 
 from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
@@ -10,12 +11,32 @@ from .SpeciesDatabase import SpeciesDatabase
 
 class CombustionGas:
     """
-    Fixed-composition ideal-gas mixture wrapper using NASA CEA / CEAM data.
+    NASA CEA / CEAM ideal-gas mixture wrapper with a Fluid-like API.
 
-    This class evaluates thermodynamic and transport properties for a known gas
-    composition at a specified pressure and temperature. It does not solve
-    equilibrium chemistry. Equilibrium and frozen-flow models should compute or
-    provide the composition, then use this wrapper for gas properties.
+    This class evaluates thermodynamic and transport properties for gas-phase
+    CEA species and mixtures. Thermodynamic properties are evaluated from
+    NASA-9 CEA polynomials. Transport properties use CEA / CEAM transport data
+    when available, with CEA-style estimates used as fallbacks.
+
+    Supports thermal state from:
+        temperature
+        enthalpy
+        internal_energy
+
+    Pressure is optional for pressure-independent properties.
+
+    Density can be used only with another closure:
+        density + pressure         -> temperature
+        density + temperature      -> pressure
+        density + enthalpy         -> temperature, pressure
+        density + internal_energy  -> temperature, pressure
+
+    --- IMPORTANT!! ---
+    NASA CEA defines its own thermodynamic reference states.
+
+    Absolute enthalpy, internal energy, and entropy values should not be
+    directly compared with those from other thermodynamic libraries unless a
+    common reference basis has been established.
     """
 
     _BACKEND_NAME = "NASA CEA / CEAM"
@@ -25,7 +46,6 @@ class CombustionGas:
     _P_REF = 100000.0
 
     _UNSUPPORTED_PROPERTIES = {
-        "quality",
         "surface_tension",
         "vapor_pressure",
         "saturation_pressure",
@@ -39,28 +59,34 @@ class CombustionGas:
     }
 
     _FLASH_INPUTS = {
+        frozenset(("temperature",)),
+        frozenset(("enthalpy",)),
+        frozenset(("internal_energy",)),
+        frozenset(("pressure", "density")),
         frozenset(("pressure", "temperature")),
+        frozenset(("pressure", "enthalpy")),
+        frozenset(("pressure", "internal_energy")),
+        frozenset(("density", "temperature")),
+        frozenset(("density", "enthalpy")),
+        frozenset(("density", "internal_energy")),
     }
 
     def __init__(
         self,
-        composition: Union[str, Dict[str, float]],
+        fluid: Union[str, Dict[str, float]],
         basis: str = "mass",
         pressure: float | None = None,
+        enthalpy: float | None = None,
         temperature: float | None = None,
+        internal_energy: float | None = None,
+        density: float | None = None,
         quality: float | None = None,
     ):
         if quality is not None:
             raise ValueError("CombustionGas does not support vapor quality.")
 
-        if pressure is None or temperature is None:
-            raise ValueError("CombustionGas requires pressure and temperature.")
-
         if basis not in ("mole", "mass"):
             raise ValueError("basis must be 'mole' or 'mass'.")
-
-        self._pressure = float(pressure)
-        self._temperature = float(temperature)
 
         self._species_names: List[str] = []
         self._display_names: List[str] = []
@@ -68,8 +94,8 @@ class CombustionGas:
         self._transport_indices: List[int | None] = []
         self._property_cache: dict[str, object] = {}
 
-        if isinstance(composition, str):
-            species_name, display_name, thermo_index, transport_index = self._resolve_species(composition)
+        if isinstance(fluid, str):
+            species_name, display_name, thermo_index, transport_index = self._resolve_species(fluid)
             self._species_names = [species_name]
             self._display_names = [display_name]
             self._thermo_indices = [thermo_index]
@@ -78,13 +104,13 @@ class CombustionGas:
             self._mass_fractions = np.array([1.0], dtype=float)
             self._mixture = False
 
-        elif isinstance(composition, dict):
-            if not composition:
+        elif isinstance(fluid, dict):
+            if not fluid:
                 raise ValueError("composition cannot be empty.")
 
             tmp: dict[str, tuple[float, str, int, int | None, list[str]]] = {}
 
-            for user_name, frac in composition.items():
+            for user_name, frac in fluid.items():
                 species_name, display_name, thermo_index, transport_index = self._resolve_species(user_name)
                 total, _, _, _, labels = tmp.get(
                     species_name,
@@ -99,7 +125,6 @@ class CombustionGas:
                 )
 
             fractions = np.array([item[0] for item in tmp.values()], dtype=float)
-
             fractions = self._validate_fractions(
                 fractions,
                 f"{basis.capitalize()} fractions",
@@ -120,12 +145,23 @@ class CombustionGas:
             self._mixture = len(self._species_names) > 1
 
         else:
-            raise TypeError("composition must be a species name or a dict of fractions.")
+            raise TypeError("fluid must be a species name or a dict of fractions.")
 
         self._M = np.array([CEA.molecular_weight(name) for name in self._species_names], dtype=float)
         self._minimum_temperature, self._maximum_temperature = self._temperature_limits()
 
-        self._validate_temperature()
+        self._pressure: float | None = None
+        self._enthalpy: float | None = None
+        self._temperature: float | None = None
+        self._last_state_values: dict | None = None
+
+        self._set_state(
+            pressure=pressure,
+            temperature=temperature,
+            enthalpy=enthalpy,
+            internal_energy=internal_energy,
+            density=density,
+        )
 
     @staticmethod
     def _validate_fractions(fractions, label: str, *, atol: float = 1e-6) -> np.ndarray:
@@ -193,27 +229,81 @@ class CombustionGas:
 
         return species_name, display_name, thermo_index, transport_index
 
-    @staticmethod
-    def _elemental_composition_from_index(index: int) -> dict[str, float]:
-        symbols = CEA.raw_by_index("element_symbols", index)
-        counts = CEA.raw_by_index("element_counts", index)
+    # ---------------- State setting / flashing ---------------- #
 
-        return {
-            str(symbol): float(count)
-            for symbol, count in zip(symbols, counts)
-            if str(symbol) and np.isfinite(count)
+    def _set_state(
+        self,
+        pressure: float | None = None,
+        temperature: float | None = None,
+        enthalpy: float | None = None,
+        internal_energy: float | None = None,
+        density: float | None = None,
+    ) -> None:
+        self._clear_property_cache()
+
+        self._last_state_values = {
+            "pressure": pressure,
+            "temperature": temperature,
+            "enthalpy": enthalpy,
+            "internal_energy": internal_energy,
+            "density": density,
+        }
+        self._last_state_values = {
+            key: value
+            for key, value in self._last_state_values.items()
+            if value is not None
         }
 
-    @staticmethod
-    def _mw_from_index(index: int) -> float:
-        """Return molecular weight [kg/kmol], numerically equal to g/mol."""
-        return float(CEA.raw_by_index("mw", index))
+        provided = frozenset(self._last_state_values)
 
-    @classmethod
-    def _species_molar_mass(cls, species_name: str) -> float:
-        """Return molar mass [kg/mol] for a direct CEA species name."""
-        species_name = CEA.resolve_name(species_name)
-        return CEA.molar_mass(species_name)
+        if provided not in self._FLASH_INPUTS:
+            raise LookupError(
+                "Unsupported combustion-gas state input combination. "
+                f"Supported inputs are: {self.available_flash_inputs()}."
+            )
+
+        if provided == frozenset(("pressure", "density")):
+            self._pressure = float(pressure)
+            self._temperature = self._pressure / (float(density) * self.gas_constant)
+            self._validate_temperature()
+            self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+            return
+
+        if temperature is not None:
+            self._temperature = float(temperature)
+            self._validate_temperature()
+            self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+        elif enthalpy is not None:
+            self._enthalpy = float(enthalpy)
+            self._temperature = self._temperature_from_enthalpy(self._enthalpy)
+            self._validate_temperature()
+
+        elif internal_energy is not None:
+            self._temperature = self._temperature_from_internal_energy(float(internal_energy))
+            self._validate_temperature()
+            self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+        if pressure is not None:
+            self._pressure = float(pressure)
+
+        if density is not None:
+            pressure_from_density = float(density) * self.gas_constant * self._temperature
+
+            if self._pressure is None:
+                self._pressure = pressure_from_density
+            else:
+                if not np.isclose(self._pressure, pressure_from_density, rtol=1e-5, atol=1e-6):
+                    raise ValueError(
+                        "Provided pressure and density are inconsistent with the "
+                        "ideal-gas equation of state at the solved temperature. "
+                        f"pressure={self._pressure:.6g}, "
+                        f"density*R*temperature={pressure_from_density:.6g}"
+                    )
+
+    def _require_pressure(self, property_name: str = "This property"):
+        if self._pressure is None:
+            raise ValueError(f"{property_name} requires pressure. Set gas.pressure first.")
 
     def _cache_get(self, property_name: str):
         return self._property_cache.get(property_name, None)
@@ -225,37 +315,81 @@ class CombustionGas:
     def _clear_property_cache(self) -> None:
         self._property_cache.clear()
 
-    @property
-    def pressure(self) -> float:
-        return self._pressure
+    def _enthalpy_from_temperature(self, temperature: float) -> float:
+        value = np.array(
+            [CEA.enthalpy_mass(name, temperature) for name in self._species_names],
+            dtype=float,
+        )
+        return float(np.dot(self._mass_fractions, value))
 
-    @pressure.setter
-    def pressure(self, value: float):
-        self._pressure = float(value)
-        self._clear_property_cache()
+    def _internal_energy_from_temperature(self, temperature: float) -> float:
+        return self._enthalpy_from_temperature(temperature) - self.gas_constant * float(temperature)
 
-    @property
-    def temperature(self) -> float:
-        return self._temperature
+    def _temperature_from_enthalpy(self, enthalpy_target: float) -> float:
+        def residual(temperature):
+            return self._enthalpy_from_temperature(temperature) - enthalpy_target
 
-    @temperature.setter
-    def temperature(self, value: float):
-        self._temperature = float(value)
-        self._clear_property_cache()
-        self._validate_temperature()
+        return self._solve_temperature_from_residual(
+            residual,
+            "enthalpy",
+            enthalpy_target,
+        )
 
-    @property
-    def pressure_temperature(self) -> Tuple[float, float]:
-        return self.pressure, self.temperature
+    def _temperature_from_internal_energy(self, internal_energy_target: float) -> float:
+        def residual(temperature):
+            return self._internal_energy_from_temperature(temperature) - internal_energy_target
 
-    @pressure_temperature.setter
-    def pressure_temperature(self, values: Tuple[float, float]):
-        if not isinstance(values, (tuple, list)) or len(values) != 2:
-            raise ValueError("pressure_temperature must be set with (pressure, temperature).")
-        self._pressure = float(values[0])
-        self._temperature = float(values[1])
-        self._clear_property_cache()
-        self._validate_temperature()
+        return self._solve_temperature_from_residual(
+            residual,
+            "internal_energy",
+            internal_energy_target,
+        )
+
+    def _solve_temperature_from_residual(
+        self,
+        residual,
+        variable_name: str,
+        target_value: float,
+    ) -> float:
+        minimum_temperature = self.minimum_temperature
+        maximum_temperature = self.maximum_temperature
+
+        temperatures = np.linspace(minimum_temperature, maximum_temperature, 400)
+        residuals = np.array([residual(temperature) for temperature in temperatures])
+
+        for temperature, residual_value in zip(temperatures, residuals):
+            if abs(residual_value) < 1e-8:
+                return float(temperature)
+
+        for temperature_1, temperature_2, residual_1, residual_2 in zip(
+            temperatures[:-1],
+            temperatures[1:],
+            residuals[:-1],
+            residuals[1:],
+        ):
+            if (
+                np.isfinite(residual_1)
+                and np.isfinite(residual_2)
+                and residual_1 * residual_2 <= 0
+            ):
+                sol = root_scalar(
+                    residual,
+                    bracket=(temperature_1, temperature_2),
+                    method="brentq",
+                )
+                return float(sol.root)
+
+        raise ValueError(
+            f"Could not solve combustion-gas temperature from "
+            f"{variable_name}={target_value:.6g} J/kg "
+            f"over temperature=[{minimum_temperature:.3f}, {maximum_temperature:.3f}] K."
+        )
+
+    def _partial_pressures(self) -> np.ndarray:
+        self._require_pressure("Partial pressures")
+        return self._mole_fractions * self._pressure
+
+    # ---------------- Core package-style API ---------------- #
 
     @property
     def name(self) -> str:
@@ -277,6 +411,8 @@ class CombustionGas:
     def is_mixture(self) -> bool:
         return self._mixture
 
+    # ---------------- Fractions ---------------- #
+
     @property
     def mole_fractions(self) -> dict[str, float]:
         return {
@@ -288,9 +424,13 @@ class CombustionGas:
     def mole_fractions(self, value: List[float]):
         if len(self._species_names) == 1:
             raise ValueError("Cannot change mole fractions for a pure gas.")
+
         self._mole_fractions = self._validate_fractions(value, "Mole fractions")
         self._mass_fractions = self._mole_fractions * self._M / np.dot(self._mole_fractions, self._M)
         self._clear_property_cache()
+
+        if self._last_state_values is not None:
+            self._set_state(**self._last_state_values)
 
     @property
     def mass_fractions(self) -> dict[str, float]:
@@ -303,10 +443,176 @@ class CombustionGas:
     def mass_fractions(self, value: List[float]):
         if len(self._species_names) == 1:
             raise ValueError("Cannot change mass fractions for a pure gas.")
+
         self._mass_fractions = self._validate_fractions(value, "Mass fractions")
         inv = self._mass_fractions / self._M
         self._mole_fractions = inv / inv.sum()
         self._clear_property_cache()
+
+        if self._last_state_values is not None:
+            self._set_state(**self._last_state_values)
+
+    # ---------------- State properties ---------------- #
+
+    @property
+    def pressure(self) -> float | None:
+        return self._pressure
+
+    @pressure.setter
+    def pressure(self, value: float):
+        self._pressure = float(value)
+        self._clear_property_cache()
+
+    @property
+    def enthalpy(self) -> float:
+        return self._enthalpy
+
+    @enthalpy.setter
+    def enthalpy(self, value: float):
+        self._clear_property_cache()
+        self._enthalpy = float(value)
+        self._temperature = self._temperature_from_enthalpy(self._enthalpy)
+        self._validate_temperature()
+
+    @property
+    def internal_energy(self) -> float:
+        cached = self._cache_get("internal_energy")
+        if cached is not None:
+            return cached
+
+        return self._cache_set(
+            "internal_energy",
+            self._internal_energy_from_temperature(self._temperature),
+        )
+
+    @internal_energy.setter
+    def internal_energy(self, value: float):
+        self._clear_property_cache()
+        self._temperature = self._temperature_from_internal_energy(float(value))
+        self._validate_temperature()
+        self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+    @property
+    def temperature(self) -> float:
+        return self._temperature
+
+    @temperature.setter
+    def temperature(self, value: float):
+        self._clear_property_cache()
+        self._temperature = float(value)
+        self._validate_temperature()
+        self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+    @property
+    def density(self) -> float:
+        cached = self._cache_get("density")
+        if cached is not None:
+            return cached
+
+        self._require_pressure("Density")
+        return self._cache_set(
+            "density",
+            self._pressure / (self.gas_constant * self._temperature),
+        )
+
+    @density.setter
+    def density(self, value: float):
+        if self._temperature is None:
+            raise ValueError("Cannot set density without temperature.")
+        self._pressure = float(value) * self.gas_constant * self._temperature
+        self._clear_property_cache()
+
+    @property
+    def pressure_temperature(self) -> Tuple[float | None, float]:
+        return self._pressure, self._temperature
+
+    @pressure_temperature.setter
+    def pressure_temperature(self, values: Tuple[float | None, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_temperature must be set with (pressure, temperature)")
+        self._set_state(pressure=values[0], temperature=values[1])
+
+    @property
+    def pressure_enthalpy(self) -> Tuple[float | None, float]:
+        return self._pressure, self._enthalpy
+
+    @pressure_enthalpy.setter
+    def pressure_enthalpy(self, values: Tuple[float | None, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_enthalpy must be set with (pressure, enthalpy)")
+        self._set_state(pressure=values[0], enthalpy=values[1])
+
+    @property
+    def pressure_internal_energy(self) -> Tuple[float | None, float]:
+        return self._pressure, self.internal_energy
+
+    @pressure_internal_energy.setter
+    def pressure_internal_energy(self, values: Tuple[float | None, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_internal_energy must be set with (pressure, internal_energy)")
+        self._set_state(pressure=values[0], internal_energy=values[1])
+
+    @property
+    def density_temperature(self) -> Tuple[float, float]:
+        return self.density, self._temperature
+
+    @density_temperature.setter
+    def density_temperature(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_temperature must be set with (density, temperature)")
+        self._set_state(density=values[0], temperature=values[1])
+
+    @property
+    def density_enthalpy(self) -> Tuple[float, float]:
+        return self.density, self._enthalpy
+
+    @density_enthalpy.setter
+    def density_enthalpy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_enthalpy must be set with (density, enthalpy)")
+        self._set_state(density=values[0], enthalpy=values[1])
+
+    @property
+    def density_internal_energy(self) -> Tuple[float, float]:
+        return self.density, self.internal_energy
+
+    @density_internal_energy.setter
+    def density_internal_energy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_internal_energy must be set with (density, internal_energy)")
+        self._set_state(density=values[0], internal_energy=values[1])
+
+    @property
+    def pressure_density(self) -> Tuple[float, float]:
+        return self._pressure, self.density
+
+    @pressure_density.setter
+    def pressure_density(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_density must be set with (pressure, density)")
+        self._set_state(pressure=values[0], density=values[1])
+
+    @property
+    def HP(self) -> Tuple[float, float | None]:
+        return self._enthalpy, self._pressure
+
+    @HP.setter
+    def HP(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("HP must be set with (enthalpy, pressure)")
+        self._set_state(enthalpy=values[0], pressure=values[1])
+
+    @property
+    def TP(self) -> Tuple[float, float | None]:
+        return self._temperature, self._pressure
+
+    @TP.setter
+    def TP(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("TP must be set with (temperature, pressure)")
+        self._set_state(temperature=values[0], pressure=values[1])
+
+    # ---------------- Thermo properties ---------------- #
 
     @property
     def molar_mass(self) -> float:
@@ -315,8 +621,10 @@ class CombustionGas:
         if cached is not None:
             return cached
 
-        mw_kg_per_kmol = float(np.dot(self._mole_fractions, self._M))
-        return self._cache_set("molar_mass", mw_kg_per_kmol / 1000.0)
+        return self._cache_set(
+            "molar_mass",
+            float(1.0 / np.sum(self._mass_fractions / (self._M / 1000.0))),
+        )
 
     @property
     def gas_constant(self) -> float:
@@ -336,19 +644,6 @@ class CombustionGas:
         return 1.0
 
     @property
-    def density(self) -> float:
-        cached = self._cache_get("density")
-        if cached is not None:
-            return cached
-
-        return self._cache_set("density", self.pressure / (self.gas_constant * self.temperature))
-
-    @density.setter
-    def density(self, value: float):
-        self._pressure = float(value) * self.gas_constant * self.temperature
-        self._clear_property_cache()
-
-    @property
     def specific_volume(self) -> float:
         cached = self._cache_get("specific_volume")
         if cached is not None:
@@ -357,14 +652,112 @@ class CombustionGas:
         return self._cache_set("specific_volume", 1.0 / self.density)
 
     @property
+    def thermal_expansion_coefficient(self) -> float:
+        return 1.0 / self.temperature
+
+    @property
+    def isothermal_compressibility(self) -> float:
+        self._require_pressure("Isothermal compressibility")
+        return 1.0 / self.pressure
+
+    @property
     def quality(self) -> float:
-        raise NotImplementedError("CombustionGas does not support vapor quality.")
+        return 1.0
 
     @quality.setter
     def quality(self, value: float):
         raise ValueError("CombustionGas does not support vapor quality.")
 
+    @property
+    def specific_heat_cp(self) -> float:
+        cached = self._cache_get("specific_heat_cp")
+        if cached is not None:
+            return cached
+
+        return self._cache_set(
+            "specific_heat_cp",
+            float(np.dot(self._mass_fractions, self._pure_cp_mass())),
+        )
+
+    @property
+    def specific_heat_cv(self) -> float:
+        cached = self._cache_get("specific_heat_cv")
+        if cached is not None:
+            return cached
+
+        return self._cache_set("specific_heat_cv", self.specific_heat_cp - self.gas_constant)
+
+    @property
+    def specific_heat(self) -> float:
+        return self.specific_heat_cp
+
+    @property
+    def specific_heat_ratio(self) -> float:
+        cached = self._cache_get("specific_heat_ratio")
+        if cached is not None:
+            return cached
+
+        cv = self.specific_heat_cv
+        return self._cache_set("specific_heat_ratio", None if cv == 0.0 else self.specific_heat_cp / cv)
+
+    @property
+    def entropy(self) -> float:
+        cached = self._cache_get("entropy")
+        if cached is not None:
+            return cached
+
+        self._require_pressure("Entropy")
+
+        p_i = self._mole_fractions * self.pressure
+        p_i = np.maximum(p_i, np.finfo(float).tiny)
+
+        pressure_correction_molar = -self._RU_KMOL * np.log(p_i / self._P_REF)
+
+        pure_s0_molar = np.array(
+            [CEA.entropy_molar_standard(name, self.temperature) for name in self._species_names],
+            dtype=float,
+        )
+
+        pure_s_mass_at_pi = (pure_s0_molar + pressure_correction_molar) / self._M
+        return self._cache_set("entropy", float(np.dot(self._mass_fractions, pure_s_mass_at_pi)))
+
+    @property
+    def gibbs_energy(self) -> float:
+        cached = self._cache_get("gibbs_energy")
+        if cached is not None:
+            return cached
+
+        self._require_pressure("Gibbs energy")
+        return self._cache_set("gibbs_energy", self.enthalpy - self.temperature * self.entropy)
+
+    @property
+    def free_energy(self) -> float:
+        return self.helmholtz_energy
+
+    @property
+    def helmholtz_energy(self) -> float:
+        cached = self._cache_get("helmholtz_energy")
+        if cached is not None:
+            return cached
+
+        self._require_pressure("Helmholtz energy")
+        return self._cache_set("helmholtz_energy", self.internal_energy - self.temperature * self.entropy)
+
+    @property
+    def speed_of_sound(self) -> float:
+        cached = self._cache_get("speed_of_sound")
+        if cached is not None:
+            return cached
+
+        return self._cache_set(
+            "speed_of_sound",
+            float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self.temperature)),
+        )
+
     def _validate_temperature(self) -> None:
+        if self._temperature is None:
+            return
+
         if self.temperature < self.minimum_temperature or self.temperature > self.maximum_temperature:
             raise ValueError(
                 f"Temperature {self.temperature:.6g} K is outside the common valid "
@@ -418,97 +811,7 @@ class CombustionGas:
         )
         return self._cache_set("_pure_s0_mass", value)
 
-    @property
-    def specific_heat_cp(self) -> float:
-        cached = self._cache_get("specific_heat_cp")
-        if cached is not None:
-            return cached
-
-        return self._cache_set("specific_heat_cp", float(np.dot(self._mass_fractions, self._pure_cp_mass())))
-
-    @property
-    def specific_heat_cv(self) -> float:
-        cached = self._cache_get("specific_heat_cv")
-        if cached is not None:
-            return cached
-
-        return self._cache_set("specific_heat_cv", self.specific_heat_cp - self.gas_constant)
-
-    @property
-    def specific_heat(self) -> float:
-        return self.specific_heat_cp
-
-    @property
-    def specific_heat_ratio(self) -> float:
-        cached = self._cache_get("specific_heat_ratio")
-        if cached is not None:
-            return cached
-
-        cv = self.specific_heat_cv
-        return self._cache_set("specific_heat_ratio", None if cv == 0.0 else self.specific_heat_cp / cv)
-
-    @property
-    def enthalpy(self) -> float:
-        cached = self._cache_get("enthalpy")
-        if cached is not None:
-            return cached
-
-        return self._cache_set("enthalpy", float(np.dot(self._mass_fractions, self._pure_h_mass())))
-
-    @property
-    def internal_energy(self) -> float:
-        cached = self._cache_get("internal_energy")
-        if cached is not None:
-            return cached
-
-        return self._cache_set("internal_energy", self.enthalpy - self.gas_constant * self.temperature)
-
-    @property
-    def entropy(self) -> float:
-        cached = self._cache_get("entropy")
-        if cached is not None:
-            return cached
-
-        p_i = self._mole_fractions * self.pressure
-        p_i = np.maximum(p_i, np.finfo(float).tiny)
-
-        pressure_correction_molar = -self._RU_KMOL * np.log(p_i / self._P_REF)
-
-        pure_s0_molar = np.array(
-            [CEA.entropy_molar_standard(name, self.temperature) for name in self._species_names],
-            dtype=float,
-        )
-
-        pure_s_mass_at_pi = (pure_s0_molar + pressure_correction_molar) / self._M
-        return self._cache_set("entropy", float(np.dot(self._mass_fractions, pure_s_mass_at_pi)))
-
-    @property
-    def gibbs_energy(self) -> float:
-        cached = self._cache_get("gibbs_energy")
-        if cached is not None:
-            return cached
-
-        return self._cache_set("gibbs_energy", self.enthalpy - self.temperature * self.entropy)
-
-    @property
-    def free_energy(self) -> float:
-        return self.helmholtz_energy
-
-    @property
-    def helmholtz_energy(self) -> float:
-        cached = self._cache_get("helmholtz_energy")
-        if cached is not None:
-            return cached
-
-        return self._cache_set("helmholtz_energy", self.internal_energy - self.temperature * self.entropy)
-
-    @property
-    def speed_of_sound(self) -> float:
-        cached = self._cache_get("speed_of_sound")
-        if cached is not None:
-            return cached
-
-        return self._cache_set("speed_of_sound", float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self.temperature)))
+    # ---------------- Transport properties ---------------- #
 
     @staticmethod
     def _transport_interval_index(transport_index: int, temperature: float, kind: str) -> int:
@@ -535,10 +838,6 @@ class CombustionGas:
         """
         Estimate pure-species gas viscosity [Pa-s] when CEA transport data are
         unavailable.
-
-        This follows the missing-data fallback used by CEA's transport routine,
-        with the constant converted to SI output. The estimate is only used when
-        explicit CEAM transport coefficients are unavailable for a species.
         """
         T = float(self.temperature)
         M = CEA.molecular_weight(species_name)
@@ -577,10 +876,6 @@ class CombustionGas:
 
     @property
     def estimated_transport_species(self) -> list[str]:
-        """
-        Species whose pure transport properties are estimated instead of using
-        explicit CEAM transport fits.
-        """
         return [
             name
             for name in self._species_names
@@ -629,10 +924,6 @@ class CombustionGas:
         j: int,
         pure_viscosities: np.ndarray,
     ) -> float:
-        """
-        Estimate CEA eta_ij [Pa-s] for a missing binary interaction using CEA's
-        rigid-sphere analogy fallback.
-        """
         Mi = float(self._M[i])
         Mj = float(self._M[j])
         etai = float(pure_viscosities[i])
@@ -814,13 +1105,7 @@ class CombustionGas:
 
         return self._cache_set("prandtl", self.specific_heat_cp * self.dynamic_viscosity / k)
 
-    @property
-    def thermal_expansion_coefficient(self) -> float:
-        return 1.0 / self.temperature
-
-    @property
-    def isothermal_compressibility(self) -> float:
-        return 1.0 / self.pressure
+    # ---------------- Derivatives ---------------- #
 
     def partial_derivative(self, of: str, with_respect_to: str, constant: str) -> float:
         of = of.lower()
@@ -829,9 +1114,13 @@ class CombustionGas:
 
         R = self.gas_constant
         T = self.temperature
-        rho = self.density
+        P = self.pressure
+        rho = self.density if self.pressure is not None else None
         cp = self.specific_heat_cp
         cv = self.specific_heat_cv
+
+        if P is None:
+            raise ValueError("CombustionGas partial derivatives require pressure.")
 
         if (of, wrt, const) == ("hmass", "t", "p"):
             return cp
@@ -895,6 +1184,8 @@ class CombustionGas:
     def maximum_pressure(self) -> float:
         return np.inf
 
+    # ---------------- String output ---------------- #
+
     def _safe(self, value, fmt=".3e"):
         if value is None:
             return "N/A"
@@ -907,12 +1198,12 @@ class CombustionGas:
         def format_dict(d: dict, decimals=5):
             return {k: round(v, decimals) for k, v in d.items()}
 
-        mole_fractions = self.mole_fractions
-        mass_fractions = self.mass_fractions
-        density = self.density
+        pressure = self.pressure
+        temperature = self.temperature
+        density = self.density if self._pressure is not None else None
         internal_energy = self.internal_energy
         enthalpy = self.enthalpy
-        entropy = self.entropy
+        entropy = self.entropy if self._pressure is not None else None
         specific_heat_cp = self.specific_heat_cp
         specific_heat_cv = self.specific_heat_cv
         specific_heat_ratio = self.specific_heat_ratio
@@ -920,22 +1211,22 @@ class CombustionGas:
         molar_mass = self.molar_mass
         dynamic_viscosity = self.dynamic_viscosity
         thermal_conductivity = self.thermal_conductivity
-        prandtl = self.prandtl
+        prandtl = self.prandtl if self._pressure is not None else self.prandtl
         speed_of_sound = self.speed_of_sound
 
         rows = [
             ("Gas(es)", ", ".join(self._species_names)),
             ("Backend", self.backend),
-            ("Mole fractions", format_dict(mole_fractions, 5)),
-            ("Mass fractions", format_dict(mass_fractions, 5)),
+            ("Mole fractions", format_dict(self.mole_fractions, 5)),
+            ("Mass fractions", format_dict(self.mass_fractions, 5)),
             ("Phase", self.phase),
-            ("Pressure [Pa]", self._safe(self.pressure, ".3e")),
-            ("Temperature [K]", self._safe(self.temperature, ".2f")),
-            ("Density [kg/m³]", self._safe(density, ".3f")),
+            ("Pressure [Pa]", self._safe(pressure, ".3e")),
+            ("Temperature [K]", self._safe(temperature, ".2f")),
+            ("Density [kg/m³]", self._safe(density, ".3f") if self._pressure is not None else "N/A"),
             ("Compressibility Z", self._safe(self.compressibility, ".3f")),
             ("Internal energy [J/kg]", self._safe(internal_energy, ".3e")),
             ("Enthalpy [J/kg]", self._safe(enthalpy, ".3e")),
-            ("Entropy [J/kg-K]", self._safe(entropy, ".3e")),
+            ("Entropy [J/kg-K]", self._safe(entropy, ".3e") if self._pressure is not None else "N/A"),
             ("Cp [J/kg-K]", self._safe(specific_heat_cp, ".3f")),
             ("Cv [J/kg-K]", self._safe(specific_heat_cv, ".3f")),
             ("Specific heat ratio", self._safe(specific_heat_ratio, ".5f")),
@@ -955,11 +1246,15 @@ class CombustionGas:
 
     def __repr__(self) -> str:
         species_str = ", ".join(self._species_names)
+        pressure_str = "None" if self._pressure is None else f"{self._pressure:.3e}"
         return (
             f"{self.__class__.__name__}(species=[{species_str}], "
-            f"pressure={self.pressure:.3e} Pa, "
+            f"pressure={pressure_str} Pa, "
+            f"enthalpy={self._enthalpy:.3e} J/kg, "
             f"temperature={self.temperature:.2f} K)"
         )
+
+    # ---------------- Utilities ---------------- #
 
     @classmethod
     def get_available_species(cls) -> list[str]:
@@ -975,6 +1270,26 @@ class CombustionGas:
 
         return species
 
+    @staticmethod
+    def get_available_gases() -> list[str]:
+        """Return ThermoProp species supported by CombustionGas."""
+        return CombustionGas.get_available_species()
+
+    @staticmethod
+    def show_available_gases() -> list[str]:
+        """Print and return ThermoProp species supported by CombustionGas."""
+        return CombustionGas.show_available_species()
+
+    @staticmethod
+    def get_available_fluids() -> list[str]:
+        """Fluid-style alias for API consistency."""
+        return CombustionGas.get_available_species()
+
+    @staticmethod
+    def show_available_fluids() -> list[str]:
+        """Fluid-style alias for API consistency."""
+        return CombustionGas.show_available_species()
+
     @classmethod
     def available_flash_inputs(cls) -> list[str]:
         return sorted(
@@ -985,6 +1300,18 @@ class CombustionGas:
     @classmethod
     def supported_flash_inputs(cls) -> list[str]:
         return cls.available_flash_inputs()
+
+    @classmethod
+    def available_flash_pairs(cls) -> list[str]:
+        return sorted(
+            "-".join(sorted(inputs))
+            for inputs in cls._FLASH_INPUTS
+            if len(inputs) == 2
+        )
+
+    @classmethod
+    def supported_flash_pairs(cls) -> list[str]:
+        return cls.available_flash_pairs()
 
     @staticmethod
     def mole_to_mass(species_names: List[str], mole_fractions: List[float]):
