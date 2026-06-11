@@ -774,6 +774,25 @@ class Equilibrium:
             name: float(w)
             for name, w in zip(self._species, mass)
         }
+        
+    @property
+    def normalized_mole_fractions(self) -> dict[str, float]:
+        """
+        Mole fractions after trace-species removal and renormalization.
+
+        These fractions always sum to 1 and match the composition used
+        to construct the CombustionGas output.
+        """
+        return self.combustion_gas_composition()
+        
+    @property
+    def normalized_mass_fractions(self) -> dict[str, float]:
+        """
+        Mass fractions corresponding to normalized_mole_fractions.
+        """
+        gas = self.combustion_gas
+
+        return dict(gas.mass_fractions)
 
     @property
     def element_moles(self) -> np.ndarray:
@@ -1520,6 +1539,7 @@ class Equilibrium:
     @property
     def temperature_correction(self) -> float | None:
         return self._result.temperature_correction
+        
 
     def as_dict(self, trace: float = 1e-8) -> dict:
         return {
