@@ -9,16 +9,21 @@ from .Propellant import Propellant
 
 
 @dataclass(frozen=True)
-class ReactantEntry:
+class Reactant:
     propellant: Propellant
     mass: float
     role: str
 
     @property
-    def moles(self) -> float:
-        """
-        Amount of reactant formula units [mol].
-        """
+    def name(self) -> str:
+        return self.propellant.name
+
+    @property
+    def cea_name(self) -> str:
+        return self.propellant.cea_name
+
+    @property
+    def molar_mass(self) -> float:
         mw = self.propellant.cea_formula_molar_mass
 
         if mw is None or mw <= 0.0:
@@ -27,27 +32,31 @@ class ReactantEntry:
                 "CEA formula molar mass."
             )
 
-        return self.mass / mw
+        return float(mw)
+
+    @property
+    def moles(self) -> float:
+        return self.mass / self.molar_mass
 
     @property
     def kmoles(self) -> float:
-        """
-        Amount of reactant formula units [kmol].
-        """
         return self.moles / 1000.0
 
 
-class ReactantMixture:
+class Reactants:
     """
-    CEA-style reactant mixture builder.
+    CEA-style reactant set.
 
-    This class converts any number of Propellant objects into the CEA
-    reactant quantities needed by an equilibrium solver:
+    Inputs are Propellant objects grouped as fuels and oxidizers. Optional
+    weights inside each group are mass weights, matching CEA wt% behavior.
 
-        element moles per kg mixture
-        reactant enthalpy per kg mixture
-        reactant internal energy per kg mixture
-        reactant mean molecular weight
+    The total basis is:
+
+        fuel mass = 1 kg
+        oxidizer mass = O/F kg
+        total mass = 1 + O/F kg
+
+    Properties are returned per kg total reactants where appropriate.
     """
 
     def __init__(
@@ -61,13 +70,13 @@ class ReactantMixture:
         if self.mixture_ratio < 0.0:
             raise ValueError("mixture_ratio must be nonnegative.")
 
-        self.fuels = self._normalize_entries(
+        self.fuels = self._normalize_group(
             fuels,
             total_mass=1.0,
             role="fuel",
         )
 
-        self.oxidizers = self._normalize_entries(
+        self.oxidizers = self._normalize_group(
             oxidizers,
             total_mass=self.mixture_ratio,
             role="oxidizer",
@@ -76,8 +85,8 @@ class ReactantMixture:
         if not self.fuels:
             raise ValueError("At least one fuel is required.")
 
-        if not self.oxidizers and self.mixture_ratio > 0.0:
-            raise ValueError("At least one oxidizer is required.")
+        if self.mixture_ratio > 0.0 and not self.oxidizers:
+            raise ValueError("At least one oxidizer is required when mixture_ratio > 0.")
 
         self.entries = [*self.fuels, *self.oxidizers]
         self.total_mass = sum(entry.mass for entry in self.entries)
@@ -86,11 +95,11 @@ class ReactantMixture:
             raise ValueError("Total reactant mass must be positive.")
 
     @staticmethod
-    def _normalize_entries(
+    def _normalize_group(
         propellants: Iterable[Propellant | tuple[Propellant, float]],
         total_mass: float,
         role: str,
-    ) -> list[ReactantEntry]:
+    ) -> list[Reactant]:
         items = list(propellants)
 
         if not items:
@@ -117,13 +126,87 @@ class ReactantMixture:
             raise ValueError(f"{role} weights must sum to a positive value.")
 
         return [
-            ReactantEntry(
+            Reactant(
                 propellant=propellant,
                 mass=total_mass * weight / weight_sum,
                 role=role,
             )
             for propellant, weight in parsed
         ]
+
+    @property
+    def fuel_mass(self) -> float:
+        return sum(entry.mass for entry in self.fuels)
+
+    @property
+    def oxidizer_mass(self) -> float:
+        return sum(entry.mass for entry in self.oxidizers)
+
+    @property
+    def oxidizer_to_fuel_ratio(self) -> float:
+        return self.oxidizer_mass / self.fuel_mass
+
+    @property
+    def total_moles(self) -> float:
+        return sum(entry.moles for entry in self.entries)
+
+    @property
+    def total_kmoles(self) -> float:
+        return self.total_moles / 1000.0
+
+    @property
+    def molecular_weight(self) -> float:
+        """
+        Mean reactant formula molar mass [kg/mol].
+        """
+        return self.total_mass / self.total_moles
+
+    @property
+    def molecular_weight_kg_per_kmol(self) -> float:
+        """
+        Mean reactant formula molecular weight [kg/kmol].
+        Numerically equal to g/mol.
+        """
+        return self.total_mass / self.total_kmoles
+
+    @property
+    def mass_fractions(self) -> dict[str, float]:
+        total = self.total_mass
+
+        return {
+            entry.cea_name: entry.mass / total
+            for entry in self.entries
+        }
+
+    @property
+    def mole_fractions(self) -> dict[str, float]:
+        total = self.total_moles
+
+        return {
+            entry.cea_name: entry.moles / total
+            for entry in self.entries
+        }
+
+    @property
+    def fuel_mass_fractions(self) -> dict[str, float]:
+        total = self.fuel_mass
+
+        return {
+            entry.cea_name: entry.mass / total
+            for entry in self.fuels
+        }
+
+    @property
+    def oxidizer_mass_fractions(self) -> dict[str, float]:
+        total = self.oxidizer_mass
+
+        if total <= 0.0:
+            return {}
+
+        return {
+            entry.cea_name: entry.mass / total
+            for entry in self.oxidizers
+        }
 
     @property
     def element_moles(self) -> dict[str, float]:
@@ -185,42 +268,10 @@ class ReactantMixture:
 
         return total / self.total_mass
 
-    @property
-    def total_moles(self) -> float:
-        return sum(entry.moles for entry in self.entries)
-        
-    @property
-    def total_kmoles(self) -> float:
-        return self.total_moles / 1000.0
-        
-    @property
-    def molecular_weight(self) -> float:
-        """
-        Mixture molar mass in kg/mol based on CEA formula moles.
-        """
-        return self.total_mass / self.total_moles
-
-    @property
-    def molecular_weight_kg_per_kmol(self) -> float:
-        """
-        Mixture molecular weight in kg/kmol.
-        Numerically equal to g/mol.
-        """
-        return self.total_mass / self.total_kmoles
-
-    @property
-    def fuel_mass(self) -> float:
-        return sum(entry.mass for entry in self.fuels)
-
-    @property
-    def oxidizer_mass(self) -> float:
-        return sum(entry.mass for entry in self.oxidizers)
-
-    @property
-    def oxidizer_to_fuel_ratio(self) -> float:
-        return self.oxidizer_mass / self.fuel_mass
-
-    def element_vector(self, elements: list[str] | None = None) -> tuple[list[str], np.ndarray]:
+    def element_vector(
+        self,
+        elements: list[str] | None = None,
+    ) -> tuple[list[str], np.ndarray]:
         if elements is None:
             elements = sorted(self.element_moles_per_kg)
 
@@ -241,17 +292,27 @@ class ReactantMixture:
             "fuel_mass": self.fuel_mass,
             "oxidizer_mass": self.oxidizer_mass,
             "molecular_weight": self.molecular_weight,
+            "molecular_weight_kg_per_kmol": self.molecular_weight_kg_per_kmol,
+            "total_moles": self.total_moles,
+            "total_kmoles": self.total_kmoles,
+            "mass_fractions": self.mass_fractions,
+            "mole_fractions": self.mole_fractions,
+            "fuel_mass_fractions": self.fuel_mass_fractions,
+            "oxidizer_mass_fractions": self.oxidizer_mass_fractions,
             "reactant_enthalpy": self.reactant_enthalpy,
             "reactant_internal_energy": self.reactant_internal_energy,
             "element_moles": self.element_moles,
             "element_moles_per_kg": self.element_moles_per_kg,
             "reactants": [
                 {
-                    "name": entry.propellant.name,
-                    "cea_name": entry.propellant.cea_name,
+                    "name": entry.name,
+                    "cea_name": entry.cea_name,
                     "role": entry.role,
                     "mass": entry.mass,
                     "moles": entry.moles,
+                    "kmoles": entry.kmoles,
+                    "mass_fraction": entry.mass / self.total_mass,
+                    "mole_fraction": entry.moles / self.total_moles,
                     "temperature": entry.propellant.temperature,
                     "pressure": entry.propellant.pressure,
                     "enthalpy": entry.propellant.enthalpy,
@@ -268,11 +329,15 @@ class ReactantMixture:
             ("Total mass basis [kg]", f"{self.total_mass:.6g}"),
             ("Fuel mass [kg]", f"{self.fuel_mass:.6g}"),
             ("Oxidizer mass [kg]", f"{self.oxidizer_mass:.6g}"),
-            ("CEA mixture MW [kg/mol]", f"{self.molecular_weight:.8g}"),
+            ("Reactant MW [kg/mol]", f"{self.molecular_weight:.8g}"),
+            ("Reactant MW [kg/kmol]", f"{self.molecular_weight_kg_per_kmol:.8g}"),
             ("Reactant enthalpy [J/kg]", f"{self.reactant_enthalpy:.8e}"),
             ("Reactant internal energy [J/kg]", f"{self.reactant_internal_energy:.8e}"),
+            ("Mass fractions", self.mass_fractions),
+            ("Mole fractions", self.mole_fractions),
             ("Element moles per kg", self.element_moles_per_kg),
         ]
 
         width = max(len(key) for key, _ in rows)
         return "\n".join(f"{key:<{width}} : {value}" for key, value in rows)
+

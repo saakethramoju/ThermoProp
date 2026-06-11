@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from CEADatabase import CEA
-from .ReactantMixture import ReactantMixture
+from .Reactants import Reactants
 from .CombustionGas import CombustionGas
 
 
@@ -154,7 +154,7 @@ class Equilibrium:
 
     def __init__(
         self,
-        reactants: ReactantMixture | CombustionGas,
+        reactants: Reactants | CombustionGas,
         *,
         mode: str = "hp",
         temperature: float | None = None,
@@ -213,19 +213,19 @@ class Equilibrium:
 
     @staticmethod
     def _resolve_reactants(reactants):
-        if isinstance(reactants, ReactantMixture):
+        if isinstance(reactants, Reactants):
             return reactants
 
         if isinstance(reactants, CombustionGas):
             return _CombustionGasReactants(reactants)
 
-        if reactants.__class__.__name__ == "ReactantMixture":
+        if reactants.__class__.__name__ == "Reactants":
             return reactants
 
         if reactants.__class__.__name__ == "CombustionGas":
             return _CombustionGasReactants(reactants)
 
-        raise TypeError("reactants must be a ReactantMixture or CombustionGas.")
+        raise TypeError("reactants must be a Reactants or CombustionGas.")
 
     def _validate_inputs(self) -> None:
         if self._pressure is None:
@@ -722,7 +722,7 @@ class Equilibrium:
     def HP(self, values: tuple[float, float]):
         raise ValueError(
             "Equilibrium HP is fixed by reactant enthalpy and pressure. "
-            "Change the ReactantMixture/CombustionGas input or pressure instead."
+            "Change the Reactants/CombustionGas input or pressure instead."
         )
 
     @property
