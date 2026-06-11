@@ -3,6 +3,8 @@ from .IdealGas import IdealGas
 from .Propellant import Propellant
 from .CombustionGas import CombustionGas
 from .Material import Material
+from .ReactantMixture import ReactantMixture
+from .Equilibrium import Equilibrium
 
 from SpeciesDatabase import SpeciesDatabase
 from MaterialDatabase import MaterialDatabase
@@ -61,6 +63,8 @@ __all__ = [
     "IdealGas",
     "Propellant",
     "CombustionGas",
+    "ReactantMixture",
+    "Equilibrium",
     "Material",
     "SpeciesDatabase",
     "MaterialDatabase",

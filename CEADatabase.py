@@ -179,7 +179,12 @@ class CEADatabase:
         return int(self._thermo_index[name])
 
     def transport_index(self, name: str) -> int:
-        name = self.resolve_name(name)
+        raw = str(name).strip()
+
+        if raw in self._transport_index:
+            return int(self._transport_index[raw])
+
+        name = self.resolve_name(raw)
 
         try:
             return int(self._transport_index[name])
@@ -451,6 +456,61 @@ class CEADatabase:
                 "CEA transport files were not found. Expected "
                 f"{self.transport_path} and {self.transport_index_path}."
             )
+        
+
+    def transport_key(self, name1: str, name2: str) -> str:
+        name1 = self.resolve_name(name1)
+        name2 = self.resolve_name(name2)
+
+        key12 = f"{name1}|{name2}"
+        key21 = f"{name2}|{name1}"
+
+        if key12 in self._transport_index:
+            return key12
+
+        if key21 in self._transport_index:
+            return key21
+
+        raise ValueError(
+            f"CEA binary transport data are not available for "
+            f"{name1!r} and {name2!r}."
+        )
+
+    def has_binary_transport(self, name1: str, name2: str) -> bool:
+        try:
+            self.transport_key(name1, name2)
+            return True
+        except Exception:
+            return False
+
+    def binary_transport_fit(
+        self,
+        name1: str,
+        name2: str,
+        temperature: float,
+    ) -> float:
+        key = self.transport_key(name1, name2)
+        return self.transport_fit(key, temperature, "viscosity")
+
+    def binary_viscosity_interaction(
+        self,
+        name1: str,
+        name2: str,
+        temperature: float,
+    ) -> float:
+        """
+        Return CEA binary eta_ij interaction parameter [Pa-s].
+
+        CEA stores binary interaction parameters with the same fit form and
+        viscosity units as pure viscosity: micropoise.
+        """
+        eta_micro_poise = self.binary_transport_fit(
+            name1,
+            name2,
+            temperature,
+        )
+
+        return eta_micro_poise * 1e-7
 
     def transport_temperature_ranges(
         self,
@@ -459,7 +519,8 @@ class CEADatabase:
     ) -> list[tuple[float, float]]:
         self._require_transport_loaded()
 
-        tidx = self.transport_index(name)
+        raw = str(name).strip()
+        tidx = self.transport_index(raw)
         kind = kind.lower()
 
         if kind in {"viscosity", "mu"}:
@@ -480,14 +541,14 @@ class CEADatabase:
     def transport_interval_index(self, name: str, temperature: float, kind: str) -> int:
         ranges = self.transport_temperature_ranges(name, kind)
         T = float(temperature)
-        resolved_name = self.resolve_name(name)
+        raw = str(name).strip()
 
         for j, (Tmin, Tmax) in enumerate(ranges):
             if Tmin <= T <= Tmax:
                 return j
 
         raise ValueError(
-            f"No CEA {kind} transport interval for {resolved_name!r} at T={T:.6g} K."
+            f"No CEA {kind} transport interval for {raw!r} at T={T:.6g} K."
         )
 
     def transport_fit(self, name: str, temperature: float, kind: str) -> float:

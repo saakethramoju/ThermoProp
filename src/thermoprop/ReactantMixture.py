@@ -5,7 +5,7 @@ from typing import Iterable
 
 import numpy as np
 
-from src.thermoprop import Propellant
+from .Propellant import Propellant
 
 
 @dataclass(frozen=True)
