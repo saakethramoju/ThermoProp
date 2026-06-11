@@ -170,8 +170,8 @@ class Equilibrium:
         trace_moles: float = 1e-300,
         min_temperature: float = 200.0,
         max_temperature: float = 20000.0,
-        combustion_gas_trace: float = 1e-11,
-        combustion_gas_max_species: int | None = 50,
+        combustion_gas_trace: float = 1e-8,
+        combustion_gas_max_species: int | None = 25,
         equilibrium_derivative_temperature_step: float = 1.0,
     ):
         self._mode = str(mode).lower()
@@ -997,13 +997,88 @@ class Equilibrium:
         return self.combustion_gas.specific_heat_ratio
 
     @property
+    def dlnv_dlnp_const_t(self) -> float:
+        cached = self._cache_get_equilibrium_property("dlnv_dlnp_const_t")
+        if cached is not None:
+            return cached
+
+        dP_frac = 1.0e-4
+        P0 = self.pressure
+        T0 = self.temperature
+
+        plus = self._tp_neighbor(T0, initial_moles=self._moles)
+        plus.pressure = P0 * (1.0 + dP_frac)
+
+        minus = self._tp_neighbor(T0, initial_moles=self._moles)
+        minus.pressure = P0 * (1.0 - dP_frac)
+
+        value = (
+            np.log(plus.specific_volume)
+            - np.log(minus.specific_volume)
+        ) / (
+            np.log(plus.pressure)
+            - np.log(minus.pressure)
+        )
+
+        return self._cache_set_equilibrium_property(
+            "dlnv_dlnp_const_t",
+            float(value),
+        )
+
+
+    @property
+    def dlnv_dlnT_const_p(self) -> float:
+        cached = self._cache_get_equilibrium_property("dlnv_dlnT_const_p")
+        if cached is not None:
+            return cached
+
+        dT = self._equilibrium_derivative_temperature_step
+        T0 = self.temperature
+
+        plus = self._tp_neighbor(T0 + dT, initial_moles=self._moles)
+        minus = self._tp_neighbor(T0 - dT, initial_moles=self._moles)
+
+        value = (
+            np.log(plus.specific_volume)
+            - np.log(minus.specific_volume)
+        ) / (
+            np.log(plus.temperature)
+            - np.log(minus.temperature)
+        )
+
+        return self._cache_set_equilibrium_property(
+            "dlnv_dlnT_const_p",
+            float(value),
+        )
+
+
+    @property
+    def dlnv_dlnp_const_s(self) -> float:
+        cached = self._cache_get_equilibrium_property("dlnv_dlnp_const_s")
+        if cached is not None:
+            return cached
+
+        value = (
+            self.dlnv_dlnp_const_t
+            + self.gas_constant
+            * self.dlnv_dlnT_const_p**2
+            / self.specific_heat_cp_equilibrium
+        )
+
+        return self._cache_set_equilibrium_property(
+            "dlnv_dlnp_const_s",
+            float(value),
+        )
+
+
+    @property
+    def specific_heat_ratio_equilibrium(self) -> float:
+        return float(-1.0 / self.dlnv_dlnp_const_s)
+
+
+    @property
     def specific_heat_ratio(self) -> float:
-        cv = self.specific_heat_cv
-
-        if cv == 0.0:
-            return None
-
-        return self.specific_heat_cp / cv
+        return self.specific_heat_ratio_equilibrium
 
     @property
     def entropy(self) -> float:
@@ -1317,8 +1392,19 @@ class Equilibrium:
         return self.combustion_gas.speed_of_sound
 
     @property
+    def speed_of_sound_equilibrium(self) -> float:
+        return float(
+            np.sqrt(
+                self.specific_heat_ratio_equilibrium
+                * self.gas_constant
+                * self.temperature
+            )
+        )
+
+
+    @property
     def speed_of_sound(self) -> float:
-        return float(np.sqrt(self.specific_heat_ratio * self.gas_constant * self.temperature))
+        return self.speed_of_sound_equilibrium
 
     @property
     def thermal_expansion_coefficient(self) -> float:
@@ -1454,6 +1540,12 @@ class Equilibrium:
             "specific_heat_cv_frozen": self.specific_heat_cv_frozen,
             "specific_heat_ratio": self.specific_heat_ratio,
             "specific_heat_ratio_frozen": self.specific_heat_ratio_frozen,
+            "specific_heat_ratio_equilibrium": self.specific_heat_ratio_equilibrium,
+            "speed_of_sound_equilibrium": self.speed_of_sound_equilibrium,
+            "speed_of_sound_frozen": self.speed_of_sound_frozen,
+            "dlnv_dlnp_const_t": self.dlnv_dlnp_const_t,
+            "dlnv_dlnT_const_p": self.dlnv_dlnT_const_p,
+            "dlnv_dlnp_const_s": self.dlnv_dlnp_const_s,
             "gas_constant": self.gas_constant,
             "molar_mass": self.molar_mass,
             "molecular_weight": self.molecular_weight,
@@ -1518,7 +1610,7 @@ class Equilibrium:
             ("Cp frozen [J/kg-K]", self._safe(self.cp_frozen, ".3f")),
             ("Cv eq [J/kg-K]", self._safe(self.specific_heat_cv, ".3f")),
             ("Cv frozen [J/kg-K]", self._safe(self.specific_heat_cv_frozen, ".3f")),
-            ("Specific heat ratio eq", self._safe(self.specific_heat_ratio, ".5f")),
+            ("Specific heat ratio equilibrium", self._safe(self.specific_heat_ratio_equilibrium, ".5f")),
             ("Specific heat ratio frozen", self._safe(self.specific_heat_ratio_frozen, ".5f")),
             ("Gas constant [J/kg-K]", self._safe(self.gas_constant, ".3f")),
             ("Molar mass [kg/mol]", self._safe(self.molar_mass, ".6f")),
@@ -1528,7 +1620,11 @@ class Equilibrium:
             ("Conductivity reaction [W/m-K]", self._safe(self.conductivity_reaction, ".3f")),
             ("Prandtl eq", self._safe(self.prandtl_equilibrium, ".5f")),
             ("Prandtl frozen", self._safe(self.prandtl_frozen, ".5f")),
-            ("Speed of sound [m/s]", self._safe(self.speed_of_sound, ".3f")),
+            ("Speed of sound eq [m/s]", self._safe(self.speed_of_sound_equilibrium, ".3f")),
+            ("Speed of sound frozen [m/s]", self._safe(self.speed_of_sound_frozen, ".3f")),
+            ("dlnV/dlnP const T", self._safe(self.dlnv_dlnp_const_t, ".5f")),
+            ("dlnV/dlnT const P", self._safe(self.dlnv_dlnT_const_p, ".5f")),
+            ("dlnV/dlnP const S", self._safe(self.dlnv_dlnp_const_s, ".5f")),
             ("Max element error", self._safe(self.max_element_error, ".3e")),
             ("Max mole correction", self._safe(self.max_mole_correction, ".3e")),
         ]
