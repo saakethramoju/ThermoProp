@@ -10,3 +10,4 @@ wheels/
 .venv
 .DS_Store
 test.py
+test2.py
