@@ -8,6 +8,10 @@ import numpy as np
 from .Propellant import Propellant
 
 
+PropellantEntry = Propellant | tuple[Propellant, float]
+PropellantGroup = PropellantEntry | Iterable[PropellantEntry]
+
+
 @dataclass(frozen=True)
 class Reactant:
     propellant: Propellant
@@ -50,6 +54,25 @@ class Reactants:
     Inputs are Propellant objects grouped as fuels and oxidizers. Optional
     weights inside each group are mass weights, matching CEA wt% behavior.
 
+    A single Propellant may be passed directly:
+
+        Reactants(
+            fuels=Propellant("RP-1", temperature=298.15),
+            oxidizers=Propellant("LOX", temperature=90.17),
+            mixture_ratio=2.5,
+        )
+
+    Multiple propellants should be passed as an iterable:
+
+        Reactants(
+            fuels=[
+                (Propellant("RP-1", temperature=298.15), 80.0),
+                (Propellant("Ethanol", temperature=298.15), 20.0),
+            ],
+            oxidizers=[Propellant("LOX", temperature=90.17)],
+            mixture_ratio=2.5,
+        )
+
     The total basis is:
 
         fuel mass = 1 kg
@@ -61,8 +84,8 @@ class Reactants:
 
     def __init__(
         self,
-        fuels: Iterable[Propellant | tuple[Propellant, float]],
-        oxidizers: Iterable[Propellant | tuple[Propellant, float]],
+        fuels: PropellantGroup,
+        oxidizers: PropellantGroup,
         mixture_ratio: float,
     ):
         self.mixture_ratio = float(mixture_ratio)
@@ -95,12 +118,29 @@ class Reactants:
             raise ValueError("Total reactant mass must be positive.")
 
     @staticmethod
+    def _group_items(propellants: PropellantGroup) -> list[PropellantEntry]:
+        if isinstance(propellants, str):
+            raise TypeError(
+                "Reactants does not accept raw string propellants. "
+                "Pass Propellant objects so temperature and pressure are explicit."
+            )
+
+        if isinstance(propellants, Propellant):
+            return [propellants]
+
+        if isinstance(propellants, tuple):
+            if len(propellants) == 2 and isinstance(propellants[0], Propellant):
+                return [propellants]
+
+        return list(propellants)
+
+    @staticmethod
     def _normalize_group(
-        propellants: Iterable[Propellant | tuple[Propellant, float]],
+        propellants: PropellantGroup,
         total_mass: float,
         role: str,
     ) -> list[Reactant]:
-        items = list(propellants)
+        items = Reactants._group_items(propellants)
 
         if not items:
             return []
@@ -114,6 +154,12 @@ class Reactants:
             else:
                 propellant = item
                 weight = 1.0
+
+            if not isinstance(propellant, Propellant):
+                raise TypeError(
+                    f"{role} entries must be Propellant objects or "
+                    f"(Propellant, weight) tuples. Got {type(propellant).__name__}."
+                )
 
             if weight < 0.0:
                 raise ValueError(f"{role} weights must be nonnegative.")
@@ -340,4 +386,3 @@ class Reactants:
 
         width = max(len(key) for key, _ in rows)
         return "\n".join(f"{key:<{width}} : {value}" for key, value in rows)
-
