@@ -45,6 +45,11 @@ class CombustionGas:
     _RU_KMOL = 8314.46261815324
     _P_REF = 100000.0
 
+    _REFERENCE_TEMPERATURE = 298.15
+    _REFERENCE_PRESSURE = 101325.0
+    _REFERENCE_CACHE: dict[tuple, tuple[float, float, float]] = {}
+
+
     _UNSUPPORTED_PROPERTIES = {
         "surface_tension",
         "vapor_pressure",
@@ -81,9 +86,13 @@ class CombustionGas:
         internal_energy: float | None = None,
         density: float | None = None,
         quality: float | None = None,
+        set_reference: str | None = None,
     ):
         if quality is not None:
             raise ValueError("CombustionGas does not support vapor quality.")
+
+        self._reference_target = self._normalize_reference_target(set_reference)
+        self._reference_offsets: tuple[float, float, float] | None = None
 
         if basis not in ("mole", "mass"):
             raise ValueError("basis must be 'mole' or 'mass'.")
@@ -181,6 +190,168 @@ class CombustionGas:
 
         return fractions
 
+
+    # ---------------- Reference-state matching ---------------- #
+
+    @classmethod
+    def _normalize_reference_target(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+        if key in {"", "none", "raw", "default"}:
+            return None
+
+        aliases = {
+            "fluid": "Fluid",
+            "coolprop": "Fluid",
+            "realfluid": "Fluid",
+            "real_fluid": "Fluid",
+            "idealgas": "IdealGas",
+            "ideal_gas": "IdealGas",
+            "ideal": "IdealGas",
+            "pyromat": "IdealGas",
+            "propellant": "Propellant",
+            "rocketprops": "Propellant",
+            "combustiongas": "CombustionGas",
+            "combustion_gas": "CombustionGas",
+            "cea": "CombustionGas",
+        }
+
+        if key not in aliases:
+            raise ValueError(
+                "set_reference must be one of None, 'Fluid', 'IdealGas', "
+                "'Propellant', or 'CombustionGas'."
+            )
+
+        target = aliases[key]
+
+        if target == cls.__name__:
+            return None
+
+        return target
+
+    @property
+    def reference(self) -> str:
+        return self._reference_target or self.__class__.__name__
+
+    @property
+    def set_reference(self) -> str:
+        return self.reference
+
+    def _composition_cache_key(self) -> tuple:
+        return tuple(
+            sorted(
+                (name, round(float(w), 15))
+                for name, w in zip(self._display_names, self._mass_fractions)
+            )
+        )
+
+    def _composition_argument(self) -> str | dict[str, float]:
+        if len(self._display_names) == 1:
+            return self._display_names[0]
+        return {name: float(w) for name, w in zip(self._display_names, self._mass_fractions)}
+
+    def _reference_cache_key(self) -> tuple:
+        return (
+            "CombustionGas",
+            self._reference_target,
+            self._composition_cache_key(),
+            self._REFERENCE_TEMPERATURE,
+            self._REFERENCE_PRESSURE,
+        )
+
+    def _raw_entropy_at(self, temperature: float, pressure: float) -> float:
+        p_i = self._mole_fractions * float(pressure)
+        p_i = np.maximum(p_i, np.finfo(float).tiny)
+        pressure_correction_molar = -self._RU_KMOL * np.log(p_i / self._P_REF)
+        pure_s0_molar = np.array(
+            [CEA.entropy_molar_standard(name, temperature) for name in self._species_names],
+            dtype=float,
+        )
+        pure_s_mass_at_pi = (pure_s0_molar + pressure_correction_molar) / self._M
+        return float(np.dot(self._mass_fractions, pure_s_mass_at_pi))
+
+    def _raw_reference_properties(self) -> tuple[float, float, float]:
+        T = self._REFERENCE_TEMPERATURE
+        P = self._REFERENCE_PRESSURE
+        h = self._enthalpy_from_temperature(T)
+        u = self._internal_energy_from_temperature(T)
+        s = self._raw_entropy_at(T, P)
+        return h, u, s
+
+    def _target_reference_properties(self) -> tuple[float, float, float]:
+        target = self._reference_target
+        if target is None:
+            return self._raw_reference_properties()
+        fluid = self._composition_argument()
+        T = self._REFERENCE_TEMPERATURE
+        P = self._REFERENCE_PRESSURE
+        if target == "Fluid":
+            from .Fluid import Fluid
+            obj = Fluid(fluid, basis="mass", pressure=P, temperature=T, set_reference=None)
+        elif target == "IdealGas":
+            from .IdealGas import IdealGas
+            obj = IdealGas(fluid, basis="mass", pressure=P, temperature=T, set_reference=None)
+        elif target == "Propellant":
+            from .Propellant import Propellant
+            if not isinstance(fluid, str):
+                raise ValueError("set_reference='Propellant' is only supported for pure CombustionGas species.")
+            obj = Propellant(fluid, pressure=P, temperature=T, set_reference=None)
+        else:
+            raise ValueError(f"Unsupported reference target: {target!r}")
+        return float(obj.enthalpy), float(obj.internal_energy), float(obj.entropy)
+
+    def _get_reference_offsets(self) -> tuple[float, float, float]:
+        if self._reference_target is None:
+            return 0.0, 0.0, 0.0
+        if self._reference_offsets is not None:
+            return self._reference_offsets
+        key = self._reference_cache_key()
+        cached = self._REFERENCE_CACHE.get(key)
+        if cached is not None:
+            self._reference_offsets = cached
+            return cached
+        raw_h, raw_u, raw_s = self._raw_reference_properties()
+        ref_h, ref_u, ref_s = self._target_reference_properties()
+        offsets = (ref_h - raw_h, ref_u - raw_u, ref_s - raw_s)
+        self._REFERENCE_CACHE[key] = offsets
+        self._reference_offsets = offsets
+        return offsets
+
+    def _clear_reference_cache(self) -> None:
+        self._reference_offsets = None
+
+    def _to_raw_basis(self, name: str, value: float) -> float:
+        if self._reference_target is None:
+            return float(value)
+        dh, du, _ = self._get_reference_offsets()
+        if name == "enthalpy":
+            return float(value) - dh
+        if name == "internal_energy":
+            return float(value) - du
+        return float(value)
+
+    def _from_raw_basis(self, name: str, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if self._reference_target is None:
+            return float(value)
+        dh, du, ds = self._get_reference_offsets()
+        T = self._temperature
+        if name == "enthalpy":
+            return float(value) + dh
+        if name == "internal_energy":
+            return float(value) + du
+        if name == "entropy":
+            return float(value) + ds
+        if name == "gibbs_energy":
+            return float(value) + dh - T * ds
+        if name in {"free_energy", "helmholtz_energy"}:
+            return float(value) + du - T * ds
+        return float(value)
+
     @classmethod
     def _resolve_species(cls, value: str) -> tuple[str, str, int, int | None]:
         """Resolve a user species name/alias to a CEA gas species and table indices."""
@@ -255,6 +426,12 @@ class CombustionGas:
         }
 
         provided = frozenset(self._last_state_values)
+
+        if enthalpy is not None:
+            enthalpy = self._to_raw_basis("enthalpy", enthalpy)
+
+        if internal_energy is not None:
+            internal_energy = self._to_raw_basis("internal_energy", internal_energy)
 
         if provided not in self._FLASH_INPUTS:
             raise LookupError(
@@ -427,6 +604,7 @@ class CombustionGas:
 
         self._mole_fractions = self._validate_fractions(value, "Mole fractions")
         self._mass_fractions = self._mole_fractions * self._M / np.dot(self._mole_fractions, self._M)
+        self._clear_reference_cache()
         self._clear_property_cache()
 
         if self._last_state_values is not None:
@@ -447,6 +625,7 @@ class CombustionGas:
         self._mass_fractions = self._validate_fractions(value, "Mass fractions")
         inv = self._mass_fractions / self._M
         self._mole_fractions = inv / inv.sum()
+        self._clear_reference_cache()
         self._clear_property_cache()
 
         if self._last_state_values is not None:
@@ -465,12 +644,12 @@ class CombustionGas:
 
     @property
     def enthalpy(self) -> float:
-        return self._enthalpy
+        return self._from_raw_basis("enthalpy", self._enthalpy)
 
     @enthalpy.setter
     def enthalpy(self, value: float):
         self._clear_property_cache()
-        self._enthalpy = float(value)
+        self._enthalpy = self._to_raw_basis("enthalpy", value)
         self._temperature = self._temperature_from_enthalpy(self._enthalpy)
         self._validate_temperature()
 
@@ -482,13 +661,14 @@ class CombustionGas:
 
         return self._cache_set(
             "internal_energy",
-            self._internal_energy_from_temperature(self._temperature),
+            self._from_raw_basis("internal_energy", self._internal_energy_from_temperature(self._temperature)),
         )
 
     @internal_energy.setter
     def internal_energy(self, value: float):
         self._clear_property_cache()
-        self._temperature = self._temperature_from_internal_energy(float(value))
+        raw_value = self._to_raw_basis("internal_energy", value)
+        self._temperature = self._temperature_from_internal_energy(raw_value)
         self._validate_temperature()
         self._enthalpy = self._enthalpy_from_temperature(self._temperature)
 
@@ -534,7 +714,7 @@ class CombustionGas:
 
     @property
     def pressure_enthalpy(self) -> Tuple[float | None, float]:
-        return self._pressure, self._enthalpy
+        return self._pressure, self.enthalpy
 
     @pressure_enthalpy.setter
     def pressure_enthalpy(self, values: Tuple[float | None, float]):
@@ -564,7 +744,7 @@ class CombustionGas:
 
     @property
     def density_enthalpy(self) -> Tuple[float, float]:
-        return self.density, self._enthalpy
+        return self.density, self.enthalpy
 
     @density_enthalpy.setter
     def density_enthalpy(self, values: Tuple[float, float]):
@@ -594,7 +774,7 @@ class CombustionGas:
 
     @property
     def HP(self) -> Tuple[float, float | None]:
-        return self._enthalpy, self._pressure
+        return self.enthalpy, self._pressure
 
     @HP.setter
     def HP(self, values: Tuple[float, float]):
@@ -719,7 +899,7 @@ class CombustionGas:
         )
 
         pure_s_mass_at_pi = (pure_s0_molar + pressure_correction_molar) / self._M
-        return self._cache_set("entropy", float(np.dot(self._mass_fractions, pure_s_mass_at_pi)))
+        return self._cache_set("entropy", self._from_raw_basis("entropy", float(np.dot(self._mass_fractions, pure_s_mass_at_pi))))
 
     @property
     def gibbs_energy(self) -> float:
@@ -1250,7 +1430,7 @@ class CombustionGas:
         return (
             f"{self.__class__.__name__}(species=[{species_str}], "
             f"pressure={pressure_str} Pa, "
-            f"enthalpy={self._enthalpy:.3e} J/kg, "
+            f"enthalpy={self.enthalpy:.3e} J/kg, "
             f"temperature={self.temperature:.2f} K)"
         )
 

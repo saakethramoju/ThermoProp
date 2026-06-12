@@ -54,6 +54,11 @@ class Fluid:
 
     _BACKEND_NAME = "CoolProp"
 
+    _REFERENCE_TEMPERATURE = 298.15
+    _REFERENCE_PRESSURE = 101325.0
+    _REFERENCE_CACHE: dict[tuple, tuple[float, float, float]] = {}
+
+
     _UNSUPPORTED_PROPERTIES = set()
 
     _PHASE_NAMES = {
@@ -120,10 +125,14 @@ class Fluid:
         quality: float = None,
         density: float = None,
         internal_energy: float = None,
+        set_reference: str | None = None,
     ):
         """
         Initialize a Fluid state.
         """
+        self._reference_target = self._normalize_reference_target(set_reference)
+        self._reference_offsets: tuple[float, float, float] | None = None
+
         valid_fluids = Fluid.get_available_fluids()
 
         self._fluids: List[str] = []
@@ -204,6 +213,8 @@ class Fluid:
         self._h = None
         self._last_state_values: dict | None = None
         self._fluid_string = "&".join(self._fluids)
+        self._clear_reference_cache()
+        self._clear_reference_cache()
         self._backend = self._build_state()
         self._pyfluid = self._backend
 
@@ -230,6 +241,170 @@ class Fluid:
             )
 
         self._set_state_from_named_pair(provided)
+
+
+    # ---------------- Reference-state matching ---------------- #
+
+    @classmethod
+    def _normalize_reference_target(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+        if key in {"", "none", "raw", "default"}:
+            return None
+
+        aliases = {
+            "fluid": "Fluid",
+            "coolprop": "Fluid",
+            "realfluid": "Fluid",
+            "real_fluid": "Fluid",
+            "idealgas": "IdealGas",
+            "ideal_gas": "IdealGas",
+            "ideal": "IdealGas",
+            "pyromat": "IdealGas",
+            "propellant": "Propellant",
+            "rocketprops": "Propellant",
+            "combustiongas": "CombustionGas",
+            "combustion_gas": "CombustionGas",
+            "cea": "CombustionGas",
+        }
+
+        if key not in aliases:
+            raise ValueError(
+                "set_reference must be one of None, 'Fluid', 'IdealGas', "
+                "'Propellant', or 'CombustionGas'."
+            )
+
+        target = aliases[key]
+
+        if target == cls.__name__:
+            return None
+
+        return target
+
+    @property
+    def reference(self) -> str:
+        return self._reference_target or self.__class__.__name__
+
+    @property
+    def set_reference(self) -> str:
+        return self.reference
+
+    def _composition_cache_key(self) -> tuple:
+        return tuple(
+            sorted(
+                (name, round(float(w), 15))
+                for name, w in zip(self._display_names, self._mass_fractions)
+            )
+        )
+
+    def _composition_argument(self) -> str | dict[str, float]:
+        if len(self._display_names) == 1:
+            return self._display_names[0]
+
+        return {
+            name: float(w)
+            for name, w in zip(self._display_names, self._mass_fractions)
+        }
+
+    def _reference_cache_key(self) -> tuple:
+        return (
+            "Fluid",
+            self._reference_target,
+            self._composition_cache_key(),
+            self._REFERENCE_TEMPERATURE,
+            self._REFERENCE_PRESSURE,
+        )
+
+    def _raw_reference_properties(self) -> tuple[float, float, float]:
+        obj = self.__class__(
+            self._composition_argument(),
+            basis="mass",
+            pressure=self._REFERENCE_PRESSURE,
+            temperature=self._REFERENCE_TEMPERATURE,
+            set_reference=None,
+        )
+        return float(obj._h), float(obj._backend.umass()), float(obj._backend.smass())
+
+    def _target_reference_properties(self) -> tuple[float, float, float]:
+        target = self._reference_target
+
+        if target is None:
+            return self._raw_reference_properties()
+
+        fluid = self._composition_argument()
+        T = self._REFERENCE_TEMPERATURE
+        P = self._REFERENCE_PRESSURE
+
+        if target == "IdealGas":
+            from .IdealGas import IdealGas
+            obj = IdealGas(fluid, basis="mass", pressure=P, temperature=T, set_reference=None)
+        elif target == "CombustionGas":
+            from .CombustionGas import CombustionGas
+            obj = CombustionGas(fluid, basis="mass", pressure=P, temperature=T, set_reference=None)
+        elif target == "Propellant":
+            from .Propellant import Propellant
+            if not isinstance(fluid, str):
+                raise ValueError("set_reference='Propellant' is only supported for pure Fluid species.")
+            obj = Propellant(fluid, pressure=P, temperature=T, set_reference=None)
+        else:
+            raise ValueError(f"Unsupported reference target: {target!r}")
+
+        return float(obj.enthalpy), float(obj.internal_energy), float(obj.entropy)
+
+    def _get_reference_offsets(self) -> tuple[float, float, float]:
+        if self._reference_target is None:
+            return 0.0, 0.0, 0.0
+
+        if self._reference_offsets is not None:
+            return self._reference_offsets
+
+        key = self._reference_cache_key()
+        cached = self._REFERENCE_CACHE.get(key)
+        if cached is not None:
+            self._reference_offsets = cached
+            return cached
+
+        raw_h, raw_u, raw_s = self._raw_reference_properties()
+        ref_h, ref_u, ref_s = self._target_reference_properties()
+        offsets = (ref_h - raw_h, ref_u - raw_u, ref_s - raw_s)
+        self._REFERENCE_CACHE[key] = offsets
+        self._reference_offsets = offsets
+        return offsets
+
+    def _clear_reference_cache(self) -> None:
+        self._reference_offsets = None
+
+    def _to_raw_basis(self, name: str, value: float) -> float:
+        if self._reference_target is None:
+            return float(value)
+        dh, du, _ = self._get_reference_offsets()
+        if name == "enthalpy":
+            return float(value) - dh
+        if name == "internal_energy":
+            return float(value) - du
+        return float(value)
+
+    def _from_raw_basis(self, name: str, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if self._reference_target is None:
+            return float(value)
+        dh, du, ds = self._get_reference_offsets()
+        T = self.temperature
+        if name == "enthalpy":
+            return float(value) + dh
+        if name == "internal_energy":
+            return float(value) + du
+        if name == "entropy":
+            return float(value) + ds
+        if name == "gibbs_energy":
+            return float(value) + dh - T * ds
+        if name in {"free_energy", "helmholtz_energy"}:
+            return float(value) + du - T * ds
+        return float(value)
 
     # ---------------- Core ---------------- #
     @property
@@ -275,6 +450,13 @@ class Fluid:
     def _set_state_from_named_pair(self, values: dict) -> None:
         self._last_state_values = dict(values)
         keys = frozenset(values.keys())
+        raw_values = dict(values)
+
+        if "enthalpy" in raw_values:
+            raw_values["enthalpy"] = self._to_raw_basis("enthalpy", raw_values["enthalpy"])
+
+        if "internal_energy" in raw_values:
+            raw_values["internal_energy"] = self._to_raw_basis("internal_energy", raw_values["internal_energy"])
 
         if keys not in Fluid._FLASH_PAIRS:
             raise ValueError(
@@ -283,8 +465,8 @@ class Fluid:
             )
 
         if keys == frozenset(("pressure", "enthalpy")) and self._mixture:
-            pressure = float(values["pressure"])
-            enthalpy = float(values["enthalpy"])
+            pressure = float(raw_values["pressure"])
+            enthalpy = float(raw_values["enthalpy"])
 
             T, Q = Fluid.get_temperature_and_quality(
                 self._backend,
@@ -308,8 +490,8 @@ class Fluid:
             )
 
         input_pair = getattr(CP, input_pair_name)
-        value1 = values[order[0]]
-        value2 = values[order[1]]
+        value1 = raw_values[order[0]]
+        value2 = raw_values[order[1]]
 
         self._update_state(input_pair, value1, value2)
         self._sync_from_backend()
@@ -450,7 +632,7 @@ class Fluid:
     @property
     def enthalpy(self) -> float:
         """Mass-specific enthalpy in J/kg."""
-        return self._h
+        return self._from_raw_basis("enthalpy", self._h)
 
     @enthalpy.setter
     def enthalpy(self, value: float):
@@ -706,12 +888,17 @@ class Fluid:
     @property
     def helmholtz_energy(self) -> float:
         """Mass-specific Helmholtz free energy [J/kg]."""
-        return float(self._backend.helmholtzmass())
+        return self._from_raw_basis("helmholtz_energy", float(self._backend.helmholtzmass()))
 
     @property
     def gibbs_energy(self) -> float:
         """Mass-specific Gibbs free energy [J/kg]."""
-        return float(self._backend.gibbsmass())
+        return self._from_raw_basis("gibbs_energy", float(self._backend.gibbsmass()))
+
+    @property
+    def free_energy(self) -> float:
+        """Mass-specific Helmholtz free energy [J/kg]."""
+        return self.helmholtz_energy
 
     @property
     def fundamental_derivative_of_gas_dynamics(self) -> float:
@@ -784,7 +971,7 @@ class Fluid:
     @property
     def entropy(self) -> float:
         """Mass-specific entropy in J/kg-K."""
-        return float(self._backend.smass())
+        return self._from_raw_basis("entropy", float(self._backend.smass()))
 
     @property
     def freezing_temperature(self) -> float:
@@ -794,7 +981,7 @@ class Fluid:
     @property
     def internal_energy(self) -> float:
         """Mass-specific internal energy in J/kg."""
-        return float(self._backend.umass())
+        return self._from_raw_basis("internal_energy", float(self._backend.umass()))
 
     @internal_energy.setter
     def internal_energy(self, value: float):

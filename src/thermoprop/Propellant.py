@@ -65,6 +65,11 @@ class Propellant:
     _LBF_PER_IN_TO_N_PER_M = 175.126835
     _RU = 8.31446261815324
     _CACHE_MISS = object()
+
+    _REFERENCE_TEMPERATURE = 298.15
+    _REFERENCE_PRESSURE = 101325.0
+    _REFERENCE_CACHE: dict[tuple, tuple[float, float, float]] = {}
+
     _CEA_REFERENCE_HINTS = {
         "Ammonia": "NH3(L)",
         "NH3": "NH3(L)",
@@ -98,7 +103,11 @@ class Propellant:
         propellant: str,
         temperature: float,
         pressure: float | None = None,
+        set_reference: str | None = None,
     ):
+        self._reference_target = self._normalize_reference_target(set_reference)
+        self._reference_offsets: tuple[float, float, float] | None = None
+
         self._input_name = str(propellant)
         self._temperature = float(temperature)
         self._pressure = None if pressure is None else float(pressure)
@@ -134,6 +143,146 @@ class Propellant:
 
         self._update_active_cea_name()
         self._validate_liquid_state()
+
+
+    # ---------------- Reference-state matching ---------------- #
+
+    @classmethod
+    def _normalize_reference_target(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+        if key in {"", "none", "raw", "default"}:
+            return None
+
+        aliases = {
+            "fluid": "Fluid",
+            "coolprop": "Fluid",
+            "realfluid": "Fluid",
+            "real_fluid": "Fluid",
+            "idealgas": "IdealGas",
+            "ideal_gas": "IdealGas",
+            "ideal": "IdealGas",
+            "pyromat": "IdealGas",
+            "propellant": "Propellant",
+            "rocketprops": "Propellant",
+            "combustiongas": "CombustionGas",
+            "combustion_gas": "CombustionGas",
+            "cea": "CombustionGas",
+        }
+
+        if key not in aliases:
+            raise ValueError(
+                "set_reference must be one of None, 'Fluid', 'IdealGas', "
+                "'Propellant', or 'CombustionGas'."
+            )
+
+        target = aliases[key]
+
+        if target == cls.__name__:
+            return None
+
+        return target
+
+    @property
+    def reference(self) -> str:
+        return self._reference_target or self.__class__.__name__
+
+    @property
+    def set_reference(self) -> str:
+        return self.reference
+
+    def _composition_cache_key(self) -> tuple:
+        return ((self.propellant, 1.0),)
+
+    def _composition_argument(self) -> str:
+        return self.propellant
+
+    def _reference_cache_key(self) -> tuple:
+        return (
+            "Propellant",
+            self._reference_target,
+            self._composition_cache_key(),
+            self._REFERENCE_TEMPERATURE,
+            self._REFERENCE_PRESSURE,
+        )
+
+    def _raw_property_value(self, property_name: str):
+        old_target = self._reference_target
+        try:
+            self._reference_target = None
+            return getattr(self, property_name)
+        finally:
+            self._reference_target = old_target
+
+    def _raw_reference_properties(self) -> tuple[float, float, float]:
+        obj = self.__class__(
+            self._composition_argument(),
+            pressure=self._REFERENCE_PRESSURE,
+            temperature=self._REFERENCE_TEMPERATURE,
+            set_reference=None,
+        )
+        return float(obj.enthalpy), float(obj.internal_energy), float(obj.entropy)
+
+    def _target_reference_properties(self) -> tuple[float, float, float]:
+        target = self._reference_target
+        if target is None:
+            return self._raw_reference_properties()
+        fluid = self._composition_argument()
+        T = self._REFERENCE_TEMPERATURE
+        P = self._REFERENCE_PRESSURE
+        if target == "Fluid":
+            from .Fluid import Fluid
+            obj = Fluid(fluid, pressure=P, temperature=T, set_reference=None)
+        elif target == "IdealGas":
+            from .IdealGas import IdealGas
+            obj = IdealGas(fluid, pressure=P, temperature=T, set_reference=None)
+        elif target == "CombustionGas":
+            from .CombustionGas import CombustionGas
+            obj = CombustionGas(fluid, pressure=P, temperature=T, set_reference=None)
+        else:
+            raise ValueError(f"Unsupported reference target: {target!r}")
+        return float(obj.enthalpy), float(obj.internal_energy), float(obj.entropy)
+
+    def _get_reference_offsets(self) -> tuple[float, float, float]:
+        if self._reference_target is None:
+            return 0.0, 0.0, 0.0
+        if self._reference_offsets is not None:
+            return self._reference_offsets
+        key = self._reference_cache_key()
+        cached = self._REFERENCE_CACHE.get(key)
+        if cached is not None:
+            self._reference_offsets = cached
+            return cached
+        raw_h, raw_u, raw_s = self._raw_reference_properties()
+        ref_h, ref_u, ref_s = self._target_reference_properties()
+        offsets = (ref_h - raw_h, ref_u - raw_u, ref_s - raw_s)
+        self._REFERENCE_CACHE[key] = offsets
+        self._reference_offsets = offsets
+        return offsets
+
+    def _clear_reference_cache(self) -> None:
+        self._reference_offsets = None
+
+    def _from_raw_basis(self, name: str, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if self._reference_target is None:
+            return float(value)
+        dh, du, ds = self._get_reference_offsets()
+        if name == "enthalpy":
+            return float(value) + dh
+        if name == "internal_energy":
+            return float(value) + du
+        if name == "entropy":
+            return float(value) + ds
+        if name == "gibbs_energy":
+            return float(value) + dh - self.temperature * ds
+        if name in {"free_energy", "helmholtz_energy"}:
+            return float(value) + du - self.temperature * ds
+        return float(value)
 
     # ---------------- Resolution ---------------- #
 
@@ -570,6 +719,7 @@ class Propellant:
     @pressure.setter
     def pressure(self, value: float | None):
         self._pressure = None if value is None else float(value)
+        self._clear_reference_cache()
         self._clear_property_cache()
         self._validate_liquid_state()
 
@@ -580,6 +730,7 @@ class Propellant:
     @temperature.setter
     def temperature(self, value: float):
         self._temperature = float(value)
+        self._clear_reference_cache()
         self._clear_property_cache()
         self._validate_liquid_state()
 
@@ -594,6 +745,7 @@ class Propellant:
 
         self._pressure = None if values[0] is None else float(values[0])
         self._temperature = float(values[1])
+        self._clear_reference_cache()
         self._clear_property_cache()
         self._validate_liquid_state()
 
@@ -990,20 +1142,20 @@ class Propellant:
         """
         cached = self._cache_get("enthalpy")
         if cached is not self._CACHE_MISS:
-            return cached
+            return self._from_raw_basis("enthalpy", cached)
 
         value = self._cea_call("enthalpy_mass", self.temperature, default=None)
         if value is not None and self.has_cea_thermo:
-            return self._cache_set("enthalpy", self._source("enthalpy", value, "CEA"))
+            return self._from_raw_basis("enthalpy", self._cache_set("enthalpy", self._source("enthalpy", value, "CEA")))
 
         if not self._active_is_liquid_model or self._backend is None:
-            return self._cache_set("enthalpy", None)
+            return self._from_raw_basis("enthalpy", self._cache_set("enthalpy", None))
 
         hf = self.heat_of_formation
         tref = self.reference_temperature
 
         if hf is None or tref is None:
-            return self._cache_set("enthalpy", None)
+            return self._from_raw_basis("enthalpy", self._cache_set("enthalpy", None))
 
         pref = self.vapor_pressure_at_temperature(tref)
         if pref is None or not np.isfinite(pref) or pref <= 0.0:
@@ -1028,12 +1180,15 @@ class Propellant:
             pressure,
         )
 
-        return self._cache_set(
+        return self._from_raw_basis(
             "enthalpy",
-            self._source(
+            self._cache_set(
+                "enthalpy",
+                self._source(
                 "enthalpy",
                 float(hf + h_temperature + h_pressure),
                 "CEA Hf + RocketProps",
+                ),
             ),
         )
 
@@ -1041,32 +1196,35 @@ class Propellant:
     def internal_energy(self) -> float | None:
         cached = self._cache_get("internal_energy")
         if cached is not self._CACHE_MISS:
-            return cached
+            return self._from_raw_basis("internal_energy", cached)
 
-        h = self.enthalpy
+        h = self._raw_property_value("enthalpy")
 
         if h is None:
-            return self._cache_set("internal_energy", None)
+            return self._from_raw_basis("internal_energy", self._cache_set("internal_energy", None))
 
         if self._cea_name is not None and CEA.is_gas(self._cea_name):
             R = self.gas_constant
             if R is not None:
-                return self._cache_set("internal_energy", self._source("internal_energy", h - R * self.temperature, "CEA"))
+                return self._from_raw_basis("internal_energy", self._cache_set("internal_energy", self._source("internal_energy", h - R * self.temperature, "CEA")))
 
         rho = self.density
         pressure = self.pressure
 
         if pressure is not None and rho is not None and rho != 0.0:
-            return self._cache_set(
+            return self._from_raw_basis(
                 "internal_energy",
-                self._source(
+                self._cache_set(
                     "internal_energy",
-                    h - pressure / rho,
-                    self.property_source("enthalpy") or "CEA Hf + RocketProps",
+                    self._source(
+                        "internal_energy",
+                        h - pressure / rho,
+                        self.property_source("enthalpy") or "CEA Hf + RocketProps",
+                    ),
                 ),
             )
 
-        return self._cache_set("internal_energy", None)
+        return self._from_raw_basis("internal_energy", self._cache_set("internal_energy", None))
 
     def _cp_at_temperature(self, temperature: float, pressure: float | None = None) -> float | None:
         """RocketProps liquid Cp at a temporary temperature and optional pressure.
@@ -1168,12 +1326,12 @@ class Propellant:
     def entropy(self) -> float | None:
         cached = self._cache_get("entropy")
         if cached is not self._CACHE_MISS:
-            return cached
+            return self._from_raw_basis("entropy", cached)
 
         value = self.standard_entropy
 
         if value is None:
-            return self._cache_set("entropy", None)
+            return self._from_raw_basis("entropy", self._cache_set("entropy", None))
 
         if (
             self.pressure is not None
@@ -1184,12 +1342,12 @@ class Propellant:
             mw = self.cea_formula_molar_mass
 
             if mw is None or mw == 0.0:
-                return self._cache_set("entropy", None)
+                return self._from_raw_basis("entropy", self._cache_set("entropy", None))
 
             R_cea = self._RU / mw
             value = value - R_cea * np.log(self.pressure / self._P0_CEA)
 
-        return self._cache_set("entropy", self._source("entropy", value, "CEA"))
+        return self._from_raw_basis("entropy", self._cache_set("entropy", self._source("entropy", value, "CEA")))
 
     @property
     def reference_temperature(self) -> float | None:
