@@ -372,17 +372,13 @@ class Reactants:
     def __str__(self) -> str:
         rows = [
             ("Mixture ratio O/F", f"{self.oxidizer_to_fuel_ratio:.6g}"),
-            ("Total mass basis [kg]", f"{self.total_mass:.6g}"),
-            ("Fuel mass [kg]", f"{self.fuel_mass:.6g}"),
-            ("Oxidizer mass [kg]", f"{self.oxidizer_mass:.6g}"),
-            ("Reactant MW [kg/mol]", f"{self.molecular_weight:.8g}"),
-            ("Reactant MW [kg/kmol]", f"{self.molecular_weight_kg_per_kmol:.8g}"),
-            ("Reactant enthalpy [J/kg]", f"{self.reactant_enthalpy:.8e}"),
-            ("Reactant internal energy [J/kg]", f"{self.reactant_internal_energy:.8e}"),
-            ("Mass fractions", self.mass_fractions),
-            ("Mole fractions", self.mole_fractions),
-            ("Element moles per kg", self.element_moles_per_kg),
+            ("Fuels", ", ".join(r.cea_name for r in self.fuels)),
+            ("Oxidizers", ", ".join(r.cea_name for r in self.oxidizers)),
         ]
 
         width = max(len(key) for key, _ in rows)
-        return "\n".join(f"{key:<{width}} : {value}" for key, value in rows)
+
+        return "\n".join(
+            f"{key:<{width}} : {value}"
+            for key, value in rows
+        )
