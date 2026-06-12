@@ -170,8 +170,8 @@ class Equilibrium:
         trace_moles: float = 1e-300,
         min_temperature: float = 200.0,
         max_temperature: float = 20000.0,
-        combustion_gas_trace: float = 1e-8,
-        combustion_gas_max_species: int | None = 25,
+        CombustionGas_trace: float = 1e-8,
+        CombustionGas_max_species: int | None = 25,
         equilibrium_derivative_temperature_step: float = 1.0,
     ):
         self._mode = str(mode).lower()
@@ -194,8 +194,8 @@ class Equilibrium:
         self._min_temperature = float(min_temperature)
         self._max_temperature = float(max_temperature)
 
-        self._combustion_gas_trace = float(combustion_gas_trace)
-        self._combustion_gas_max_species = combustion_gas_max_species
+        self._CombustionGas_trace = float(CombustionGas_trace)
+        self._CombustionGas_max_species = CombustionGas_max_species
         self._equilibrium_derivative_temperature_step = float(equilibrium_derivative_temperature_step)
         self._equilibrium_property_cache: dict[str, object] = {}
 
@@ -783,14 +783,14 @@ class Equilibrium:
         These fractions always sum to 1 and match the composition used
         to construct the CombustionGas output.
         """
-        return self.combustion_gas_composition()
+        return self.CombustionGas_composition()
         
     @property
     def normalized_mass_fractions(self) -> dict[str, float]:
         """
         Mass fractions corresponding to normalized_mole_fractions.
         """
-        gas = self.combustion_gas
+        gas = self.CombustionGas
 
         return dict(gas.mass_fractions)
 
@@ -910,8 +910,8 @@ class Equilibrium:
         obj._min_temperature = self._min_temperature
         obj._max_temperature = self._max_temperature
 
-        obj._combustion_gas_trace = self._combustion_gas_trace
-        obj._combustion_gas_max_species = self._combustion_gas_max_species
+        obj._CombustionGas_trace = self._CombustionGas_trace
+        obj._CombustionGas_max_species = self._CombustionGas_max_species
         obj._equilibrium_derivative_temperature_step = self._equilibrium_derivative_temperature_step
         obj._equilibrium_property_cache = {}
 
@@ -948,7 +948,7 @@ class Equilibrium:
         This matches the CEA frozen transport-property Cp when the same gas
         species set is passed into CombustionGas.
         """
-        return self.combustion_gas.specific_heat_cp
+        return self.CombustionGas.specific_heat_cp
 
     @property
     def cp_equilibrium(self) -> float:
@@ -1001,7 +1001,7 @@ class Equilibrium:
 
     @property
     def specific_heat_cv_frozen(self) -> float:
-        return self.combustion_gas.specific_heat_cv
+        return self.CombustionGas.specific_heat_cv
 
     @property
     def specific_heat_cv(self) -> float:
@@ -1013,7 +1013,7 @@ class Equilibrium:
 
     @property
     def specific_heat_ratio_frozen(self) -> float:
-        return self.combustion_gas.specific_heat_ratio
+        return self.CombustionGas.specific_heat_ratio
 
     @property
     def dlnv_dlnp_const_t(self) -> float:
@@ -1101,15 +1101,15 @@ class Equilibrium:
 
     @property
     def entropy(self) -> float:
-        return self.combustion_gas.entropy
+        return self.CombustionGas.entropy
 
     @property
     def gibbs_energy(self) -> float:
-        return self.combustion_gas.gibbs_energy
+        return self.CombustionGas.gibbs_energy
 
     @property
     def helmholtz_energy(self) -> float:
-        return self.combustion_gas.helmholtz_energy
+        return self.CombustionGas.helmholtz_energy
 
     @property
     def free_energy(self) -> float:
@@ -1136,16 +1136,16 @@ class Equilibrium:
         mu = np.array(list(self.chemical_potentials_over_RT.values()), dtype=float)
         return float(np.sum(self._moles * mu))
 
-    def combustion_gas_composition(
+    def CombustionGas_composition(
         self,
         trace: float | None = None,
         max_species: int | None = None,
     ) -> dict[str, float]:
         if trace is None:
-            trace = self._combustion_gas_trace
+            trace = self._CombustionGas_trace
 
         if max_species is None:
-            max_species = self._combustion_gas_max_species
+            max_species = self._CombustionGas_max_species
 
         items = [
             (name, float(x))
@@ -1173,10 +1173,10 @@ class Equilibrium:
         }
 
     @property
-    def combustion_gas(self) -> CombustionGas:
+    def CombustionGas(self) -> CombustionGas:
         if self._gas_cache is None:
             self._gas_cache = CombustionGas(
-                self.combustion_gas_composition(),
+                self.CombustionGas_composition(),
                 basis="mole",
                 pressure=self.pressure,
                 temperature=self.temperature,
@@ -1186,12 +1186,12 @@ class Equilibrium:
 
     @property
     def gas(self) -> CombustionGas:
-        return self.combustion_gas
+        return self.CombustionGas
 
     @property
     def dynamic_viscosity(self) -> float | None:
         try:
-            return self.combustion_gas.dynamic_viscosity
+            return self.CombustionGas.dynamic_viscosity
         except Exception:
             return None
 
@@ -1207,7 +1207,7 @@ class Equilibrium:
     @property
     def conductivity_frozen(self) -> float | None:
         try:
-            return self.combustion_gas.conductivity
+            return self.CombustionGas.conductivity
         except Exception:
             return None
 
@@ -1220,7 +1220,7 @@ class Equilibrium:
         if cached is not None:
             return cached
 
-        composition = self.combustion_gas_composition()
+        composition = self.CombustionGas_composition()
         names = list(composition.keys())
         x = np.array([composition[name] for name in names], dtype=float)
 
@@ -1303,7 +1303,7 @@ class Equilibrium:
         if nr == 0:
             return self._cache_set_equilibrium_property("reaction_conductivity", 0.0)
 
-        gas = self.combustion_gas
+        gas = self.CombustionGas
 
         try:
             eta_ij = gas._binary_viscosity_interaction_matrix()
@@ -1408,7 +1408,7 @@ class Equilibrium:
 
     @property
     def speed_of_sound_frozen(self) -> float:
-        return self.combustion_gas.speed_of_sound
+        return self.CombustionGas.speed_of_sound
 
     @property
     def speed_of_sound_equilibrium(self) -> float:
@@ -1434,7 +1434,7 @@ class Equilibrium:
         return 1.0 / self.pressure
 
     def partial_derivative(self, of: str, with_respect_to: str, constant: str) -> float:
-        return self.combustion_gas.partial_derivative(of, with_respect_to, constant)
+        return self.CombustionGas.partial_derivative(of, with_respect_to, constant)
 
     @property
     def dhdT_const_p(self) -> float:
@@ -1518,11 +1518,11 @@ class Equilibrium:
 
     @property
     def minimum_temperature(self) -> float:
-        return self.combustion_gas.minimum_temperature
+        return self.CombustionGas.minimum_temperature
 
     @property
     def maximum_temperature(self) -> float:
-        return self.combustion_gas.maximum_temperature
+        return self.CombustionGas.maximum_temperature
 
     @property
     def max_mole_correction(self) -> float:
@@ -1579,7 +1579,7 @@ class Equilibrium:
                 for name, value in self.mass_fractions.items()
                 if value > trace
             },
-            "combustion_gas_mole_fractions": self.combustion_gas_composition(),
+            "CombustionGas_mole_fractions": self.CombustionGas_composition(),
             "element_error": self.element_error,
             "max_element_error": self.max_element_error,
             "max_mole_correction": self.max_mole_correction,
@@ -1621,7 +1621,7 @@ class Equilibrium:
             ("Temperature [K]", self._safe(self.temperature, ".2f")),
             ("Density [kg/m³]", self._safe(self.density, ".3f")),
             ("Mole fractions", format_dict(self.mole_fractions, 5)),
-            ("CombustionGas mole fractions", format_dict(self.combustion_gas_composition(), 5)),
+            ("CombustionGas mole fractions", format_dict(self.CombustionGas_composition(), 5)),
             ("Mass fractions", format_dict(self.mass_fractions, 5)),
             ("Internal energy [J/kg]", self._safe(self.internal_energy, ".3e")),
             ("Enthalpy [J/kg]", self._safe(self.enthalpy, ".3e")),
