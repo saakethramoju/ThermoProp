@@ -44,8 +44,6 @@ class Propellant:
         "isothermal_compressibility",
         "joule_thomson_coefficient",
         "partial_derivative",
-        "helmholtz_energy",
-        "gibbs_energy",
         "universal_gas_constant",
         "prandtl",
     }
@@ -899,14 +897,6 @@ class Propellant:
         return self._unsupported("joule_thomson_coefficient")
 
     @property
-    def helmholtz_energy(self):
-        return self._unsupported("helmholtz_energy")
-
-    @property
-    def gibbs_energy(self):
-        return self._unsupported("gibbs_energy")
-
-    @property
     def universal_gas_constant(self):
         return self._RU
 
@@ -982,6 +972,32 @@ class Propellant:
 
         return self._cache_set("speed_of_sound", self._source("speed_of_sound", float(np.sqrt(value)), "CEA ideal gas"))
     # ---------------- Thermodynamic/reference properties ---------------- #
+
+    @property
+    def gibbs_energy(self):
+        h = self.enthalpy
+        s = self.entropy
+
+        if h is None or s is None:
+            return None
+
+        return h - self.temperature * s
+
+
+    @property
+    def helmholtz_energy(self):
+        u = self.internal_energy
+        s = self.entropy
+
+        if u is None or s is None:
+            return None
+
+        return u - self.temperature * s
+
+
+    @property
+    def free_energy(self):
+        return self.helmholtz_energy
 
     @property
     def molar_mass(self) -> float | None:
