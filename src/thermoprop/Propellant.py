@@ -350,16 +350,19 @@ class Propellant:
         self._cea_index = CEA.index(active) if active is not None else None
 
     def _active_is_liquid_model_raw(self) -> bool:
-        """Phase decision without calling _update_active_cea_name recursively."""
         if self._backend is None:
             return False
 
         if self.pressure is None:
+            tc = self.critical_temperature
+
+            if tc is not None and self.temperature >= tc:
+                return False
+
             return True
 
-        # Use RocketProps vapor pressure when available. If unavailable, keep
-        # RocketProps in its normal liquid-correlation role.
         pvap = self._rocketprops_vapor_pressure_no_source()
+
         if pvap is None:
             return True
 

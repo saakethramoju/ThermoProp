@@ -53,6 +53,8 @@ class Reactants:
 
     Inputs are Propellant objects grouped as fuels and oxidizers. Optional
     weights inside each group are mass weights, matching CEA wt% behavior.
+    The mixture ratio, fuel group, and oxidizer group may be updated after
+    initialization.
 
     A single Propellant may be passed directly:
 
@@ -88,34 +90,13 @@ class Reactants:
         oxidizers: PropellantGroup,
         mixture_ratio: float,
     ):
-        self.mixture_ratio = float(mixture_ratio)
+        self._fuel_inputs = None
+        self._oxidizer_inputs = None
+        self._mixture_ratio = None
 
-        if self.mixture_ratio < 0.0:
-            raise ValueError("mixture_ratio must be nonnegative.")
-
-        self.fuels = self._normalize_group(
-            fuels,
-            total_mass=1.0,
-            role="fuel",
-        )
-
-        self.oxidizers = self._normalize_group(
-            oxidizers,
-            total_mass=self.mixture_ratio,
-            role="oxidizer",
-        )
-
-        if not self.fuels:
-            raise ValueError("At least one fuel is required.")
-
-        if self.mixture_ratio > 0.0 and not self.oxidizers:
-            raise ValueError("At least one oxidizer is required when mixture_ratio > 0.")
-
-        self.entries = [*self.fuels, *self.oxidizers]
-        self.total_mass = sum(entry.mass for entry in self.entries)
-
-        if self.total_mass <= 0.0:
-            raise ValueError("Total reactant mass must be positive.")
+        self._fuel_inputs = self._parse_group_inputs(fuels, role="fuel")
+        self._oxidizer_inputs = self._parse_group_inputs(oxidizers, role="oxidizer")
+        self.mixture_ratio = mixture_ratio
 
     @staticmethod
     def _group_items(propellants: PropellantGroup) -> list[PropellantEntry]:
@@ -135,11 +116,10 @@ class Reactants:
         return list(propellants)
 
     @staticmethod
-    def _normalize_group(
+    def _parse_group_inputs(
         propellants: PropellantGroup,
-        total_mass: float,
         role: str,
-    ) -> list[Reactant]:
+    ) -> list[tuple[Propellant, float]]:
         items = Reactants._group_items(propellants)
 
         if not items:
@@ -171,6 +151,18 @@ class Reactants:
         if weight_sum <= 0.0:
             raise ValueError(f"{role} weights must sum to a positive value.")
 
+        return parsed
+
+    @staticmethod
+    def _normalize_group(
+        propellants: PropellantGroup,
+        total_mass: float,
+        role: str,
+    ) -> list[Reactant]:
+        parsed = Reactants._parse_group_inputs(propellants, role)
+
+        weight_sum = sum(weight for _, weight in parsed)
+
         return [
             Reactant(
                 propellant=propellant,
@@ -179,6 +171,138 @@ class Reactants:
             )
             for propellant, weight in parsed
         ]
+
+    def _rebuild_entries(self) -> None:
+        if self._mixture_ratio is None:
+            return
+
+        if not self._fuel_inputs:
+            raise ValueError("At least one fuel is required.")
+
+        if self._mixture_ratio > 0.0 and not self._oxidizer_inputs:
+            raise ValueError("At least one oxidizer is required when mixture_ratio > 0.")
+
+        self.fuels = self._build_group(
+            self._fuel_inputs,
+            total_mass=1.0,
+            role="fuel",
+        )
+
+        self.oxidizers = self._build_group(
+            self._oxidizer_inputs,
+            total_mass=self._mixture_ratio,
+            role="oxidizer",
+        )
+
+        self.entries = [*self.fuels, *self.oxidizers]
+        self.total_mass = sum(entry.mass for entry in self.entries)
+
+        if self.total_mass <= 0.0:
+            raise ValueError("Total reactant mass must be positive.")
+
+    @staticmethod
+    def _build_group(
+        parsed: list[tuple[Propellant, float]],
+        total_mass: float,
+        role: str,
+    ) -> list[Reactant]:
+        if not parsed:
+            return []
+
+        weight_sum = sum(weight for _, weight in parsed)
+
+        if weight_sum <= 0.0:
+            raise ValueError(f"{role} weights must sum to a positive value.")
+
+        return [
+            Reactant(
+                propellant=propellant,
+                mass=total_mass * weight / weight_sum,
+                role=role,
+            )
+            for propellant, weight in parsed
+        ]
+
+    @property
+    def mixture_ratio(self) -> float:
+        return self._mixture_ratio
+
+    @mixture_ratio.setter
+    def mixture_ratio(self, value: float) -> None:
+        value = float(value)
+
+        if value < 0.0:
+            raise ValueError("mixture_ratio must be nonnegative.")
+
+        self._mixture_ratio = value
+        self._rebuild_entries()
+
+
+    @property
+    def fuel_weights(self) -> list[float]:
+        return [weight for _, weight in self._fuel_inputs]
+
+    @fuel_weights.setter
+    def fuel_weights(self, weights: list[float]) -> None:
+        if len(weights) != len(self._fuel_inputs):
+            raise ValueError(
+                f"Expected {len(self._fuel_inputs)} fuel weights, "
+                f"got {len(weights)}."
+            )
+
+        self._fuel_inputs = [
+            (propellant, float(weight))
+            for (propellant, _), weight
+            in zip(self._fuel_inputs, weights)
+        ]
+
+        self._rebuild_entries()
+
+
+    @property
+    def oxidizer_weights(self) -> list[float]:
+        return [weight for _, weight in self._oxidizer_inputs]
+
+    @oxidizer_weights.setter
+    def oxidizer_weights(self, weights: list[float]) -> None:
+        if len(weights) != len(self._oxidizer_inputs):
+            raise ValueError(
+                f"Expected {len(self._oxidizer_inputs)} oxidizer weights, "
+                f"got {len(weights)}."
+            )
+
+        self._oxidizer_inputs = [
+            (propellant, float(weight))
+            for (propellant, _), weight
+            in zip(self._oxidizer_inputs, weights)
+        ]
+
+        self._rebuild_entries()
+
+    def set_fuel_weights(self, weights: list[float]) -> None:
+        self.fuel_weights = weights
+
+    def set_oxidizer_weights(self, weights: list[float]) -> None:
+        self.oxidizer_weights = weights
+
+    @property
+    def fuel_inputs(self) -> list[tuple[Propellant, float]]:
+        return list(self._fuel_inputs)
+
+    @property
+    def oxidizer_inputs(self) -> list[tuple[Propellant, float]]:
+        return list(self._oxidizer_inputs)
+
+    def set_fuels(self, fuels: PropellantGroup) -> None:
+        self._fuel_inputs = self._parse_group_inputs(fuels, role="fuel")
+        self._rebuild_entries()
+
+    def set_oxidizers(self, oxidizers: PropellantGroup) -> None:
+        self._oxidizer_inputs = self._parse_group_inputs(
+            oxidizers,
+            role="oxidizer",
+        )
+        self._rebuild_entries()
 
     @property
     def fuel_mass(self) -> float:
@@ -202,17 +326,10 @@ class Reactants:
 
     @property
     def molecular_weight(self) -> float:
-        """
-        Mean reactant formula molar mass [kg/mol].
-        """
         return self.total_mass / self.total_moles
 
     @property
     def molecular_weight_kg_per_kmol(self) -> float:
-        """
-        Mean reactant formula molecular weight [kg/kmol].
-        Numerically equal to g/mol.
-        """
         return self.total_mass / self.total_kmoles
 
     @property
@@ -242,6 +359,15 @@ class Reactants:
             for entry in self.fuels
         }
 
+    @fuel_mass_fractions.setter
+    def fuel_mass_fractions(self, values: dict[str, float]) -> None:
+        self._fuel_inputs = self._updated_group_weights(
+            self._fuel_inputs,
+            values,
+            role="fuel",
+        )
+        self._rebuild_entries()
+
     @property
     def oxidizer_mass_fractions(self) -> dict[str, float]:
         total = self.oxidizer_mass
@@ -253,6 +379,59 @@ class Reactants:
             entry.cea_name: entry.mass / total
             for entry in self.oxidizers
         }
+
+    @oxidizer_mass_fractions.setter
+    def oxidizer_mass_fractions(self, values: dict[str, float]) -> None:
+        self._oxidizer_inputs = self._updated_group_weights(
+            self._oxidizer_inputs,
+            values,
+            role="oxidizer",
+        )
+        self._rebuild_entries()
+
+    @staticmethod
+    def _updated_group_weights(
+        group: list[tuple[Propellant, float]],
+        values: dict[str, float],
+        role: str,
+    ) -> list[tuple[Propellant, float]]:
+        if not isinstance(values, dict):
+            raise TypeError(f"{role}_mass_fractions must be a dict.")
+
+        by_name = {}
+        for propellant, _ in group:
+            by_name[propellant.cea_name] = propellant
+            by_name[propellant.name] = propellant
+            by_name[propellant.propellant] = propellant
+            by_name[propellant.input_name] = propellant
+
+        updated: list[tuple[Propellant, float]] = []
+
+        for key, fraction in values.items():
+            if key not in by_name:
+                raise ValueError(f"{key!r} is not present in the {role} group.")
+
+            fraction = float(fraction)
+
+            if fraction < 0.0:
+                raise ValueError(f"{role} mass fractions must be nonnegative.")
+
+            updated.append((by_name[key], fraction))
+
+        provided = {propellant for propellant, _ in updated}
+
+        for propellant, weight in group:
+            if propellant not in provided:
+                updated.append((propellant, 0.0))
+
+        total = sum(weight for _, weight in updated)
+
+        if not np.isclose(total, 1.0, rtol=0.0, atol=1e-6):
+            raise ValueError(
+                f"{role} mass fractions must sum to 1.0. Got {total}."
+            )
+
+        return updated
 
     @property
     def element_moles(self) -> dict[str, float]:
@@ -331,6 +510,19 @@ class Reactants:
 
         return elements, b
 
+    def _safe_property(self, name: str):
+        try:
+            return getattr(self, name)
+        except Exception:
+            return None
+            
+    @staticmethod
+    def _safe_propellant_property(propellant, name: str):
+        try:
+            return getattr(propellant, name)
+        except Exception:
+            return None
+        
     def as_dict(self) -> dict:
         return {
             "mixture_ratio": self.oxidizer_to_fuel_ratio,
@@ -346,7 +538,7 @@ class Reactants:
             "fuel_mass_fractions": self.fuel_mass_fractions,
             "oxidizer_mass_fractions": self.oxidizer_mass_fractions,
             "reactant_enthalpy": self.reactant_enthalpy,
-            "reactant_internal_energy": self.reactant_internal_energy,
+            "reactant_internal_energy": self._safe_property("reactant_internal_energy"),
             "element_moles": self.element_moles,
             "element_moles_per_kg": self.element_moles_per_kg,
             "reactants": [
@@ -362,7 +554,10 @@ class Reactants:
                     "temperature": entry.propellant.temperature,
                     "pressure": entry.propellant.pressure,
                     "enthalpy": entry.propellant.enthalpy,
-                    "internal_energy": entry.propellant.internal_energy,
+                    "internal_energy": self._safe_propellant_property(
+                        entry.propellant,
+                        "internal_energy",
+                    ),
                     "elemental_composition": entry.propellant.elemental_composition,
                 }
                 for entry in self.entries
@@ -372,9 +567,21 @@ class Reactants:
     def __str__(self) -> str:
         rows = [
             ("Mixture ratio O/F", f"{self.oxidizer_to_fuel_ratio:.6g}"),
-            ("Fuels", ", ".join(r.cea_name for r in self.fuels)),
-            ("Oxidizers", ", ".join(r.cea_name for r in self.oxidizers)),
         ]
+
+        if self.fuels:
+            fuel_text = ", ".join(
+                f"{r.cea_name} ({100 * self.fuel_mass_fractions[r.cea_name]:.3f}%)"
+                for r in self.fuels
+            )
+            rows.append(("Fuels", fuel_text))
+
+        if self.oxidizers:
+            oxidizer_text = ", ".join(
+                f"{r.cea_name} ({100 * self.oxidizer_mass_fractions[r.cea_name]:.3f}%)"
+                for r in self.oxidizers
+            )
+            rows.append(("Oxidizers", oxidizer_text))
 
         width = max(len(key) for key, _ in rows)
 

@@ -670,6 +670,6 @@ requires-dist = [
     { name = "coolprop", specifier = ">=6.8.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "pyromat", specifier = ">=2.2.6" },
-    { name = "rocketprops", specifier = ">=0.1.8" },
+    { name = "rocketprops", specifier = ">=0.1.9" },
     { name = "scipy", specifier = ">=1.17.1" },
 ]

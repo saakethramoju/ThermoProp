@@ -49,7 +49,7 @@ dependencies = [
     "coolprop>=6.8.0",
     "numpy>=2.4.6",
     "pyromat>=2.2.6",
-    "rocketprops>=0.1.8",
+    "rocketprops>=0.1.9",
     "scipy>=1.17.1",
 ]
 
