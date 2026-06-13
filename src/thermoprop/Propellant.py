@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any, Tuple
 
 import numpy as np
-from scipy.integrate import quad
+import warnings
+
+from scipy.integrate import quad, IntegrationWarning
 
 from .Fluid import Fluid
 from .CEADatabase import CEA
@@ -1336,11 +1338,13 @@ class Propellant:
             self.temperature,
         )
 
-        h_pressure, _ = quad(
-            lambda P: self._dh_dp_liquid(self.temperature, P),
-            pref,
-            pressure,
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", IntegrationWarning)
+            h_pressure, _ = quad(
+                lambda P: self._dh_dp_liquid(self.temperature, P),
+                pref,
+                pressure,
+            )
 
         value = float(hf + h_temperature + h_pressure)
         source = "CEA/RP"
