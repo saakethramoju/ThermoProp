@@ -7,7 +7,7 @@ from scipy.optimize import root_scalar
 
 from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
-
+from .ReferenceState import normalize_reference_target
 
 class CombustionGas:
     """
@@ -34,9 +34,15 @@ class CombustionGas:
     --- IMPORTANT!! ---
     NASA CEA defines its own thermodynamic reference states.
 
-    Absolute enthalpy, internal energy, and entropy values should not be
-    directly compared with those from other thermodynamic libraries unless a
-    common reference basis has been established.
+    Absolute enthalpy, internal energy, and entropy values depend on the
+    chosen reference state.
+
+    The optional set_reference argument can align these properties with
+    Fluid, IdealGas, or Propellant at 298.15 K and 101325 Pa by applying
+    constant offsets.
+
+    This does not make different thermodynamic models equivalent away from
+    the reference state. Only the reference values are aligned.
     """
 
     _BACKEND_NAME = "NASA CEA / CEAM"
@@ -192,45 +198,9 @@ class CombustionGas:
 
 
     # ---------------- Reference-state matching ---------------- #
-
     @classmethod
-    def _normalize_reference_target(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-
-        key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
-
-        if key in {"", "none", "raw", "default"}:
-            return None
-
-        aliases = {
-            "fluid": "Fluid",
-            "coolprop": "Fluid",
-            "realfluid": "Fluid",
-            "real_fluid": "Fluid",
-            "idealgas": "IdealGas",
-            "ideal_gas": "IdealGas",
-            "ideal": "IdealGas",
-            "pyromat": "IdealGas",
-            "propellant": "Propellant",
-            "rocketprops": "Propellant",
-            "combustiongas": "CombustionGas",
-            "combustion_gas": "CombustionGas",
-            "cea": "CombustionGas",
-        }
-
-        if key not in aliases:
-            raise ValueError(
-                "set_reference must be one of None, 'Fluid', 'IdealGas', "
-                "'Propellant', or 'CombustionGas'."
-            )
-
-        target = aliases[key]
-
-        if target == cls.__name__:
-            return None
-
-        return target
+    def _normalize_reference_target(cls, value):
+        return normalize_reference_target(value, cls.__name__)
 
     @property
     def reference(self) -> str:

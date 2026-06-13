@@ -8,7 +8,7 @@ import pyromat as pm
 
 from .SpeciesDatabase import SpeciesDatabase
 from .CEADatabase import CEA
-
+from .ReferenceState import normalize_reference_target
 
 class IdealGas:
     """
@@ -41,10 +41,14 @@ class IdealGas:
     established.
 
     Use set_reference="Fluid", "IdealGas", "Propellant", or "CombustionGas"
-    to shift supported thermodynamic-potential properties onto another
-    ThermoProp wrapper's reference basis at 298.15 K and 101325 Pa. The default
-    is None, which preserves the raw PYroMat reference basis and all existing
-    behavior.
+    to align thermodynamic-potential reference values at 298.15 K and
+    101325 Pa.
+
+    This applies a constant offset to enthalpy, internal energy, entropy,
+    Gibbs energy, and Helmholtz/free energy. It does NOT make different
+    property models equivalent away from the reference state. Differences
+    in Cp, equation of state, transport properties, phase models, and
+    other backend-specific behavior remain unchanged.
     """
 
     _BACKEND_NAME = "PYroMat"
@@ -229,43 +233,9 @@ class IdealGas:
     # ---------------- Reference-state matching ---------------- #
 
     @classmethod
-    def _normalize_reference_target(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
+    def _normalize_reference_target(cls, value):
+        return normalize_reference_target(value, cls.__name__)
 
-        key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
-
-        if key in {"", "none", "raw", "default"}:
-            return None
-
-        aliases = {
-            "fluid": "Fluid",
-            "coolprop": "Fluid",
-            "realfluid": "Fluid",
-            "real_fluid": "Fluid",
-            "idealgas": "IdealGas",
-            "ideal_gas": "IdealGas",
-            "ideal": "IdealGas",
-            "pyromat": "IdealGas",
-            "propellant": "Propellant",
-            "rocketprops": "Propellant",
-            "combustiongas": "CombustionGas",
-            "combustion_gas": "CombustionGas",
-            "cea": "CombustionGas",
-        }
-
-        if key not in aliases:
-            raise ValueError(
-                "set_reference must be one of None, 'Fluid', 'IdealGas', "
-                "'Propellant', or 'CombustionGas'."
-            )
-
-        target = aliases[key]
-
-        if target == "IdealGas":
-            return None
-
-        return target
 
     @property
     def reference(self) -> str:

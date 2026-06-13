@@ -7,7 +7,7 @@ from functools import lru_cache
 import CoolProp.CoolProp as CP
 
 from .SpeciesDatabase import SpeciesDatabase
-
+from .ReferenceState import normalize_reference_target
 
 class Fluid:
     """
@@ -214,7 +214,6 @@ class Fluid:
         self._last_state_values: dict | None = None
         self._fluid_string = "&".join(self._fluids)
         self._clear_reference_cache()
-        self._clear_reference_cache()
         self._backend = self._build_state()
         self._pyfluid = self._backend
 
@@ -246,43 +245,8 @@ class Fluid:
     # ---------------- Reference-state matching ---------------- #
 
     @classmethod
-    def _normalize_reference_target(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-
-        key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
-
-        if key in {"", "none", "raw", "default"}:
-            return None
-
-        aliases = {
-            "fluid": "Fluid",
-            "coolprop": "Fluid",
-            "realfluid": "Fluid",
-            "real_fluid": "Fluid",
-            "idealgas": "IdealGas",
-            "ideal_gas": "IdealGas",
-            "ideal": "IdealGas",
-            "pyromat": "IdealGas",
-            "propellant": "Propellant",
-            "rocketprops": "Propellant",
-            "combustiongas": "CombustionGas",
-            "combustion_gas": "CombustionGas",
-            "cea": "CombustionGas",
-        }
-
-        if key not in aliases:
-            raise ValueError(
-                "set_reference must be one of None, 'Fluid', 'IdealGas', "
-                "'Propellant', or 'CombustionGas'."
-            )
-
-        target = aliases[key]
-
-        if target == cls.__name__:
-            return None
-
-        return target
+    def _normalize_reference_target(cls, value):
+        return normalize_reference_target(value, cls.__name__)
 
     @property
     def reference(self) -> str:

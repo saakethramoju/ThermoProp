@@ -7,7 +7,7 @@ from scipy.integrate import quad
 
 from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
-
+from .ReferenceState import normalize_reference_target
 
 class Propellant:
     """
@@ -144,45 +144,9 @@ class Propellant:
 
 
     # ---------------- Reference-state matching ---------------- #
-
     @classmethod
-    def _normalize_reference_target(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-
-        key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
-
-        if key in {"", "none", "raw", "default"}:
-            return None
-
-        aliases = {
-            "fluid": "Fluid",
-            "coolprop": "Fluid",
-            "realfluid": "Fluid",
-            "real_fluid": "Fluid",
-            "idealgas": "IdealGas",
-            "ideal_gas": "IdealGas",
-            "ideal": "IdealGas",
-            "pyromat": "IdealGas",
-            "propellant": "Propellant",
-            "rocketprops": "Propellant",
-            "combustiongas": "CombustionGas",
-            "combustion_gas": "CombustionGas",
-            "cea": "CombustionGas",
-        }
-
-        if key not in aliases:
-            raise ValueError(
-                "set_reference must be one of None, 'Fluid', 'IdealGas', "
-                "'Propellant', or 'CombustionGas'."
-            )
-
-        target = aliases[key]
-
-        if target == cls.__name__:
-            return None
-
-        return target
+    def _normalize_reference_target(cls, value):
+        return normalize_reference_target(value, cls.__name__)
 
     @property
     def reference(self) -> str:
@@ -587,10 +551,36 @@ class Propellant:
         if value is None:
             raise ValueError(message)
 
+        if isinstance(value, complex):
+            if abs(value.imag) > 1e-12:
+                raise ValueError(message)
+            value = value.real
+
         value = float(value)
 
         if not np.isfinite(value):
             raise ValueError(message)
+
+        return value
+
+    @staticmethod
+    def _real_or_none(value: Any) -> float | None:
+        """Return a finite real float, or None for invalid/complex backend values."""
+        if value is None:
+            return None
+
+        if isinstance(value, complex):
+            if abs(value.imag) > 1e-12:
+                return None
+            value = value.real
+
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        if not np.isfinite(value):
+            return None
 
         return value
 
@@ -676,7 +666,9 @@ class Propellant:
 
     def _rocketprops_vapor_pressure_no_source(self) -> float | None:
         """RocketProps vapor pressure without updating source bookkeeping."""
-        value = self._call_at_temperature("PvapAtTdegR", "PvapAtT", default=None)
+        value = self._real_or_none(
+            self._call_at_temperature("PvapAtTdegR", "PvapAtT", default=None)
+        )
 
         if value is None:
             return None
@@ -717,7 +709,6 @@ class Propellant:
     @pressure.setter
     def pressure(self, value: float | None):
         self._pressure = None if value is None else float(value)
-        self._clear_reference_cache()
         self._clear_property_cache()
         self._validate_liquid_state()
 
@@ -728,7 +719,6 @@ class Propellant:
     @temperature.setter
     def temperature(self, value: float):
         self._temperature = float(value)
-        self._clear_reference_cache()
         self._clear_property_cache()
         self._validate_liquid_state()
 
@@ -743,7 +733,6 @@ class Propellant:
 
         self._pressure = None if values[0] is None else float(values[0])
         self._temperature = float(values[1])
-        self._clear_reference_cache()
         self._clear_property_cache()
         self._validate_liquid_state()
 
@@ -1013,11 +1002,11 @@ class Propellant:
         if cached is not self._CACHE_MISS:
             return cached
 
-        value = self._call("MolWt", "MolecularWt", "MolarMass", default=None)
+        value = self._real_or_none(self._call("MolWt", "MolecularWt", "MolarMass", default=None))
         if value is not None:
             return self._cache_set(
                 "molar_mass",
-                self._source("molar_mass", float(value) / 1000.0, "RocketProps"),
+                self._source("molar_mass", value / 1000.0, "RocketProps"),
             )
 
         if (
@@ -1123,13 +1112,16 @@ class Propellant:
         if cached is not self._CACHE_MISS:
             return cached
 
-        value = self._call_at_temperature("CpAtTdegR", "CpAtT", default=None) if self._active_is_liquid_model else None
+        value = self._real_or_none(
+            self._call_at_temperature("CpAtTdegR", "CpAtT", default=None)
+        ) if self._active_is_liquid_model else None
+
         if value is not None:
             return self._cache_set(
                 "specific_heat_cp",
                 self._source(
                     "specific_heat_cp",
-                    float(value) * self._BTU_PER_LBM_R_TO_J_PER_KG_K,
+                    value * self._BTU_PER_LBM_R_TO_J_PER_KG_K,
                     "RocketProps",
                 ),
             )
@@ -1152,9 +1144,15 @@ class Propellant:
 
             (Tref, Pref) -> (T, Pref) -> (T, P)
 
-        using RocketProps Cp(T) and v(T, P):
+        using RocketProps liquid-property correlations:
 
             dh = Cp dT + [v - T (dv/dT)_P] dP
+
+        The pressure correction is evaluated numerically from the
+        RocketProps liquid-density model. Accuracy therefore depends on
+        the underlying RocketProps correlations and should be viewed as
+        an engineering estimate rather than a validated liquid equation
+        of state.
         """
         cached = self._cache_get("enthalpy")
         if cached is not self._CACHE_MISS:
@@ -1256,12 +1254,14 @@ class Propellant:
             if pressure is not None:
                 self._pressure = float(pressure)
 
-            value = self._call_at_temperature("CpAtTdegR", "CpAtT", default=None)
+            value = self._real_or_none(
+                self._call_at_temperature("CpAtTdegR", "CpAtT", default=None)
+            )
 
             if value is None:
                 return None
 
-            return float(value) * self._BTU_PER_LBM_R_TO_J_PER_KG_K
+            return value * self._BTU_PER_LBM_R_TO_J_PER_KG_K
 
         finally:
             self._temperature = T_old
@@ -1292,10 +1292,12 @@ class Propellant:
             if value is None:
                 value = self._call_at_temperature("SGLiqAtTdegR", "SGAtTdegR", default=None)
 
+            value = self._real_or_none(value)
+
             if value is None:
                 return None
 
-            rho = float(value) * 1000.0
+            rho = value * 1000.0
 
             if rho == 0.0:
                 return None
@@ -1411,7 +1413,9 @@ class Propellant:
 
         if data_range is not None:
             try:
-                return self._source("minimum_temperature", self._K_from_degR(data_range()[0]), "RocketProps")
+                value = self._real_or_none(data_range()[0])
+                if value is not None:
+                    return self._source("minimum_temperature", self._K_from_degR(value), "RocketProps")
             except Exception:
                 pass
 
@@ -1430,7 +1434,9 @@ class Propellant:
 
         if data_range is not None:
             try:
-                return self._source("maximum_temperature", self._K_from_degR(data_range()[1]), "RocketProps")
+                value = self._real_or_none(data_range()[1])
+                if value is not None:
+                    return self._source("maximum_temperature", self._K_from_degR(value), "RocketProps")
             except Exception:
                 pass
 
@@ -1456,8 +1462,10 @@ class Propellant:
         if value is None and self._active_is_liquid_model:
             value = self._call_at_temperature("SGLiqAtTdegR", "SGAtTdegR", default=None)
 
+        value = self._real_or_none(value)
+
         if value is not None:
-            return self._cache_set("density", self._source("density", float(value) * 1000.0, "RocketProps"))
+            return self._cache_set("density", self._source("density", value * 1000.0, "RocketProps"))
 
         if (
             self.pressure is not None
@@ -1495,10 +1503,12 @@ class Propellant:
         if value is None and self._active_is_liquid_model:
             value = self._call_at_temperature("ViscAtTdegR", "ViscAtT", default=None)
 
-        if value is not None:
-            return self._cache_set("dynamic_viscosity", self._source("dynamic_viscosity", float(value) * 0.1, "RocketProps"))
+        value = self._real_or_none(value)
 
-        value = self._cea_call("viscosity", self.temperature, default=None)
+        if value is not None:
+            return self._cache_set("dynamic_viscosity", self._source("dynamic_viscosity", value * 0.1, "RocketProps"))
+
+        value = self._real_or_none(self._cea_call("viscosity", self.temperature, default=None))
         return self._cache_set("dynamic_viscosity", self._source("dynamic_viscosity", value, "CEA"))
 
     @property
@@ -1530,17 +1540,19 @@ class Propellant:
 
         value = self._call_at_temperature("CondAtTdegR", "CondAtT", default=None) if self._active_is_liquid_model else None
 
+        value = self._real_or_none(value)
+
         if value is not None:
             return self._cache_set(
                 "conductivity",
                 self._source(
                     "conductivity",
-                    float(value) * self._BTU_PER_HR_FT_R_TO_W_PER_M_K,
+                    value * self._BTU_PER_HR_FT_R_TO_W_PER_M_K,
                     "RocketProps",
                 ),
             )
 
-        value = self._cea_call("conductivity", self.temperature, default=None)
+        value = self._real_or_none(self._cea_call("conductivity", self.temperature, default=None))
         return self._cache_set("conductivity", self._source("conductivity", value, "CEA"))
 
     @property
@@ -1581,7 +1593,9 @@ class Propellant:
                 continue
 
             try:
-                return self._cache_set("saturation_temperature", self._source("saturation_temperature", self._K_from_degR(fn(Ppsia)), "RocketProps"))
+                value = self._real_or_none(fn(Ppsia))
+                if value is not None:
+                    return self._cache_set("saturation_temperature", self._source("saturation_temperature", self._K_from_degR(value), "RocketProps"))
             except Exception:
                 continue
 
@@ -1597,6 +1611,8 @@ class Propellant:
             return self._cache_set("heat_of_vaporization", None)
         value = self._call_at_temperature("HvapAtTdegR", "HvapAtT", default=None)
 
+        value = self._real_or_none(value)
+
         if value is None:
             return self._cache_set("heat_of_vaporization", None)
 
@@ -1604,7 +1620,7 @@ class Propellant:
             "heat_of_vaporization",
             self._source(
                 "heat_of_vaporization",
-                float(value) * self._BTU_PER_LBM_TO_J_PER_KG,
+                value * self._BTU_PER_LBM_TO_J_PER_KG,
                 "RocketProps",
             ),
         )
@@ -1619,10 +1635,12 @@ class Propellant:
             return self._cache_set("surface_tension", None)
         value = self._call_at_temperature("SurfAtTdegR", "SurfAtT", default=None)
 
+        value = self._real_or_none(value)
+
         if value is None:
             return self._cache_set("surface_tension", None)
 
-        return self._cache_set("surface_tension", self._source("surface_tension", float(value) * self._LBF_PER_IN_TO_N_PER_M, "RocketProps"))
+        return self._cache_set("surface_tension", self._source("surface_tension", value * self._LBF_PER_IN_TO_N_PER_M, "RocketProps"))
 
     @property
     def saturated_liquid_compressibility_factor(self) -> float | None:
@@ -1632,10 +1650,12 @@ class Propellant:
 
         value = self._call_at_temperature("ZLiqAtTdegR", "ZLiqAtT", default=None)
 
+        value = self._real_or_none(value)
+
         if value is None:
             return self._cache_set("saturated_liquid_compressibility_factor", None)
 
-        return self._cache_set("saturated_liquid_compressibility_factor", self._source("saturated_liquid_compressibility_factor", float(value), "RocketProps"))
+        return self._cache_set("saturated_liquid_compressibility_factor", self._source("saturated_liquid_compressibility_factor", value, "RocketProps"))
 
     @property
     def compressibility(self) -> float | None:
@@ -1645,7 +1665,7 @@ class Propellant:
 
     @property
     def critical_pressure(self) -> float | None:
-        value = self._call("Pc", "Pcrit", "P_crit", default=None)
+        value = self._real_or_none(self._call("Pc", "Pcrit", "P_crit", default=None))
 
         if value is None:
             return None
@@ -1654,7 +1674,7 @@ class Propellant:
 
     @property
     def critical_temperature(self) -> float | None:
-        value = self._call("Tc", "Tcrit", "T_crit", default=None)
+        value = self._real_or_none(self._call("Tc", "Tcrit", "T_crit", default=None))
 
         if value is None:
             return None
@@ -1663,16 +1683,16 @@ class Propellant:
 
     @property
     def critical_density(self) -> float | None:
-        value = self._call("SGc", "rhoc", "rho_crit", default=None)
+        value = self._real_or_none(self._call("SGc", "rhoc", "rho_crit", default=None))
 
         if value is None:
             return None
 
-        return self._source("critical_density", float(value) * 1000.0, "RocketProps")
+        return self._source("critical_density", value * 1000.0, "RocketProps")
 
     @property
     def freezing_temperature(self) -> float | None:
-        value = self._call("Tfreeze", "Tfrz", "T_freeze", default=None)
+        value = self._real_or_none(self._call("Tfreeze", "Tfrz", "T_freeze", default=None))
 
         if value is None:
             return None
@@ -1681,7 +1701,7 @@ class Propellant:
 
     @property
     def boiling_temperature(self) -> float | None:
-        value = self._call("Tnbp", "Tboil", "T_boil", default=None)
+        value = self._real_or_none(self._call("Tnbp", "Tboil", "T_boil", default=None))
 
         if value is None:
             return None
@@ -1696,7 +1716,9 @@ class Propellant:
             return 0.0
 
         try:
-            return self._source("minimum_pressure", self._Pa_from_psia(data_range()[0]), "RocketProps")
+            value = self._real_or_none(data_range()[0])
+            if value is not None:
+                return self._source("minimum_pressure", self._Pa_from_psia(value), "RocketProps")
         except Exception:
             return 0.0
 
@@ -1708,7 +1730,9 @@ class Propellant:
             return float("inf")
 
         try:
-            return self._source("maximum_pressure", self._Pa_from_psia(data_range()[1]), "RocketProps")
+            value = self._real_or_none(data_range()[1])
+            if value is not None:
+                return self._source("maximum_pressure", self._Pa_from_psia(value), "RocketProps")
         except Exception:
             return float("inf")
 
