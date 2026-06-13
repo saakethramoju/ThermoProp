@@ -11,38 +11,67 @@ from .ReferenceState import normalize_reference_target
 
 class CombustionGas:
     """
-    NASA CEA / CEAM ideal-gas mixture wrapper with a Fluid-like API.
+    NASA CEA / CEAM gas-mixture wrapper with ThermoProp's common property API.
 
-    This class evaluates thermodynamic and transport properties for gas-phase
-    CEA species and mixtures. Thermodynamic properties are evaluated from
-    NASA-9 CEA polynomials. Transport properties use CEA / CEAM transport data
-    when available, with CEA-style estimates used as fallbacks.
+    CombustionGas evaluates gas-phase thermodynamic and transport properties for
+    CEA product species and mixtures. Thermodynamic properties are evaluated from
+    CEA NASA-9 polynomial data. Transport properties use generated CEA / CEAM
+    transport data when available.
 
-    Supports thermal state from:
-        temperature
-        enthalpy
-        internal_energy
+    Supported state inputs
+    ----------------------
 
-    Pressure is optional for pressure-independent properties.
+    One thermal state input may be supplied:
 
-    Density can be used only with another closure:
-        density + pressure         -> temperature
-        density + temperature      -> pressure
-        density + enthalpy         -> temperature, pressure
-        density + internal_energy  -> temperature, pressure
+        CombustionGas(..., temperature=T)
+        CombustionGas(..., enthalpy=h)
+        CombustionGas(..., internal_energy=u)
 
-    --- IMPORTANT!! ---
-    NASA CEA defines its own thermodynamic reference states.
+    Pressure may be supplied with the thermal state:
 
-    Absolute enthalpy, internal energy, and entropy values depend on the
-    chosen reference state.
+        CombustionGas(..., pressure=P, temperature=T)
+        CombustionGas(..., pressure=P, enthalpy=h)
+        CombustionGas(..., pressure=P, internal_energy=u)
 
-    The optional set_reference argument can align these properties with
-    Fluid, IdealGas, or Propellant at 298.15 K and 101325 Pa by applying
-    constant offsets.
+    Density may be used with one closure variable:
 
-    This does not make different thermodynamic models equivalent away from
-    the reference state. Only the reference values are aligned.
+        CombustionGas(..., pressure=P, density=rho)
+        CombustionGas(..., density=rho, temperature=T)
+        CombustionGas(..., density=rho, enthalpy=h)
+        CombustionGas(..., density=rho, internal_energy=u)
+
+    Mixtures
+    --------
+
+    Mixtures are passed as dictionaries:
+
+        CombustionGas({"CO2": 0.4, "H2O": 0.6}, basis="mole", pressure=P, temperature=T)
+
+    The basis may be "mass" or "mole".
+
+    Limitations
+    -----------
+
+    CombustionGas accepts only gas-phase CEA product species with NASA-9 polynomial
+    thermodynamic data. CEA reactant cards and condensed species should be handled
+    with Propellant or Equilibrium instead.
+
+    CombustionGas does not model real-fluid phase behavior or vapor quality.
+
+    Reference states
+    ----------------
+
+    CEA defines its own thermodynamic reference state. Absolute enthalpy, internal
+    energy, entropy, Gibbs energy, and Helmholtz/free energy should not be compared
+    directly with other wrappers unless a common reference is selected.
+
+    Use set_reference="Fluid", "IdealGas", or "Propellant" to apply constant
+    offsets at 298.15 K and 101325 Pa.
+
+    This aligns only the reference values. It does not change CEA thermodynamic
+    curves, mixture behavior, transport properties, or ideal-gas assumptions.
+
+    Public API units are SI.
     """
 
     _BACKEND_NAME = "NASA CEA / CEAM"

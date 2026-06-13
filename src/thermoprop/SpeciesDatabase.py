@@ -3096,24 +3096,51 @@ _ROCKETPROPS_LOOKUP = _build_backend_lookup("rocketprops")
 
 
 class SpeciesDatabase:
-    """Immutable ThermoProp species database with runtime user aliases.
+    """
+    ThermoProp species registry and cross-backend name resolver.
 
-    Public user API
-    ---------------
-    species()
-        Return every ThermoProp canonical species name.
+    SpeciesDatabase maps ThermoProp canonical species names to backend-specific
+    names for CoolProp, PYroMat, CEA, and RocketProps. It also stores runtime
+    aliases so user-facing names can resolve consistently across wrappers.
 
-    supported_species(wrapper)
-        Return ThermoProp species supported by one wrapper:
-        "Fluid", "IdealGas", "Propellant", or "CombustionGas".
+    Purpose
+    -------
 
-    add_alias(alias, thermoprop_name)
-        Add a runtime-only alias that resolves to an existing ThermoProp name.
+    The registry separates convenient ThermoProp names from backend-specific names.
+    For example, a single ThermoProp species may have different names in CoolProp,
+    PYroMat, CEA, and RocketProps.
 
-    Notes
-    -----
-    The species database is intentionally immutable. Users can add aliases, but
-    they cannot edit backend mappings through this class.
+    Wrappers use SpeciesDatabase to resolve inputs before calling their backend:
+
+        Fluid        -> CoolProp name
+        IdealGas     -> PYroMat / CEA transport name
+        Propellant   -> RocketProps and CEA names
+        CombustionGas -> CEA gas species name
+
+    Aliases
+    -------
+
+    Aliases are user-facing shortcuts. Runtime aliases can be added with:
+
+        SpeciesDatabase.add_alias(alias, species_name)
+
+    Aliases do not modify CEADatabase strict names. CEA strict-name behavior is
+    preserved inside CEADatabase.
+
+    Inspection
+    ----------
+
+    Use:
+
+        SpeciesDatabase.species()
+        SpeciesDatabase.supported_species("Fluid")
+        SpeciesDatabase.supported_species("IdealGas")
+        SpeciesDatabase.supported_species("Propellant")
+        SpeciesDatabase.supported_species("CombustionGas")
+        SpeciesDatabase.aliases()
+
+    This class is primarily an internal resolver, but it is also useful for
+    documentation, validation, and user-facing species discovery.
     """
 
     _WRAPPER_ALIASES = {

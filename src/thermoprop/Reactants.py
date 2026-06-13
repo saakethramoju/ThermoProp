@@ -49,14 +49,21 @@ class Reactant:
 
 class Reactants:
     """
-    CEA-style reactant set.
+    CEA-style reactant mixture definition for equilibrium calculations.
 
-    Inputs are Propellant objects grouped as fuels and oxidizers. Optional
-    weights inside each group are mass weights, matching CEA wt% behavior.
-    The mixture ratio, fuel group, and oxidizer group may be updated after
-    initialization.
+    Reactants groups Propellant objects into fuels and oxidizers, applies a mass
+    mixture ratio, and computes the elemental inventory and reactant enthalpy
+    needed by Equilibrium.
 
-    A single Propellant may be passed directly:
+    Inputs
+    ------
+
+    Fuels and oxidizers must be Propellant objects or weighted collections of
+    Propellant objects. Raw strings are intentionally not accepted because
+    temperature, pressure, and optional quality-corrected enthalpy should be
+    explicit.
+
+    Single fuel and oxidizer:
 
         Reactants(
             fuels=Propellant("RP-1", temperature=298.15),
@@ -64,26 +71,45 @@ class Reactants:
             mixture_ratio=2.5,
         )
 
-    Multiple propellants should be passed as an iterable:
+    Multiple weighted entries:
 
         Reactants(
             fuels=[
                 (Propellant("RP-1", temperature=298.15), 80.0),
                 (Propellant("Ethanol", temperature=298.15), 20.0),
             ],
-            oxidizers=[Propellant("LOX", temperature=90.17)],
+            oxidizers=[
+                Propellant("LOX", temperature=90.17),
+            ],
             mixture_ratio=2.5,
         )
 
-    The total basis is:
+    Mass basis
+    ----------
+
+    The internal basis is:
 
         fuel mass = 1 kg
         oxidizer mass = O/F kg
         total mass = 1 + O/F kg
 
-    Properties are returned per kg total reactants where appropriate.
-    """
+    Weights inside each fuel or oxidizer group are relative mass weights, similar
+    to CEA wt% entries.
 
+    Outputs
+    -------
+
+    Reactants provides mass fractions, mole fractions, elemental mole totals,
+    molecular weight, total moles, total kmoles, reactant enthalpy, and optional
+    internal energy when available.
+
+    Notes
+    -----
+
+    Reactants is intended for equilibrium setup, not flow-property modeling. Use
+    Fluid, IdealGas, Propellant, or CombustionGas for property evaluation before
+    building the reactant set.
+    """
     def __init__(
         self,
         fuels: PropellantGroup,

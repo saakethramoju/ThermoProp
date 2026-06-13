@@ -5047,17 +5047,45 @@ _NORMALIZED_PROPERTY_ALIASES: dict[str, str] = {
 
 
 class MaterialDatabase:
-    """ThermoProp material database and runtime alias manager.
-
-    Public user API:
-        materials()
-        aliases()
-        add_alias(alias, material_name)
-
-    Internal methods with leading underscores are intended for ThermoProp
-    wrappers such as Material.py.
     """
+    ThermoProp material registry and tabulated material-property database.
 
+    MaterialDatabase stores canonical material names, aliases, categories, and
+    temperature-dependent property curves used by the Material wrapper.
+
+    Data model
+    ----------
+
+    Each material contains:
+
+    - canonical material name
+    - material category
+    - optional default condition
+    - property curves as temperature/value arrays
+    - property units
+
+    Property curves are stored in SI units and are evaluated by Material using
+    linear interpolation.
+
+    Aliases
+    -------
+
+    Material aliases provide user-friendly names for canonical material records.
+    Runtime aliases can be added with:
+
+        MaterialDatabase.add_alias(alias, material_name)
+
+    Inspection
+    ----------
+
+    Use:
+
+        MaterialDatabase.materials()
+        MaterialDatabase.aliases()
+
+    MaterialDatabase is primarily an internal data source for Material, but can be
+    used directly for material discovery and validation.
+    """
     # ---------------- Public user API ---------------- #
 
     @classmethod

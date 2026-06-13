@@ -131,6 +131,80 @@ class _CombustionGasReactants:
 
 
 class Equilibrium:
+    """
+    CEA-style chemical equilibrium solver.
+
+    Equilibrium computes gas-phase product composition and mixture properties from
+    Reactants or an existing CombustionGas composition. It supports constant
+    temperature-pressure equilibrium and constant enthalpy-pressure equilibrium.
+
+    Modes
+    -----
+
+    TP mode solves equilibrium at a specified temperature and pressure:
+
+        Equilibrium(
+            reactants,
+            mode="tp",
+            temperature=T,
+            pressure=P,
+        )
+
+    HP mode solves equilibrium at a specified pressure while matching the reactant
+    enthalpy:
+
+        Equilibrium(
+            reactants,
+            mode="hp",
+            pressure=P,
+            guess_temperature=3500.0,
+        )
+
+    Inputs
+    ------
+
+    reactants may be:
+
+        Reactants
+            Fuel/oxidizer reactant definition built from Propellant objects.
+
+        CombustionGas
+            Existing gas composition treated as a reactant mixture.
+
+    Product species
+    ---------------
+
+    By default, the solver screens all valid gas-phase CEA species whose elemental
+    composition is compatible with the reactants. A custom candidate list may be
+    passed to restrict the product set.
+
+    The solver excludes CEA reactant cards and condensed species. Products must be
+    gas species with NASA-9 thermodynamic polynomial data.
+
+    Numerical method
+    ----------------
+
+    TP equilibrium iterates on species mole numbers using CEA-style element
+    potential equations.
+
+    HP equilibrium additionally iterates temperature to satisfy reactant enthalpy.
+
+    Results
+    -------
+
+    The solved product composition is exposed through CombustionGas-compatible
+    properties such as density, enthalpy, entropy, specific heat, gamma, gas
+    constant, viscosity, conductivity, and speed of sound when available.
+
+    Limitations
+    -----------
+
+    This is a ThermoProp-native engineering equilibrium solver. It is intended to
+    replace simple RocketCEA-style workflows without requiring Fortran tools, but
+    it should still be validated against trusted references for production design.
+
+    Public API units are SI.
+    """
     _BACKEND_NAME = "ThermoProp CEA Equilibrium"
 
     _UNSUPPORTED_PROPERTIES = {

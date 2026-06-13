@@ -5,6 +5,7 @@ from typing import Any, Tuple
 import numpy as np
 from scipy.integrate import quad
 
+from .Fluid import Fluid
 from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
 from .ReferenceState import normalize_reference_target
@@ -34,6 +35,23 @@ class Propellant:
         Propellant(..., temperature=...)
         Propellant(..., temperature=..., pressure=...)
 
+    Optional quality is accepted only as an inlet-enthalpy correction, not as a
+    full two-phase equation of state:
+
+        Propellant(..., pressure=..., quality=...)
+        Propellant(..., temperature=..., quality=...)
+        Propellant(..., temperature=..., pressure=..., quality=...)
+
+    For quality-corrected states, all ordinary properties remain RocketProps /
+    CEA single-phase estimates at the resolved saturation state. Only enthalpy
+    is corrected using the CoolProp enthalpy difference between the requested
+    two-phase state and saturated liquid at the same pressure or temperature:
+
+        h = h_propellant_liquid + (h_fluid_quality - h_fluid_liquid)
+
+    This keeps the reactant enthalpy on the Propellant/CEA reference basis
+    while accounting for inlet vapor quality.
+
     Public API units are SI.
     """
 
@@ -51,6 +69,9 @@ class Propellant:
     _FLASH_INPUTS = {
         frozenset(("temperature",)),
         frozenset(("pressure", "temperature")),
+        frozenset(("pressure", "quality")),
+        frozenset(("temperature", "quality")),
+        frozenset(("pressure", "temperature", "quality")),
     }
 
     _P0_CEA = 101325.0
@@ -99,16 +120,40 @@ class Propellant:
     def __init__(
         self,
         propellant: str,
-        temperature: float,
+        temperature: float | None = None,
         pressure: float | None = None,
+        quality: float | None = None,
         set_reference: str | None = None,
     ):
         self._reference_target = self._normalize_reference_target(set_reference)
         self._reference_offsets: tuple[float, float, float] | None = None
 
+        quality = self._validate_quality(quality)
+
+        if temperature is None:
+            if quality is None:
+                raise TypeError("Propellant requires temperature, or pressure + quality.")
+
+            if pressure is None:
+                raise ValueError("Propellant pressure-quality states require pressure.")
+
+            temperature = self._temperature_from_fluid_quality(
+                propellant,
+                pressure=float(pressure),
+                quality=quality,
+            )
+
+        elif quality is not None and pressure is None:
+            pressure = self._pressure_from_fluid_quality(
+                propellant,
+                temperature=float(temperature),
+                quality=quality,
+            )
+
         self._input_name = str(propellant)
         self._temperature = float(temperature)
         self._pressure = None if pressure is None else float(pressure)
+        self._quality_override = quality
 
         self._registry_name: str | None = None
         self._rocketprops_name: str | None = None
@@ -141,6 +186,86 @@ class Propellant:
 
         self._update_active_cea_name()
         self._validate_liquid_state()
+
+
+    # ---------------- Quality enthalpy correction helpers ---------------- #
+
+    @staticmethod
+    def _validate_quality(value: float | None) -> float | None:
+        if value is None:
+            return None
+
+        q = float(value)
+
+        if not np.isfinite(q) or q < 0.0 or q > 1.0:
+            raise ValueError("quality must be between 0 and 1.")
+
+        return q
+
+    @staticmethod
+    def _temperature_from_fluid_quality(
+        propellant: str,
+        *,
+        pressure: float,
+        quality: float,
+    ) -> float:
+
+        fluid = Fluid(propellant, pressure=pressure, quality=quality)
+        return float(fluid.temperature)
+
+    @staticmethod
+    def _pressure_from_fluid_quality(
+        propellant: str,
+        *,
+        temperature: float,
+        quality: float,
+    ) -> float:
+
+        fluid = Fluid(propellant, temperature=temperature, quality=quality)
+        return float(fluid.pressure)
+
+    @property
+    def has_quality_enthalpy_correction(self) -> bool:
+        return self._quality_override is not None and self._quality_override > 0.0
+
+    @property
+    def enthalpy_correction(self) -> float | None:
+        cached = self._cache_get("enthalpy_correction")
+        if cached is not self._CACHE_MISS:
+            return cached
+
+        if not self.has_quality_enthalpy_correction:
+            return self._cache_set("enthalpy_correction", 0.0)
+
+        try:
+            value = self._fluid_quality_enthalpy_correction()
+        except Exception:
+            return self._cache_set("enthalpy_correction", None)
+
+        return self._cache_set(
+            "enthalpy_correction",
+            self._source(
+                "enthalpy_correction",
+                value,
+                "CoolProp Δh",
+            ),
+        )
+
+    def _fluid_quality_enthalpy_correction(self) -> float | None:
+        if self._quality_override is None:
+            return 0.0
+
+        fluid_name = self._composition_argument()
+        q = float(self._quality_override)
+
+        if self.pressure is not None:
+            mix = Fluid(fluid_name, pressure=self.pressure, quality=q)
+            liquid = Fluid(fluid_name, pressure=self.pressure, quality=0.0)
+        else:
+            mix = Fluid(fluid_name, temperature=self.temperature, quality=q)
+            liquid = Fluid(fluid_name, temperature=self.temperature, quality=0.0)
+
+        return float(mix.enthalpy - liquid.enthalpy)
 
 
     # ---------------- Reference-state matching ---------------- #
@@ -196,7 +321,6 @@ class Propellant:
         T = self._REFERENCE_TEMPERATURE
         P = self._REFERENCE_PRESSURE
         if target == "Fluid":
-            from .Fluid import Fluid
             obj = Fluid(fluid, pressure=P, temperature=T, set_reference=None)
         elif target == "IdealGas":
             from .IdealGas import IdealGas
@@ -461,6 +585,9 @@ class Propellant:
         self._cea_index = CEA.index(active) if active is not None else None
 
     def _active_is_liquid_model_raw(self) -> bool:
+        if self._quality_override is not None:
+            return True
+
         if self._backend is None:
             return False
 
@@ -681,6 +808,9 @@ class Propellant:
         if self._backend is None or self.pressure is None:
             return
 
+        if self._quality_override is not None:
+            return
+
         pvap = self.vapor_pressure
 
         if pvap is None:
@@ -826,6 +956,9 @@ class Propellant:
 
     @property
     def phase(self) -> str:
+        if self._quality_override is not None:
+            return "Liquid reactant (quality enthalpy correction)"
+
         if self._backend is not None and self._active_is_liquid_model:
             return "Liquid"
         if self._cea_name is None:
@@ -839,6 +972,9 @@ class Propellant:
 
     @property
     def phase_model(self) -> str:
+        if self._quality_override is not None:
+            return "RocketProps liquid + CEA reference + CoolProp Δh"
+
         if self._backend is not None and self._active_is_liquid_model:
             rp_model = (
                 "RocketProps saturated liquid table"
@@ -861,6 +997,8 @@ class Propellant:
 
     @property
     def quality(self) -> float | None:
+        if self._quality_override is not None:
+            return self._quality_override
         if self._backend is not None and self._active_is_liquid_model:
             return 0.0
         if self._backend is not None and not self._active_is_liquid_model:
@@ -869,7 +1007,17 @@ class Propellant:
 
     @quality.setter
     def quality(self, value: float):
-        raise ValueError("Propellant only supports temperature or pressure-temperature states.")
+        self._quality_override = self._validate_quality(value)
+
+        if self._quality_override is not None and self.pressure is None:
+            self._pressure = self._pressure_from_fluid_quality(
+                self._composition_argument(),
+                temperature=self.temperature,
+                quality=self._quality_override,
+            )
+
+        self._clear_property_cache()
+        self._validate_liquid_state()
 
     # ---------------- Unsupported placeholders ---------------- #
 
@@ -1194,14 +1342,22 @@ class Propellant:
             pressure,
         )
 
+        value = float(hf + h_temperature + h_pressure)
+        source = "CEA/RP"
+
+        correction = self.enthalpy_correction
+        if correction is not None and correction != 0.0:
+            value += correction
+            source = "CEA/RP + CoolProp Δh"
+
         return self._from_raw_basis(
             "enthalpy",
             self._cache_set(
                 "enthalpy",
                 self._source(
-                "enthalpy",
-                float(hf + h_temperature + h_pressure),
-                "CEA Hf + RocketProps",
+                    "enthalpy",
+                    value,
+                    source,
                 ),
             ),
         )
@@ -1233,7 +1389,7 @@ class Propellant:
                     self._source(
                         "internal_energy",
                         h - pressure / rho,
-                        self.property_source("enthalpy") or "CEA Hf + RocketProps",
+                        self.property_source("enthalpy") or "CEA/RP",
                     ),
                 ),
             )
@@ -1764,22 +1920,14 @@ class Propellant:
         return f" [{source}]" if source else ""
 
     def __str__(self):
-        density = self.density
-        specific_volume = self.specific_volume
+        quality_corrected = self._quality_override is not None
+
         internal_energy = self.internal_energy
         enthalpy = self.enthalpy
-        standard_entropy = self.standard_entropy
-        entropy = self.entropy
-        dynamic_viscosity = self.dynamic_viscosity
-        kinematic_viscosity = self.kinematic_viscosity
-        conductivity = self.conductivity
-        surface_tension = self.surface_tension
+        enthalpy_correction = self.enthalpy_correction
         vapor_pressure = self.vapor_pressure
         saturation_temperature = self.saturation_temperature
         heat_of_vaporization = self.heat_of_vaporization
-        specific_heat_cp = self.specific_heat_cp
-        specific_heat_cv = self.specific_heat_cv
-        specific_heat_ratio = self.specific_heat_ratio
         molar_mass = self.molar_mass
         cea_formula_molar_mass = self.cea_formula_molar_mass
         heat_of_formation = self.heat_of_formation
@@ -1787,7 +1935,52 @@ class Propellant:
         cea_thermo_range = self.cea_polynomial_temperature_range
         gas_constant = self.gas_constant
         elemental_composition = self.elemental_composition
-        speed_of_sound = self.speed_of_sound
+
+        if quality_corrected:
+            density = None
+            specific_volume = None
+            standard_entropy = None
+            entropy = None
+            dynamic_viscosity = None
+            kinematic_viscosity = None
+            conductivity = None
+            surface_tension = None
+            specific_heat_cp = None
+            specific_heat_cv = None
+            specific_heat_ratio = None
+            speed_of_sound = None
+        else:
+            density = self.density
+            specific_volume = self.specific_volume
+            standard_entropy = self.standard_entropy
+            entropy = self.entropy
+            dynamic_viscosity = self.dynamic_viscosity
+            kinematic_viscosity = self.kinematic_viscosity
+            conductivity = self.conductivity
+            surface_tension = self.surface_tension
+            specific_heat_cp = self.specific_heat_cp
+            specific_heat_cv = self.specific_heat_cv
+            specific_heat_ratio = self.specific_heat_ratio
+            speed_of_sound = self.speed_of_sound
+
+        def label(property_name: str) -> str:
+            if quality_corrected and property_name in {
+                "density",
+                "specific_volume",
+                "standard_entropy",
+                "entropy",
+                "dynamic_viscosity",
+                "kinematic_viscosity",
+                "conductivity",
+                "surface_tension",
+                "specific_heat_cp",
+                "specific_heat_cv",
+                "specific_heat_ratio",
+                "speed_of_sound",
+            }:
+                return ""
+
+            return self._source_label(property_name)
 
         rows = [
             ("Propellant", self.propellant),
@@ -1809,23 +2002,24 @@ class Propellant:
             ("Phase model", self.phase_model),
             ("Pressure [Pa]", self._safe(self.pressure, ".3e") if self.pressure is not None else "Saturation/None"),
             ("Temperature [K]", self._safe(self.temperature, ".2f")),
-            ("Density [kg/m³]" + self._source_label("density"), self._safe(density, ".3f")),
-            ("Specific volume [m³/kg]" + self._source_label("specific_volume"), self._safe(specific_volume, ".3e")),
+            ("Density [kg/m³]" + label("density"), self._safe(density, ".3f")),
+            ("Specific volume [m³/kg]" + label("specific_volume"), self._safe(specific_volume, ".3e")),
             ("Quality", self._safe(self.quality, ".3f")),
             ("Internal energy [J/kg]" + self._source_label("internal_energy"), self._safe(internal_energy, ".3e")),
             ("Enthalpy [J/kg]" + self._source_label("enthalpy"), self._safe(enthalpy, ".3e")),
-            ("Standard entropy [J/kg-K]" + self._source_label("standard_entropy"), self._safe(standard_entropy, ".3e")),
-            ("Entropy [J/kg-K]" + self._source_label("entropy"), self._safe(entropy, ".3e")),
-            ("Dynamic viscosity [Pa·s]" + self._source_label("dynamic_viscosity"), self._safe(dynamic_viscosity, ".3e")),
-            ("Kinematic viscosity [m²/s]" + self._source_label("kinematic_viscosity"), self._safe(kinematic_viscosity, ".3e")),
-            ("Conductivity [W/m-K]" + self._source_label("conductivity"), self._safe(conductivity, ".3f")),
-            ("Surface tension [N/m]" + self._source_label("surface_tension"), self._safe(surface_tension, ".3e")),
+            ("Enthalpy correction [J/kg]" + self._source_label("enthalpy_correction"), self._safe(enthalpy_correction, ".3e")),
+            ("Standard entropy [J/kg-K]" + label("standard_entropy"), self._safe(standard_entropy, ".3e")),
+            ("Entropy [J/kg-K]" + label("entropy"), self._safe(entropy, ".3e")),
+            ("Dynamic viscosity [Pa·s]" + label("dynamic_viscosity"), self._safe(dynamic_viscosity, ".3e")),
+            ("Kinematic viscosity [m²/s]" + label("kinematic_viscosity"), self._safe(kinematic_viscosity, ".3e")),
+            ("Conductivity [W/m-K]" + label("conductivity"), self._safe(conductivity, ".3f")),
+            ("Surface tension [N/m]" + label("surface_tension"), self._safe(surface_tension, ".3e")),
             ("Vapor pressure [Pa]" + self._source_label("vapor_pressure"), self._safe(vapor_pressure, ".3e")),
             ("Saturation temperature [K]" + self._source_label("saturation_temperature"), self._safe(saturation_temperature, ".2f")),
             ("Heat of vaporization [J/kg]" + self._source_label("heat_of_vaporization"), self._safe(heat_of_vaporization, ".3e")),
-            ("Cp [J/kg-K]" + self._source_label("specific_heat_cp"), self._safe(specific_heat_cp, ".3f")),
-            ("Cv [J/kg-K]" + self._source_label("specific_heat_cv"), self._safe(specific_heat_cv, ".3f")),
-            ("Specific heat ratio" + self._source_label("specific_heat_ratio"), self._safe(specific_heat_ratio, ".5f")),
+            ("Cp [J/kg-K]" + label("specific_heat_cp"), self._safe(specific_heat_cp, ".3f")),
+            ("Cv [J/kg-K]" + label("specific_heat_cv"), self._safe(specific_heat_cv, ".3f")),
+            ("Specific heat ratio" + label("specific_heat_ratio"), self._safe(specific_heat_ratio, ".5f")),
             ("Molar mass [kg/mol]" + self._source_label("molar_mass"), self._safe(molar_mass, ".6f")),
             ("CEA formula MW [kg/mol]" + self._source_label("cea_formula_molar_mass"), self._safe(cea_formula_molar_mass, ".6f")),
             ("CEA Hf [J/kg]" + self._source_label("heat_of_formation"), self._safe(heat_of_formation, ".3e")),
@@ -1833,7 +2027,7 @@ class Propellant:
             ("CEA thermo range [K]", cea_thermo_range or "N/A"),
             ("Gas constant [J/kg-K]" + self._source_label("gas_constant"), self._safe(gas_constant, ".3f")),
             ("Elemental composition" + self._source_label("elemental_composition"), elemental_composition or "N/A"),
-            ("Speed of sound [m/s]" + self._source_label("speed_of_sound"), self._safe(speed_of_sound, ".3f")),
+            ("Speed of sound [m/s]" + label("speed_of_sound"), self._safe(speed_of_sound, ".3f")),
         ]
 
         width = max(len(r[0]) for r in rows)
@@ -1844,7 +2038,8 @@ class Propellant:
         return (
             f"{self.__class__.__name__}(propellant={self.propellant!r}, "
             f"temperature={self.temperature:.2f} K, "
-            f"pressure={pressure} Pa, backend={self.backend!r})"
+            f"pressure={pressure} Pa, quality={self.quality!r}, "
+            f"backend={self.backend!r})"
         )
 
     # ---------------- Utilities ---------------- #

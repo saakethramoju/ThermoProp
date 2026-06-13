@@ -12,43 +12,64 @@ from .ReferenceState import normalize_reference_target
 
 class IdealGas:
     """
-    PYroMat ideal-gas wrapper with a Fluid-like API.
+    PYroMat ideal-gas wrapper with ThermoProp's common property API.
 
-    Thermodynamic properties are evaluated with PYroMat. Pure-species
-    transport properties use generated NASA CEA / CEAM transport data when
-    available, with Sutherland viscosity retained as a fallback.
+    IdealGas evaluates ideal-gas thermodynamic properties for pure gases and
+    mixtures. Thermodynamic properties come from PYroMat. Transport properties use
+    CEA / CEAM data when available, with Sutherland-style fallback behavior for
+    selected species.
 
-    Supports thermal state from:
-        temperature
-        enthalpy
-        internal_energy
+    Supported state inputs
+    ----------------------
 
-    Pressure is optional.
+    One thermal state input may be supplied:
 
-    Density can be used only with another closure:
-        density + pressure         -> temperature
-        density + temperature      -> pressure
-        density + enthalpy         -> temperature, pressure
-        density + internal_energy  -> temperature, pressure
+        IdealGas(..., temperature=T)
+        IdealGas(..., enthalpy=h)
+        IdealGas(..., internal_energy=u)
 
-        
-    --- IMPORTANT!! ---
-    PYroMat defines its own thermodynamic reference states.
+    Pressure may be supplied with the thermal state:
 
-    Absolute enthalpy, internal energy, entropy, Gibbs free energy, and
-    Helmholtz/free energy values should not be directly compared with those
-    from other thermodynamic libraries unless a common reference basis has been
-    established.
+        IdealGas(..., pressure=P, temperature=T)
+        IdealGas(..., pressure=P, enthalpy=h)
+        IdealGas(..., pressure=P, internal_energy=u)
 
-    Use set_reference="Fluid", "IdealGas", "Propellant", or "CombustionGas"
-    to align thermodynamic-potential reference values at 298.15 K and
-    101325 Pa.
+    Density may be used with one closure variable:
 
-    This applies a constant offset to enthalpy, internal energy, entropy,
-    Gibbs energy, and Helmholtz/free energy. It does NOT make different
-    property models equivalent away from the reference state. Differences
-    in Cp, equation of state, transport properties, phase models, and
-    other backend-specific behavior remain unchanged.
+        IdealGas(..., pressure=P, density=rho)
+        IdealGas(..., density=rho, temperature=T)
+        IdealGas(..., density=rho, enthalpy=h)
+        IdealGas(..., density=rho, internal_energy=u)
+
+    Mixtures
+    --------
+
+    Mixtures are passed as dictionaries:
+
+        IdealGas({"N2": 0.75, "O2": 0.25}, basis="mass", pressure=P, temperature=T)
+
+    The basis may be "mass" or "mole".
+
+    Limitations
+    -----------
+
+    IdealGas does not model real-fluid phase behavior, saturation states, or vapor
+    quality. Use Fluid for real-fluid or two-phase calculations.
+
+    Reference states
+    ----------------
+
+    PYroMat uses its own thermodynamic reference state. Absolute enthalpy,
+    internal energy, entropy, Gibbs energy, and Helmholtz/free energy should not be
+    compared directly with other wrappers unless a common reference is selected.
+
+    Use set_reference="Fluid", "Propellant", or "CombustionGas" to apply constant
+    offsets at 298.15 K and 101325 Pa.
+
+    This aligns only the reference values. It does not change Cp, equation of
+    state, transport properties, or backend-specific model behavior.
+
+    Public API units are SI.
     """
 
     _BACKEND_NAME = "PYroMat"

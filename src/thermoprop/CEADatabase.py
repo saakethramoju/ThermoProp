@@ -28,10 +28,54 @@ class CEASpecies:
 
 class CEADatabase:
     """
-    Strict-name helper for parser-generated CEA / CEAM data.
+    Strict-name interface to parser-generated NASA CEA / CEAM data.
 
-    This class does not apply aliases. Names must match the parsed CEA database
-    exactly, except for leading/trailing whitespace.
+    CEADatabase stores thermodynamic, transport, elemental-composition, phase, and
+    reactant metadata parsed from CEA-style source data.
+
+    This database intentionally does not apply user aliases. Names must match the
+    parsed CEA database exactly, except for leading or trailing whitespace. Use
+    SpeciesDatabase for user-friendly ThermoProp aliases and cross-backend name
+    resolution.
+
+    Data provided
+    -------------
+
+    CEADatabase exposes:
+
+    - strict CEA names
+    - gas product species
+    - condensed species
+    - predefined reactant cards
+    - elemental composition
+    - molecular weight
+    - heat of formation
+    - NASA-9 thermodynamic coefficients
+    - standard-state Cp, h, and s
+    - transport data when available
+
+    Name inspection
+    ---------------
+
+    Use:
+
+        CEA.names
+        CEA.gas_species
+        CEA.condensed_species
+        CEA.reactant_names
+        CEA.transport_names
+        CEA.find_species("text")
+        CEA.find_transport_species("text")
+
+    Thermodynamic convention
+    ------------------------
+
+    CEA thermodynamic functions use the CEA reference basis and NASA polynomial
+    conventions. Absolute enthalpy and entropy should be interpreted consistently
+    with the selected thermodynamic model.
+
+    Public API units are SI unless a method name explicitly indicates molar or
+    kmol-based CEA units.
     """
 
     _RU = 8.31446261815324

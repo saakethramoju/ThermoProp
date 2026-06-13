@@ -11,47 +11,52 @@ from .ReferenceState import normalize_reference_target
 
 class Fluid:
     """
-    High-level wrapper around CoolProp AbstractState objects with added
-    convenience methods for initialization, state updates, and property access.
+    CoolProp real-fluid property wrapper with a consistent ThermoProp API.
 
-    Supports both pure fluids and mixtures by mole or mass fractions.
+    Fluid supports pure fluids and mixtures using CoolProp's HEOS backend. It is
+    the preferred wrapper for real-fluid phase behavior, saturation states, and
+    two-phase properties.
 
-    Notes
-    -----
-    Uses full property names:
+    Supported state pairs
+    ---------------------
 
-        Fluid(..., pressure=..., temperature=...)
-        Fluid(..., pressure=..., enthalpy=...)
-        Fluid(..., pressure=..., quality=...)
-        Fluid(..., temperature=..., quality=...)
-        Fluid(..., density=..., internal_energy=...)
-        Fluid(..., pressure=..., density=...)
-        Fluid(..., pressure=..., internal_energy=...)
-        Fluid(..., temperature=..., density=...)
-        Fluid(..., density=..., enthalpy=...)
-        Fluid(..., temperature=..., enthalpy=...)
+    Exactly two thermodynamic inputs are required:
 
-    Pair setters/getters:
+        Fluid(..., pressure=P, temperature=T)
+        Fluid(..., pressure=P, enthalpy=h)
+        Fluid(..., pressure=P, quality=x)
+        Fluid(..., temperature=T, quality=x)
+        Fluid(..., density=rho, internal_energy=u)
+        Fluid(..., pressure=P, density=rho)
+        Fluid(..., pressure=P, internal_energy=u)
+        Fluid(..., temperature=T, density=rho)
+        Fluid(..., density=rho, enthalpy=h)
+        Fluid(..., temperature=T, enthalpy=h)
 
-        pressure_temperature
-        pressure_enthalpy
-        pressure_quality
-        temperature_quality
-        density_internal_energy
-        pressure_density
-        pressure_internal_energy
-        temperature_density
-        density_enthalpy
-        temperature_enthalpy
+    Mixtures
+    --------
 
-    --- IMPORTANT!! ---
-    CoolProp defines its own enthalpy and internal energy reference states.
+    Mixtures are passed as dictionaries:
 
-    Absolute enthalpy and internal energy values should not be directly compared
-    with those from other thermodynamic libraries unless a common reference basis
-    has been established.
+        Fluid({"N2": 0.75, "O2": 0.25}, basis="mass", pressure=P, temperature=T)
+
+    The basis may be "mass" or "mole".
+
+    Reference states
+    ----------------
+
+    CoolProp uses its own thermodynamic reference state. Absolute enthalpy,
+    internal energy, entropy, Gibbs energy, and Helmholtz/free energy should not be
+    compared directly with other wrappers unless a common reference is selected.
+
+    Use set_reference="IdealGas", "Propellant", or "CombustionGas" to apply
+    constant offsets at 298.15 K and 101325 Pa.
+
+    This aligns only the reference values. It does not make CoolProp, PYroMat,
+    RocketProps, or CEA models equivalent away from the reference state.
+
+    Public API units are SI.
     """
-
     _BACKEND_NAME = "CoolProp"
 
     _REFERENCE_TEMPERATURE = 298.15

@@ -11,24 +11,56 @@ from .MaterialDatabase import MaterialDatabase
 
 class Material:
     """
-    ThermoProp isotropic material-property lookup.
+    ThermoProp material-property lookup wrapper.
 
-    Example
-    -------
-    mat = Material("in718", temperature=300)
+    Material provides temperature-dependent solid material properties from
+    MaterialDatabase with a ThermoProp-style API. It is intended for structural,
+    thermal, and heat-transfer calculations involving metals and engineering
+    materials.
 
-    mat.name
-    mat.backend
-    mat.temperature
-    mat.density
-    mat.thermal_conductivity
-    mat.specific_heat
+    State
+    -----
 
-    mat.get("yield_strength", temperature=900)
-    mat.temperature = 900
-    mat.yield_strength
+    Material properties are temperature-dependent only:
+
+        Material("in718", temperature=300.0)
+
+    Pressure is not used. The pressure attribute is always None, and setting
+    pressure raises an error.
+
+    Interpolation
+    -------------
+
+    Properties are linearly interpolated from tabulated temperature curves. If a
+    property has a single stored value, that value is treated as constant.
+
+    By default, allow_extrapolation=True clamps values outside the available
+    temperature range to the nearest endpoint. Set allow_extrapolation=False to
+    raise an error outside the stored range.
+
+    Examples
+    --------
+
+        mat = Material("in718", temperature=300.0)
+
+        rho = mat.density
+        k = mat.thermal_conductivity
+        cp = mat.specific_heat
+        alpha = mat.thermal_diffusivity
+
+        mat.temperature = 900.0
+        sy = mat.yield_strength
+
+        sy_600 = mat.get("yield_strength", temperature=600.0)
+
+    Available data
+    --------------
+
+    Use available_properties and available_property_units to inspect stored
+    properties for the selected material.
+
+    Public API units are SI.
     """
-
     _BACKEND_NAME = "ThermoProp MaterialDatabase"
 
     _UNSUPPORTED_PROPERTIES = {
