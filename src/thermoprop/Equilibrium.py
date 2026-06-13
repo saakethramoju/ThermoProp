@@ -349,6 +349,12 @@ class Equilibrium:
             if not CEA.is_gas(name):
                 continue
 
+            # CEA names condensed-phase species with parenthesised phase labels
+            # such as (L) and (cr). Filter them even if is_gas misclassifies them.
+            _nlo = name.lower()
+            if "(l)" in _nlo or "(cr" in _nlo:
+                continue
+
             if not CEA.has_thermo(name):
                 continue
 
@@ -421,20 +427,82 @@ class Equilibrium:
             dtype=float,
         )
 
+    def _estimate_hp_temperature(self, target_enthalpy: float) -> float:
+        """
+        Cheap initial-temperature estimate for HP mode via enthalpy bisection.
+
+        Evaluates h(T) = Σ n_i·h_i(T) with the current (initial) moles over a
+        coarse grid and bisects to the crossing point. h(T) is monotone because
+        Cp > 0 for every species, so the bracket is always unique. The result is
+        used only as a starting point and does not need to be exact.
+        """
+        T_scan = [200.0, 400.0, 700.0, 1000.0, 1500.0, 2000.0, 2500.0,
+                  3000.0, 3500.0, 4500.0, 6000.0, 10000.0, 15000.0, 20000.0]
+        T_scan = [T for T in T_scan
+                  if self._min_temperature <= T <= self._max_temperature]
+
+        h_vals: list[tuple[float, float]] = []
+        for T in T_scan:
+            try:
+                _, h_kmol, _, _ = self._thermo_arrays(T)
+                h = float(np.sum(self._moles * (h_kmol / 1000.0)))
+                h_vals.append((T, h))
+            except Exception:
+                pass
+
+        if len(h_vals) < 2:
+            return self._guess_temperature
+
+        T_lo = T_hi = None
+        h_lo = h_hi = None
+        for i in range(len(h_vals) - 1):
+            T1, h1 = h_vals[i]
+            T2, h2 = h_vals[i + 1]
+            if (h1 - target_enthalpy) * (h2 - target_enthalpy) <= 0.0:
+                T_lo, h_lo = T1, h1
+                T_hi, h_hi = T2, h2
+                break
+
+        if T_lo is None:
+            diffs = [abs(h - target_enthalpy) for _, h in h_vals]
+            return h_vals[int(np.argmin(diffs))][0]
+
+        for _ in range(20):
+            T_mid = 0.5 * (T_lo + T_hi)
+            try:
+                _, h_kmol, _, _ = self._thermo_arrays(T_mid)
+                h_mid = float(np.sum(self._moles * (h_kmol / 1000.0)))
+            except Exception:
+                break
+            if (h_mid - target_enthalpy) * (h_lo - target_enthalpy) <= 0.0:
+                T_hi, h_hi = T_mid, h_mid
+            else:
+                T_lo, h_lo = T_mid, h_mid
+
+        return 0.5 * (T_lo + T_hi)
+
     def _solve(self) -> None:
         self._validate_inputs()
         self._gas_cache = None
         self._equilibrium_property_cache.clear()
 
-        product_temperature = (
-            self._temperature_input
-            if self._mode == "tp"
-            else self._guess_temperature
-        )
+        if self._mode == "tp":
+            product_temperature = self._temperature_input
+        else:
+            product_temperature = self._guess_temperature
 
         self._temperature = float(product_temperature)
         self._build_product_set(self._temperature)
         self._moles = self._initial_moles()
+
+        if self._mode == "hp":
+            estimated_T = self._estimate_hp_temperature(
+                self._reactants.reactant_enthalpy
+            )
+            if abs(estimated_T - self._temperature) > 50.0:
+                self._temperature = estimated_T
+                self._build_product_set(estimated_T)
+                self._moles = self._initial_moles()
 
         if self._mode == "tp":
             self._result = self._solve_tp()
@@ -492,7 +560,16 @@ class Equilibrium:
 
             dln_moles = -mu_RT + A.T @ element_potentials + dln_total_moles
 
-            max_mole_correction = float(np.max(np.abs(dln_moles)))
+            # Exclude species near the trace floor from the step-size and
+            # convergence calculations. At extreme mixture ratios hundreds of
+            # species land at trace_moles = 1e-300; their dln_moles is ~690,
+            # which would force alpha ≈ 0.003 every iteration and stall the
+            # solver. Only significant species (mole fraction > 1e-15) matter.
+            significant = n >= ntot * 1e-15
+            if np.any(significant):
+                max_mole_correction = float(np.max(np.abs(dln_moles[significant])))
+            else:
+                max_mole_correction = float(np.max(np.abs(dln_moles)))
             max_total_mole_correction = abs(dln_total_moles)
 
             alpha = 1.0
@@ -632,7 +709,11 @@ class Equilibrium:
                 + h_RT * dlnT
             )
 
-            max_mole_correction = float(np.max(np.abs(dln_moles)))
+            significant = n >= ntot * 1e-15
+            if np.any(significant):
+                max_mole_correction = float(np.max(np.abs(dln_moles[significant])))
+            else:
+                max_mole_correction = float(np.max(np.abs(dln_moles)))
             max_total_mole_correction = abs(dln_total_moles)
             temperature_correction = abs(dlnT)
 
@@ -953,6 +1034,7 @@ class Equilibrium:
         self,
         temperature: float,
         *,
+        pressure: float | None = None,
         initial_moles: np.ndarray | None = None,
     ) -> "Equilibrium":
         """
@@ -965,7 +1047,7 @@ class Equilibrium:
         obj = object.__new__(self.__class__)
 
         obj._mode = "tp"
-        obj._pressure = self.pressure
+        obj._pressure = float(pressure) if pressure is not None else self.pressure
         obj._temperature_input = float(temperature)
         obj._guess_temperature = float(temperature)
 
@@ -1099,11 +1181,12 @@ class Equilibrium:
         P0 = self.pressure
         T0 = self.temperature
 
-        plus = self._tp_neighbor(T0, initial_moles=self._moles)
-        plus.pressure = P0 * (1.0 + dP_frac)
-
-        minus = self._tp_neighbor(T0, initial_moles=self._moles)
-        minus.pressure = P0 * (1.0 - dP_frac)
+        plus = self._tp_neighbor(
+            T0, pressure=P0 * (1.0 + dP_frac), initial_moles=self._moles
+        )
+        minus = self._tp_neighbor(
+            T0, pressure=P0 * (1.0 - dP_frac), initial_moles=self._moles
+        )
 
         value = (
             np.log(plus.specific_volume)
