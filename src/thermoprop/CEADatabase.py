@@ -357,10 +357,17 @@ class CEADatabase:
 
     @staticmethod
     def _phase_label_from_name(name: str) -> str | None:
-        if not name.endswith(")") or "(" not in name:
+        raw = str(name).strip()
+
+        start = raw.find("(")
+        if start < 0:
             return None
 
-        return name.rsplit("(", 1)[1][:-1].strip()
+        end = raw.find(")", start + 1)
+        if end < 0:
+            return None
+
+        return raw[start + 1:end].strip()
 
     @staticmethod
     def _is_condensed_phase_label(label: str | None) -> bool:
