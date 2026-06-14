@@ -88,6 +88,9 @@ def condensed_gibbs_test_values(
     """
     active_species = active_state.species
     T = active_state.temperature
+
+    if not np.isfinite(T):
+        return []
     P = active_state.pressure
 
     thermo_active = thermo_arrays_for_species_set(active_species, T)
@@ -321,7 +324,7 @@ def solve_with_condensed_phases_tp(
                 removed_species=removed,
                 last_solver_result=last_result,
             )
-
+        
         state = last_result.state
 
         remove_now = condensed_species_to_remove(
@@ -386,6 +389,18 @@ def solve_with_condensed_phases_tp(
         )
 
         if chosen is None:
+            return CondensedSolveResult(
+                state=state,
+                success=True,
+                message="TP equilibrium converged with stable condensed-phase set.",
+                outer_iterations=outer,
+                inner_iterations=inner_iterations,
+                inserted_species=inserted,
+                removed_species=removed,
+                last_solver_result=last_result,
+            )
+
+        if chosen.species_name in inserted:
             return CondensedSolveResult(
                 state=state,
                 success=True,
@@ -478,6 +493,50 @@ def solve_with_condensed_phases_hp(
         inner_iterations += last_result.iterations
 
         if not last_result.success:
+            state = last_result.state
+
+            if condensed_options.enabled:
+                tests = condensed_gibbs_test_values(
+                    active_state=state,
+                    dormant_condensed_species=dormant_condensed,
+                )
+
+                chosen = choose_condensed_species_to_insert(
+                    tests,
+                    tolerance=condensed_options.insertion_tolerance,
+                )
+
+                if chosen is not None:
+                    if chosen.species_name in inserted:
+                        return CondensedSolveResult(
+                            state=state,
+                            success=True,
+                            message="HP equilibrium converged with stable condensed-phase set.",
+                            outer_iterations=outer,
+                            inner_iterations=inner_iterations,
+                            inserted_species=inserted,
+                            removed_species=removed,
+                            last_solver_result=last_result,
+                        )
+                    active_species = add_species_to_set(
+                        state.species,
+                        [chosen.species_name],
+                    )
+                    state = _transfer_state_to_species_set(
+                        state,
+                        active_species,
+                        initial_new_moles=condensed_options.initial_condensed_moles,
+                    )
+                    inserted.append(chosen.species_name)
+
+                    if condensed_options.verbose:
+                        print(
+                            f"Inserted condensed species {chosen.species_name} "
+                            f"Gtest={chosen.gibbs_test_value:.6e}"
+                        )
+
+                    continue
+
             return CondensedSolveResult(
                 state=last_result.state,
                 success=False,
@@ -490,6 +549,7 @@ def solve_with_condensed_phases_hp(
             )
 
         state = last_result.state
+
 
         remove_now = condensed_species_to_remove(
             state,
@@ -553,6 +613,18 @@ def solve_with_condensed_phases_hp(
         )
 
         if chosen is None:
+            return CondensedSolveResult(
+                state=state,
+                success=True,
+                message="HP equilibrium converged with stable condensed-phase set.",
+                outer_iterations=outer,
+                inner_iterations=inner_iterations,
+                inserted_species=inserted,
+                removed_species=removed,
+                last_solver_result=last_result,
+            )
+                
+        if chosen.species_name in inserted:
             return CondensedSolveResult(
                 state=state,
                 success=True,

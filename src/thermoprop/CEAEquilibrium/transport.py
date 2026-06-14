@@ -33,6 +33,7 @@ from .properties import (
     mass_fractions,
 )
 
+from .thermo import thermo_arrays_for_species_set, RU_KMOL
 
 RU = 8.31446261815324
 
@@ -47,10 +48,12 @@ class TransportOptions:
 
 @dataclass(slots=True)
 class TransportResult:
+    cp_frozen: float | None
     viscosity_frozen: float | None
     conductivity_frozen: float | None
     prandtl_frozen: float | None
 
+    cp_equilibrium: float | None
     viscosity_equilibrium: float | None
     conductivity_equilibrium: float | None
     prandtl_equilibrium: float | None
@@ -124,17 +127,94 @@ def make_combustion_gas_for_transport(
         temperature=state.temperature,
     )
 
+def gas_mass_fraction(state: EquilibriumState) -> float:
+    gas_mask = state.species.gas_mask
+    n = state.n
+    mw = state.species.molecular_weights * 1000.0  # kg/kmol
+
+    gas_mass = float(np.sum(n[gas_mask] * mw[gas_mask]))
+    total_mass = float(np.sum(n * mw))
+
+    if total_mass <= 0.0:
+        return 1.0
+
+    return gas_mass / total_mass
+
+def gas_only_cp_frozen(state: EquilibriumState) -> float:
+    thermo = thermo_arrays_for_species_set(state.species, state.temperature)
+    gas_mask = state.species.gas_mask
+
+    cp_per_kg_total = float(
+        np.sum(state.n[gas_mask] * thermo.specific_heat_cp_molar[gas_mask])
+    )
+
+    return cp_per_kg_total / gas_mass_fraction(state)
+
+def gas_only_cp_reaction(
+    state: EquilibriumState,
+    *,
+    options: TransportOptions | None = None,
+) -> float:
+    if options is None:
+        options = TransportOptions()
+
+    try:
+        names, x, M, h = _transport_species_arrays(state, options=options)
+    except Exception:
+        return 0.0
+
+    if len(names) <= 1:
+        return 0.0
+
+    elements = [
+        e for e in state.species.elements
+        if e != "E"
+    ]
+
+    A = _element_matrix_for_names(names, elements)
+    alpha = _nullspace(A)
+
+    nr = alpha.shape[0]
+
+    if nr == 0:
+        return 0.0
+
+    x_safe = np.maximum(x, 1e-300)
+
+    D = np.zeros((nr, nr), dtype=float)
+
+    ns = len(names)
+
+    for k in range(ns - 1):
+        for l in range(k + 1, ns):
+            delta = alpha[:, k] / x_safe[k] - alpha[:, l] / x_safe[l]
+            D += x[k] * x[l] * np.outer(delta, delta)
+
+    T = float(state.temperature)
+    delta_h_over_RT = alpha @ h / (RU * T)
+
+    try:
+        X = np.linalg.solve(D, delta_h_over_RT)
+    except np.linalg.LinAlgError:
+        try:
+            X = np.linalg.lstsq(D, delta_h_over_RT, rcond=None)[0]
+        except Exception:
+            return 0.0
+
+    Rmix_total_basis = float(state.total_gas_moles) * RU_KMOL
+    value_total_basis = Rmix_total_basis * float(np.dot(delta_h_over_RT, X))
+    value = value_total_basis / gas_mass_fraction(state)
+
+    if not np.isfinite(value):
+        return 0.0
+
+    return max(0.0, value)
 
 def frozen_transport(
     state: EquilibriumState,
     *,
     options: TransportOptions | None = None,
 ) -> tuple[float | None, float | None, float | None]:
-    """
-    Frozen viscosity, conductivity, and Prandtl number.
-
-    Uses CombustionGas's existing CEA transport implementation.
-    """
     if options is None:
         options = TransportOptions()
 
@@ -153,10 +233,12 @@ def frozen_transport(
     except Exception:
         k = None
 
+    cp_transport_frozen = gas_only_cp_frozen(state)
+
     if mu is None or k is None or k == 0.0:
         pr = None
     else:
-        pr = cp_frozen(state) * mu / k
+        pr = cp_transport_frozen * mu / k
 
     return mu, k, pr
 
@@ -404,6 +486,12 @@ def equilibrium_transport(
 
     mu_f, k_f, pr_f = frozen_transport(state, options=options)
 
+    cp_fr_transport = gas_only_cp_frozen(state)
+    cp_eq_transport = cp_fr_transport + gas_only_cp_reaction(
+        state,
+        options=options,
+    )
+
     if k_f is None:
         k_re = None
         k_eq = None
@@ -416,24 +504,23 @@ def equilibrium_transport(
 
     mu_eq = mu_f
 
-    if tp_neighbor_solver is not None:
-        try:
-            cp_eq = equilibrium_cp_finite_difference(
-                state,
-                tp_neighbor_solver=tp_neighbor_solver,
-                dT=options.equilibrium_derivative_temperature_step,
-            )
-        except Exception:
-            cp_eq = cp_frozen(state)
+    cp_fr_transport = gas_only_cp_frozen(state)
+    cp_re_transport = gas_only_cp_reaction(state, options=options)
+    cp_eq = cp_fr_transport + cp_re_transport
+
+    if mu_f is None or k_f is None or k_f == 0.0:
+        pr_f = None
     else:
-        cp_eq = cp_frozen(state)
+        pr_f = cp_fr_transport * mu_f / k_f
 
     if mu_eq is None or k_eq is None or k_eq == 0.0:
         pr_eq = None
     else:
-        pr_eq = cp_eq * mu_eq / k_eq
+        pr_eq = cp_eq_transport * mu_eq / k_eq
 
     return TransportResult(
+        cp_frozen=cp_fr_transport,
+        cp_equilibrium=cp_eq_transport,
         viscosity_frozen=mu_f,
         conductivity_frozen=k_f,
         prandtl_frozen=pr_f,
@@ -442,7 +529,6 @@ def equilibrium_transport(
         prandtl_equilibrium=pr_eq,
         conductivity_reaction=k_re,
     )
-
 
 def build_transport_values(
     state: EquilibriumState,
@@ -457,9 +543,11 @@ def build_transport_values(
     )
 
     return {
+        "cp_transport_frozen": result.cp_frozen,
         "viscosity_frozen": result.viscosity_frozen,
         "conductivity_frozen": result.conductivity_frozen,
         "prandtl_frozen": result.prandtl_frozen,
+        "cp_transport_equilibrium": result.cp_equilibrium,
         "viscosity_equilibrium": result.viscosity_equilibrium,
         "conductivity_equilibrium": result.conductivity_equilibrium,
         "prandtl_equilibrium": result.prandtl_equilibrium,

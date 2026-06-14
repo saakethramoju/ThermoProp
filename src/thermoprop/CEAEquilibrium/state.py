@@ -335,6 +335,9 @@ class EquilibriumResults:
     gamma_frozen: float
     gamma_equilibrium: float
 
+    cp_transport_frozen: float | None = None
+    cp_transport_equilibrium: float | None = None
+
     viscosity_frozen: float | None = None
     conductivity_frozen: float | None = None
     prandtl_frozen: float | None = None

@@ -127,7 +127,7 @@ def build_tp_matrix(
 
     # Eq. 2.25 condensed equations
     if nc:
-        rhs[ne:ne + nc] = -mu[condensed_idx]
+        rhs[ne:ne + nc] = mu[condensed_idx]
 
     # Eq. 2.26 total gas mole equation
     matrix[-1, -1] = 0.0
@@ -255,7 +255,7 @@ def build_hp_matrix(
     # Eq. 2.25 condensed equations
     if nc:
         matrix[ne:ne + nc, ne + nc + 1] = h_RT[condensed_idx]
-        rhs[ne:ne + nc] = -mu[condensed_idx]
+        rhs[ne:ne + nc] = mu[condensed_idx]
 
     # Eq. 2.26 total gas mole equation
     row_n = ne + nc
@@ -267,18 +267,21 @@ def build_hp_matrix(
     # Eq. 2.27 enthalpy equation
     row_h = ne + nc + 1
 
-    matrix[row_h, :ne] = A @ (n * h)
+    gas_H = float(np.sum(ng * h[gas_idx]))
+
+    matrix[row_h, :ne] = Ag @ (ng * h[gas_idx])
+
     if nc:
         matrix[row_h, ne:ne + nc] = h[condensed_idx]
 
-    matrix[row_h, ne + nc] = H
+    matrix[row_h, ne + nc] = gas_H
 
     matrix[row_h, ne + nc + 1] = float(
         np.sum(n * cp * T)
-        + np.sum(n * h * h_RT)
+        + np.sum(ng * h[gas_idx] * h_RT[gas_idx])
     )
 
-    rhs[row_h] = H_error + float(np.sum(n * h * mu))
+    rhs[row_h] = H_error + float(np.sum(ng * h[gas_idx] * mu[gas_idx]))
 
     return MatrixSystem(
         matrix=matrix,

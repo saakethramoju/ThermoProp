@@ -281,7 +281,7 @@ def build_species_names(
         if name in seen:
             continue
 
-        if _is_reactant(name) and not options.include_reactants:
+        if not options.include_reactants and _is_reactant_only_species(name):
             continue
 
         gas = _is_gas(name)
@@ -323,6 +323,9 @@ def build_species_names(
 
     names.sort(key=_species_sort_key)
     return names
+
+
+
 
 
 def _species_sort_key(name: str) -> tuple[int, str]:
@@ -550,3 +553,24 @@ def active_species_indices_from_moles(
     active[~gas_mask] = n[~gas_mask] > 0.0
 
     return np.nonzero(active)[0]
+
+
+
+def _is_reactant_only_species(name: str) -> bool:
+    try:
+        if hasattr(CEA, "reactant_names"):
+            reactants = CEA.reactant_names
+            if callable(reactants):
+                reactants = reactants()
+            if name in set(reactants):
+                return True
+    except Exception:
+        pass
+
+    try:
+        if hasattr(CEA, "is_reactant"):
+            return bool(CEA.is_reactant(name))
+    except Exception:
+        pass
+
+    return False

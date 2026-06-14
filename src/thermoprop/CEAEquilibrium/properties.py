@@ -477,6 +477,8 @@ def build_results(
         cv_equilibrium=cve,
         gamma_frozen=gammaf,
         gamma_equilibrium=gammae,
+        cp_transport_frozen=transport_values.get("cp_transport_frozen"),
+        cp_transport_equilibrium=transport_values.get("cp_transport_equilibrium"),
         viscosity_frozen=transport_values.get("viscosity_frozen"),
         conductivity_frozen=transport_values.get("conductivity_frozen"),
         prandtl_frozen=transport_values.get("prandtl_frozen"),

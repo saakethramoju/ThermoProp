@@ -353,7 +353,18 @@ class CEADatabase:
         return not bool(np.isnan(coeffs).all())
 
     def is_reactant(self, name: str) -> bool:
+        name = self.resolve_name(name)
+
+        comment = self.reactant_comment(name).lower()
+
+        if "react" in comment:
+            return True
+
         return not self.has_thermo(name)
+            
+    def reactant_comment(self, name: str) -> str:
+        idx = self.index(name)
+        return str(self._thermo["comments"][idx]).strip()
 
     @staticmethod
     def _phase_label_from_name(name: str) -> str | None:

@@ -164,14 +164,8 @@ def solve_hp(
         thermo = thermo_arrays_for_species_set(
             species,
             current.temperature,
-            on_error="nan",
+            on_error="raise",
         )
-
-        invalid = ~thermo.valid
-        if np.any(invalid):
-            n[invalid] = 0.0
-            gas_idx = np.nonzero(species.gas_mask)[0]
-            n[gas_idx] = np.maximum(n[gas_idx], options.trace)
 
         system = build_hp_matrix(
             species=species,
@@ -218,6 +212,10 @@ def solve_hp(
 
         dlnT = 0.0 if correction.dln_temperature is None else correction.dln_temperature
         T_new = T * np.exp(np.clip(damping * dlnT, -5.0, 5.0))
+
+        if not np.isfinite(T_new):
+            T_new = T
+
         T_new = float(np.clip(T_new, options.min_temperature, options.max_temperature))
 
         current.n = n_new
@@ -226,10 +224,11 @@ def solve_hp(
         current.iteration = iteration
         current.residual_norm = residual_norm(system)
 
+
         thermo_new = thermo_arrays_for_species_set(
             species,
             current.temperature,
-            on_error="nan",
+            on_error="raise",
         )
         h_products = mixture_enthalpy(n_new, thermo_new)
         h_error = h_products - float(target_enthalpy)
@@ -282,6 +281,14 @@ def solve_hp(
 
     current.converged = False
 
+    if options.verbose:
+        print(
+            "HP FAILED",
+            "T =", current.temperature,
+            "max_elem =", max_element_error,
+            "h_err =", h_error,
+            "corr =", max_corr,
+        )
     return HPSolverResult(
         state=current,
         success=False,

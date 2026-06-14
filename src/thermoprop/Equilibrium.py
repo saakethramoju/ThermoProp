@@ -258,6 +258,129 @@ class _CombustionGasReactants:
 
 
 class Equilibrium:
+    """
+    Chemical equilibrium solver using Gibbs free-energy minimization.
+
+    The Equilibrium class computes the thermodynamic equilibrium composition
+    of a reacting mixture at a specified pressure and thermodynamic state.
+    Supported modes are:
+
+    * TP (constant temperature, constant pressure)
+    * HP (constant enthalpy, constant pressure)
+
+    The solver minimizes the total Gibbs free energy subject to elemental
+    conservation constraints and returns an equilibrium composition that
+    can be used directly by CombustionGas, nozzle calculations, transport
+    property calculations, and rocket performance analyses.
+
+    Notes
+    -----
+    CEA-style heat capacities
+    =========================
+
+    NASA CEA reports three different heat capacities that are often confused:
+
+    1. Thermodynamic equilibrium Cp
+    --------------------------------
+
+    Reported in the main thermodynamic properties table.
+
+    This is the true equilibrium heat capacity:
+
+        Cp = (∂h/∂T)_P
+
+    where chemical equilibrium is maintained during the temperature change.
+    As temperature increases, species are allowed to dissociate, recombine,
+    condense, or vaporize as required by equilibrium.
+
+    Therefore this quantity contains both:
+
+        * sensible heating effects
+        * chemical reaction effects
+
+    and is typically the largest Cp reported by CEA.
+
+    This is the Cp normally used in equilibrium thermodynamic calculations
+    and corresponds to the derivative of equilibrium enthalpy with respect
+    to temperature.
+
+    2. Transport equilibrium Cp
+    ----------------------------
+
+    Reported in the TRANSPORT PROPERTIES section under:
+
+        WITH EQUILIBRIUM REACTIONS
+
+    Transport properties (viscosity, conductivity, Prandtl number, etc.)
+    are only defined for the gas phase.
+
+    CEA therefore removes condensed species and computes properties using
+    only the gas mixture. Equilibrium chemistry is still allowed, so gas
+    composition may change with temperature.
+
+    Consequently:
+
+        Cp_transport_eq < Cp_thermodynamic_eq
+
+    whenever condensed species are present.
+
+    This value should be used when computing gas-phase transport properties
+    such as thermal conductivity and Prandtl number.
+
+    3. Transport frozen Cp
+    -----------------------
+
+    Reported in the TRANSPORT PROPERTIES section under:
+
+        WITH FROZEN REACTIONS
+
+    The gas composition is held fixed and no chemical re-equilibration is
+    allowed.
+
+    In this case:
+
+        Cp_frozen = Σ Yi * Cpi
+
+    for the fixed gas composition.
+
+    Because reaction energy effects are excluded:
+
+        Cp_transport_frozen <= Cp_transport_eq
+
+    Typical ordering is:
+
+        Cp_transport_frozen
+            <= Cp_transport_eq
+            <= Cp_thermodynamic_eq
+
+    Condensed species
+    =================
+
+    The equilibrium composition may contain condensed species (graphite,
+    liquid metals, condensed oxides, etc.).
+
+    Thermodynamic properties such as:
+
+        h, u, s, g, Cp
+
+    are generally evaluated using the complete equilibrium mixture.
+
+    Transport properties such as:
+
+        μ, k, Pr
+
+    should generally be evaluated using only the gas-phase species, matching
+    NASA CEA transport-property conventions.
+
+    References
+    ----------
+    Gordon, S., and McBride, B. J.,
+    "Computer Program for Calculation of Complex Chemical Equilibrium
+    Compositions and Applications", NASA RP-1311.
+
+    McBride, B. J., and Gordon, S.,
+    NASA CEA Users Manual.
+    """
     _BACKEND_NAME = "ThermoProp CEA-style Equilibrium"
 
     def __init__(
@@ -820,11 +943,19 @@ class Equilibrium:
 
     @property
     def molecular_weight(self) -> float:
+        return molecular_weight_all_species(self._state)
+        
+    @property
+    def molecular_weight_gas(self) -> float:
         return state_molecular_weight(self._state)
 
     @property
     def molecular_weight_all_species(self) -> float:
         return molecular_weight_all_species(self._state)
+        
+    @property
+    def moles_inverse(self) -> float:
+        return 8314.46261815324 / self.gas_constant
 
     @property
     def molar_mass(self) -> float:
@@ -877,6 +1008,14 @@ class Equilibrium:
     @property
     def cv_equilibrium(self) -> float:
         return self.specific_heat_cv_equilibrium
+
+    @property
+    def cp_transport_frozen(self) -> float | None:
+        return self._results.cp_transport_frozen
+
+    @property
+    def cp_transport_equilibrium(self) -> float | None:
+        return self._results.cp_transport_equilibrium
 
     @property
     def gamma_frozen(self) -> float:
@@ -1160,11 +1299,14 @@ class Equilibrium:
             ("Internal energy [J/kg]", self._safe(self.internal_energy, ".6e")),
             ("Cp eq [J/kg-K]", self._safe(self.specific_heat_cp_equilibrium, ".6g")),
             ("Cp frozen [J/kg-K]", self._safe(self.specific_heat_cp_frozen, ".6g")),
+            ("Cp transport eq [J/kg-K]", self._safe(self.cp_transport_equilibrium, ".6g")),
+            ("Cp transport frozen [J/kg-K]", self._safe(self.cp_transport_frozen, ".6g")),
             ("Cv eq [J/kg-K]", self._safe(self.specific_heat_cv_equilibrium, ".6g")),
             ("Cv frozen [J/kg-K]", self._safe(self.specific_heat_cv_frozen, ".6g")),
             ("Gamma eq", self._safe(self.gamma_equilibrium, ".6g")),
             ("Gamma frozen", self._safe(self.gamma_frozen, ".6g")),
             ("Gas constant [J/kg-K]", self._safe(self.gas_constant, ".6g")),
+            ("M, (1/n) [kg/kmol]", self._safe(self.moles_inverse, ".6g")),
             ("Molecular weight [kg/kmol]", self._safe(self.molecular_weight, ".6g")),
             ("Viscosity eq [Pa*s]", self._safe(self.dynamic_viscosity_equilibrium, ".6e")),
             ("Conductivity eq [W/m-K]", self._safe(self.thermal_conductivity_equilibrium, ".6g")),
