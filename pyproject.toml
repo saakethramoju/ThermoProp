@@ -1,6 +1,6 @@
 [project]
 name = "thermoprop"
-version = "1.0.0"
+version = "1.0.1"
 description = "A Python thermophysical property and chemical-equilibrium library for fluids, gases, propellants, combustion products, and engineering materials."
 readme = "README.md"
 license = "GPL-3.0-only"
@@ -46,11 +46,11 @@ classifiers = [
 ]
 
 dependencies = [
-    "coolprop>=6.8.0",
-    "numpy>=2.4.6",
-    "pyromat>=2.2.6",
+    "coolprop>=6.6",
+    "numpy>=1.26",
+    "pyromat>=2.2",
     "rocketprops>=0.1.9",
-    "scipy>=1.17.1",
+    "scipy>=1.11",
 ]
 
 [project.urls]

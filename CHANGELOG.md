@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.1
+
+### Improved
+
+* Added shared public-API helpers for wrapper property introspection.
+* Added shared fraction-vector validation for `Fluid`, `IdealGas`, and `CombustionGas`.
+* Added missing `Equilibrium.supported_properties()`, `Equilibrium.show_supported_properties()`, and `Equilibrium.supports_property()` support through the shared API mixin.
+* Added snake_case `Equilibrium.combustion_gas` and `Equilibrium.combustion_gas_composition()` aliases while preserving the existing `CombustionGas` aliases.
+* Added lightweight docstrings for internal CEA equilibrium option/result dataclasses.
+* Clarified the `Equilibrium.py` module layout documentation.
+* Cleaned the release source tree by excluding local virtual environments, cached bytecode, previous distributions, Git internals, and the stale development `uv.lock`.
+
+### Fixed
+
+* Fixed the local smoke-test import path to use `from thermoprop import *` instead of `from src.thermoprop import *`.
+* Relaxed overly strict dependency lower bounds to improve installability while preserving the features used by ThermoProp.
+
+### Notes
+
+* No equilibrium solver equations or thermodynamic/transport property formulas were intentionally changed in this cleanup release.
+
 ## 1.0.0
 
 ### Added

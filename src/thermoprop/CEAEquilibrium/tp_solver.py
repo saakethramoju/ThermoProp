@@ -31,6 +31,7 @@ from .matrix import (
 
 @dataclass(slots=True)
 class TPSolverOptions:
+    """Numerical controls for fixed-temperature, fixed-pressure solves."""
     max_iterations: int = 80
     trace: float = 1e-300
     species_trace: float = 1e-12
@@ -45,6 +46,7 @@ class TPSolverOptions:
 
 @dataclass(slots=True)
 class TPSolverResult:
+    """Result bundle returned by the fixed-species TP solver."""
     state: EquilibriumState
     success: bool
     message: str

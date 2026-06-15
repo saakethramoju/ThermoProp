@@ -17,6 +17,7 @@ ReactantGroup = ReactantEntry | Iterable[ReactantEntry] | None
 
 @dataclass(frozen=True)
 class Reactant:
+    """One material entry in a CEA-style reactant mixture."""
     propellant: ThermoReactant
     mass: float
     role: str

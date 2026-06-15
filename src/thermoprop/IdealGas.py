@@ -9,8 +9,10 @@ import pyromat as pm
 from .SpeciesDatabase import SpeciesDatabase
 from .CEADatabase import CEA
 from .ReferenceState import normalize_reference_target
+from ._api import PropertyIntrospectionMixin
+from ._validation import validate_fraction_vector
 
-class IdealGas:
+class IdealGas(PropertyIntrospectionMixin):
     """
     PYroMat ideal-gas wrapper with ThermoProp's common property API.
 
@@ -224,21 +226,8 @@ class IdealGas:
 
     @staticmethod
     def _validate_fractions(fractions, label: str, *, atol: float = 1e-6) -> np.ndarray:
-        fractions = np.asarray(fractions, dtype=float)
-
-        if fractions.size == 0:
-            raise ValueError(f"{label} cannot be empty")
-
-        if not np.all(np.isfinite(fractions)):
-            raise ValueError(f"{label} must contain only finite values")
-
-        if np.any(fractions < 0.0):
-            raise ValueError(f"{label} must be nonnegative")
-
-        if not np.isclose(fractions.sum(), 1.0, atol=atol):
-            raise ValueError(f"{label} must sum to 1.0")
-
-        return fractions
+        """Validate a mass- or mole-fraction vector and return it as an array."""
+        return validate_fraction_vector(fractions, label, atol=atol)
 
     # ---------------- Units ---------------- #
 
@@ -1564,31 +1553,3 @@ class IdealGas:
         M = np.array([IdealGas._molar_mass_of(sid) for sid in species_ids])
         inv = w / M
         return inv / inv.sum()
-
-    @classmethod
-    def supported_properties(cls) -> list[str]:
-        """Return public properties intentionally supported by this wrapper."""
-        unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
-
-        return sorted(
-            name
-            for name, value in vars(cls).items()
-            if isinstance(value, property)
-            and not name.startswith("_")
-            and name not in unsupported
-        )
-
-    @classmethod
-    def show_supported_properties(cls) -> list[str]:
-        """Print and return public properties intentionally supported by this wrapper."""
-        properties = cls.supported_properties()
-
-        for prop in properties:
-            print(prop)
-
-        return properties
-
-    @classmethod
-    def supports_property(cls, property_name: str) -> bool:
-        """Return True if this wrapper intentionally supports property_name."""
-        return property_name in cls.supported_properties()

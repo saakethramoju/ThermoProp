@@ -36,6 +36,20 @@ pip install thermoprop
 
 ThermoProp requires Python 3.11 or newer.
 
+## 1.0.1 release focus
+
+ThermoProp 1.0.1 is a cleanup and API-stability release. It keeps the 1.0.0 solver and property-model behavior intact while reducing repeated helper code, adding missing wrapper introspection support to `Equilibrium`, clarifying internal CEA-equilibrium documentation, adding snake_case `Equilibrium.combustion_gas` aliases, and cleaning the release source tree.
+
+Use these wrapper-level inspection helpers consistently across the public API:
+
+```python
+from thermoprop import Fluid, IdealGas, CombustionGas, Propellant, Material, Equilibrium
+
+print(Fluid.supported_properties())
+print(CombustionGas.supported_flash_inputs())
+print(Equilibrium.supports_property("temperature"))
+```
+
 ---
 
 ## Why ThermoProp?

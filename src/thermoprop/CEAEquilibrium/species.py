@@ -24,6 +24,7 @@ CHARGE_ELEMENT = "E"
 
 @dataclass(slots=True, frozen=True)
 class SpeciesBuildOptions:
+    """Species-screening options used before constructing a SpeciesSet."""
     include_gases: bool = True
     include_condensed: bool = True
     include_ions: bool = True

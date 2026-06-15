@@ -34,6 +34,7 @@ from .matrix import (
 
 @dataclass(slots=True)
 class HPSolverOptions:
+    """Numerical controls for fixed-enthalpy, fixed-pressure solves."""
     max_iterations: int = 120
     trace: float = 1e-300
     species_trace: float = 1e-12
@@ -53,6 +54,7 @@ class HPSolverOptions:
 
 @dataclass(slots=True)
 class HPSolverResult:
+    """Result bundle returned by the fixed-species HP solver."""
     state: EquilibriumState
     success: bool
     message: str

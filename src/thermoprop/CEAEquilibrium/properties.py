@@ -46,6 +46,7 @@ from .thermo import (
 
 @dataclass(slots=True)
 class MixtureDerivatives:
+    """First-derivative set used for gamma and speed of sound."""
     dlnv_dlnT_const_p: float
     dlnv_dlnp_const_T: float
     dlnv_dlnp_const_s: float

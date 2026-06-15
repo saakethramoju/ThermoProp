@@ -11,8 +11,9 @@ from .Fluid import Fluid
 from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
 from .ReferenceState import normalize_reference_target
+from ._api import PropertyIntrospectionMixin
 
-class Propellant:
+class Propellant(PropertyIntrospectionMixin):
     """
     Combined RocketProps / CEA propellant and reactant property wrapper.
 
@@ -2124,28 +2125,3 @@ class Propellant:
     @classmethod
     def supported_flash_pairs(cls) -> list[str]:
         return cls.available_flash_pairs()
-
-    @classmethod
-    def supported_properties(cls) -> list[str]:
-        unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
-
-        return sorted(
-            name
-            for name, value in vars(cls).items()
-            if isinstance(value, property)
-            and not name.startswith("_")
-            and name not in unsupported
-        )
-
-    @classmethod
-    def show_supported_properties(cls) -> list[str]:
-        properties = cls.supported_properties()
-
-        for prop in properties:
-            print(prop)
-
-        return properties
-
-    @classmethod
-    def supports_property(cls, property_name: str) -> bool:
-        return property_name in cls.supported_properties()

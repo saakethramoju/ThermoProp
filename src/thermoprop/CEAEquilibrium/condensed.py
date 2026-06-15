@@ -45,6 +45,7 @@ Mode = Literal["tp", "hp"]
 
 @dataclass(slots=True)
 class CondensedOptions:
+    """Controls for CEA-style condensed-phase insertion/removal."""
     enabled: bool = True
     max_outer_iterations: int = 30
 
@@ -60,6 +61,7 @@ class CondensedOptions:
 
 @dataclass(slots=True)
 class CondensedSolveResult:
+    """Outer-loop result for TP/HP solves with condensed phases."""
     state: EquilibriumState
     success: bool
     message: str

@@ -5,12 +5,12 @@ Public API wrapper for the modular CEA-style equilibrium package.
 
 Directory layout expected:
 
-src/
+src/thermoprop/
     Equilibrium.py
     CEADatabase.py
     Reactants.py
     CombustionGas.py
-    Equilibrium/
+    CEAEquilibrium/
         state.py
         species.py
         thermo.py
@@ -32,6 +32,7 @@ import numpy as np
 from .CEADatabase import CEA
 from .Reactants import Reactants
 from .CombustionGas import CombustionGas
+from ._api import PropertyIntrospectionMixin
 
 
 from .CEAEquilibrium.state import FeedState, EquilibriumState, EquilibriumResults
@@ -70,6 +71,7 @@ from .CEAEquilibrium.transport import (
 
 @dataclass(slots=True)
 class EquilibriumSolveSummary:
+    """User-facing convergence and condensed-phase summary."""
     success: bool
     message: str
     mode: str
@@ -257,7 +259,7 @@ class _CombustionGasReactants:
         return elements, b
 
 
-class Equilibrium:
+class Equilibrium(PropertyIntrospectionMixin):
     """
     Chemical equilibrium solver using Gibbs free-energy minimization.
 
@@ -906,17 +908,18 @@ class Equilibrium:
 
     @property
     def normalized_mole_fractions(self) -> dict[str, float]:
-        return self.CombustionGas_composition()
+        return self.combustion_gas_composition()
 
     @property
     def normalized_mass_fractions(self) -> dict[str, float]:
-        return dict(self.CombustionGas.mass_fractions)
+        return dict(self.combustion_gas.mass_fractions)
 
-    def CombustionGas_composition(
+    def combustion_gas_composition(
         self,
         trace: float | None = None,
         max_species: int | None = None,
     ) -> dict[str, float]:
+        """Return normalized gas-only mole fractions for `CombustionGas`."""
         if trace is None:
             trace = self._combustion_gas_trace
         if max_species is None:
@@ -941,11 +944,20 @@ class Equilibrium:
 
         return {name: x / total for name, x in items}
 
+    def CombustionGas_composition(
+        self,
+        trace: float | None = None,
+        max_species: int | None = None,
+    ) -> dict[str, float]:
+        """Backward-compatible alias for `combustion_gas_composition`."""
+        return self.combustion_gas_composition(trace=trace, max_species=max_species)
+
     @property
-    def CombustionGas(self) -> CombustionGas:
+    def combustion_gas(self) -> CombustionGas:
+        """Return a gas-only `CombustionGas` view of the equilibrium products."""
         if self._gas_cache is None:
             self._gas_cache = CombustionGas(
-                self.CombustionGas_composition(),
+                self.combustion_gas_composition(),
                 basis="mole",
                 pressure=self.pressure,
                 temperature=self.temperature,
@@ -953,8 +965,13 @@ class Equilibrium:
         return self._gas_cache
 
     @property
+    def CombustionGas(self) -> CombustionGas:
+        """Backward-compatible alias for `combustion_gas`."""
+        return self.combustion_gas
+
+    @property
     def gas(self) -> CombustionGas:
-        return self.CombustionGas
+        return self.combustion_gas
 
     @property
     def density(self) -> float:
@@ -1247,7 +1264,7 @@ class Equilibrium:
         return 1.0 / self.pressure
 
     def partial_derivative(self, of: str, with_respect_to: str, constant: str) -> float:
-        return self.CombustionGas.partial_derivative(of, with_respect_to, constant)
+        return self.combustion_gas.partial_derivative(of, with_respect_to, constant)
 
     @property
     def dhdT_const_p(self) -> float:

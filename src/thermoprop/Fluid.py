@@ -8,8 +8,10 @@ import CoolProp.CoolProp as CP
 
 from .SpeciesDatabase import SpeciesDatabase
 from .ReferenceState import normalize_reference_target
+from ._api import PropertyIntrospectionMixin
+from ._validation import validate_fraction_vector
 
-class Fluid:
+class Fluid(PropertyIntrospectionMixin):
     """
     CoolProp real-fluid property wrapper with a consistent ThermoProp API.
 
@@ -387,21 +389,8 @@ class Fluid:
 
     @staticmethod
     def _validate_fractions(fractions, label: str, *, atol: float = 1e-6) -> np.ndarray:
-        fractions = np.asarray(fractions, dtype=float)
-
-        if fractions.size == 0:
-            raise ValueError(f"{label} cannot be empty")
-
-        if not np.all(np.isfinite(fractions)):
-            raise ValueError(f"{label} must contain only finite values")
-
-        if np.any(fractions < 0.0):
-            raise ValueError(f"{label} must be nonnegative")
-
-        if not np.isclose(fractions.sum(), 1.0, atol=atol):
-            raise ValueError(f"{label} must sum to 1.0")
-
-        return fractions
+        """Validate a mass- or mole-fraction vector and return it as an array."""
+        return validate_fraction_vector(fractions, label, atol=atol)
 
     def _build_state(self):
         """Create and configure a CoolProp AbstractState."""
@@ -529,23 +518,16 @@ class Fluid:
 
 
     def _update_state(self, input_pair, value1: float, value2: float):
-        """Update CoolProp state and keep the old internal alias current."""
+        """Update CoolProp state and keep the old internal alias current.
 
-        try:
-            self._backend.update(input_pair, float(value1), float(value2))
-
-        except Exception:
-            if self._mixture:
-                try:
-                    self._backend.specify_phase(CP.iphase_gas)
-                    self._backend.update(input_pair, float(value1), float(value2))
-                    self._backend.unspecify_phase()
-                except Exception:
-                    self._backend.unspecify_phase()
-                    raise
-            else:
-                raise
-
+        Do not force a phase on failed mixture flashes. A previous implementation
+        retried every failed mixture flash as gas, which could create metastable
+        or invalid dense states and make derivative properties such as speed of
+        sound return NaN.
+        """
+        self._backend.unspecify_phase()
+        self._backend.update(input_pair, float(value1), float(value2))
+        self._backend.unspecify_phase()
         self._pyfluid = self._backend
     # ---------------- Fractions ---------------- #
     @property
@@ -814,16 +796,7 @@ class Fluid:
 
     @property
     def phase(self) -> str:
-        """Thermodynamic phase name, mapped to the old pyfluids-style names."""
-
-        if self._mixture:
-            try:
-                Z = self.compressibility
-                if Z is not None and Z > 0.2:
-                    return "Gas"
-            except Exception:
-                pass
-
+        """Thermodynamic phase name reported by CoolProp."""
         try:
             return Fluid._PHASE_NAMES.get(int(self._backend.phase()), "Unknown")
         except Exception:
@@ -1012,11 +985,16 @@ class Fluid:
 
     @property
     def speed_of_sound(self) -> float:
-        """Speed of sound in m/s."""
+        """Speed of sound in m/s, or None if CoolProp cannot evaluate it."""
         try:
-            return float(self._backend.speed_sound())
+            value = float(self._backend.speed_sound())
         except Exception:
             return None
+
+        if not np.isfinite(value) or value <= 0.0:
+            return None
+
+        return value
 
     @property
     def specific_heat_cp(self) -> float:
@@ -1098,18 +1076,21 @@ class Fluid:
         """
         Vapor quality from 0 to 1.
 
-        For gas mixtures, return 1.0 if phase is gas-like.
+        Quality is only thermodynamically defined in the two-phase region. For
+        backward compatibility, single-phase gas-like states return 1.0 and
+        liquid-like states return 0.0. Supercritical states return NaN.
         """
 
         ph = self.phase
 
         if ph == "TwoPhase":
             try:
-                return float(self._backend.Q())
+                value = float(self._backend.Q())
+                return value if np.isfinite(value) else float("nan")
             except Exception:
                 return float("nan")
 
-        if ph in ("Gas", "Supercritical", "SupercriticalGas"):
+        if ph in ("Gas", "SupercriticalGas"):
             return 1.0
 
         if ph in ("Liquid", "SupercriticalLiquid"):
@@ -1239,6 +1220,8 @@ class Fluid:
         if value is None:
             return "N/A"
         try:
+            if isinstance(value, (float, np.floating)) and not np.isfinite(value):
+                return "N/A"
             return f"{value:{fmt}}"
         except Exception:
             return str(value)
@@ -1484,31 +1467,3 @@ class Fluid:
     def supported_flash_inputs(cls) -> list[str]:
         """Return supported CoolProp state input combinations."""
         return cls.available_flash_inputs()
-
-    @classmethod
-    def supported_properties(cls) -> list[str]:
-        """Return public properties intentionally supported by this wrapper."""
-        unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
-
-        return sorted(
-            name
-            for name, value in vars(cls).items()
-            if isinstance(value, property)
-            and not name.startswith("_")
-            and name not in unsupported
-        )
-
-    @classmethod
-    def show_supported_properties(cls) -> list[str]:
-        """Print and return public properties intentionally supported by this wrapper."""
-        properties = cls.supported_properties()
-
-        for prop in properties:
-            print(prop)
-
-        return properties
-
-    @classmethod
-    def supports_property(cls, property_name: str) -> bool:
-        """Return True if this wrapper intentionally supports property_name."""
-        return property_name in cls.supported_properties()

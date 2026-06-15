@@ -13,6 +13,7 @@ _ROOT = Path(__file__).resolve().parent
 
 @dataclass(frozen=True)
 class CEASpecies:
+    """Immutable metadata summary for one strict CEA species."""
     name: str
     index: int
     molar_mass: float

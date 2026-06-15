@@ -41,6 +41,7 @@ RU_MOL = 8.31446261815324
 
 @dataclass(slots=True)
 class ThermoArrays:
+    """Vectorized CEA thermodynamic properties for one temperature."""
     names: list[str]
     temperature: float
 

@@ -7,9 +7,10 @@ from typing import Tuple
 import numpy as np
 
 from .MaterialDatabase import MaterialDatabase
+from ._api import PropertyIntrospectionMixin
 
 
-class Material:
+class Material(PropertyIntrospectionMixin):
     """
     ThermoProp material-property lookup wrapper.
 
@@ -567,31 +568,3 @@ class Material:
     def supported_flash_pairs(cls) -> list[str]:
         """Return supported two-property material state input combinations."""
         return cls.available_flash_pairs()
-
-    @classmethod
-    def supported_properties(cls) -> list[str]:
-        """Return public properties intentionally supported by this wrapper."""
-        unsupported = getattr(cls, "_UNSUPPORTED_PROPERTIES", set())
-
-        return sorted(
-            name
-            for name, value in vars(cls).items()
-            if isinstance(value, property)
-            and not name.startswith("_")
-            and name not in unsupported
-        )
-
-    @classmethod
-    def show_supported_properties(cls) -> list[str]:
-        """Print and return public properties intentionally supported by this wrapper."""
-        properties = cls.supported_properties()
-
-        for prop in properties:
-            print(prop)
-
-        return properties
-
-    @classmethod
-    def supports_property(cls, property_name: str) -> bool:
-        """Return True if this wrapper intentionally supports property_name."""
-        return property_name in cls.supported_properties()

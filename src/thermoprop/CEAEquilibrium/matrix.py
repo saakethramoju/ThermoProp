@@ -18,6 +18,7 @@ from .thermo import ThermoArrays, chemical_potentials_over_RT, RU_KMOL
 
 @dataclass(slots=True)
 class MatrixSystem:
+    """Linear system and diagnostics for one Newton correction."""
     matrix: np.ndarray
     rhs: np.ndarray
     mu_over_RT: np.ndarray
@@ -27,6 +28,7 @@ class MatrixSystem:
 
 @dataclass(slots=True)
 class MatrixSolution:
+    """Solved Newton corrections unpacked by physical meaning."""
     element_potentials: np.ndarray
     condensed_corrections: np.ndarray
     dln_total_gas_moles: float

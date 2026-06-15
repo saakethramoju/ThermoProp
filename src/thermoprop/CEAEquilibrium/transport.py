@@ -40,6 +40,7 @@ RU = 8.31446261815324
 
 @dataclass(slots=True)
 class TransportOptions:
+    """Options for CEA-style frozen/equilibrium transport evaluation."""
     trace: float = 1e-12
     max_species: int | None = None #50
     equilibrium_derivative_temperature_step: float = 1.0
@@ -48,6 +49,7 @@ class TransportOptions:
 
 @dataclass(slots=True)
 class TransportResult:
+    """Transport-property values returned by the equilibrium wrapper."""
     cp_frozen: float | None
     viscosity_frozen: float | None
     conductivity_frozen: float | None
