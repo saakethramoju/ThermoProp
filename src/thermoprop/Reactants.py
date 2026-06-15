@@ -8,6 +8,7 @@ import numpy as np
 from .CEADatabase import CEA
 from .Propellant import Propellant
 from .CombustionGas import CombustionGas
+from ._state_api import UNSET, is_provided, provided_items
 
 
 ThermoReactant = Propellant | CombustionGas
@@ -202,6 +203,150 @@ class Reactants:
         self._inert_fraction = self._validate_fraction(inert_fraction, "inert_fraction")
         self._igniter_fraction = self._validate_fraction(igniter_fraction, "igniter_fraction")
         self.mixture_ratio = mixture_ratio
+
+
+    def update(
+        self,
+        *,
+        fuels=UNSET,
+        oxidizers=UNSET,
+        mixture_ratio=UNSET,
+        inerts=UNSET,
+        inert_fraction=UNSET,
+        igniters=UNSET,
+        igniter_fraction=UNSET,
+        fuel_weights=UNSET,
+        oxidizer_weights=UNSET,
+        inert_weights=UNSET,
+        igniter_weights=UNSET,
+        fuel_mass_fractions=UNSET,
+        oxidizer_mass_fractions=UNSET,
+        inert_mass_fractions=UNSET,
+        igniter_mass_fractions=UNSET,
+    ):
+        """Update reactant groups, weights, and mixture ratio in one rebuild.
+
+        ``Reactants`` stores precomputed entry masses, moles, and enthalpies.
+        Calling ``update`` with no arguments is therefore useful after one of the
+        contained ``Propellant`` or ``CombustionGas`` objects has changed state:
+        the same reactant objects are reused and the aggregate feed is rebuilt.
+        """
+
+        if is_provided(fuels):
+            self._fuel_inputs = self._parse_group_inputs(fuels, role="fuel")
+
+        if is_provided(oxidizers):
+            self._oxidizer_inputs = self._parse_group_inputs(
+                oxidizers,
+                role="oxidizer",
+            )
+
+        if is_provided(inerts):
+            self._inert_inputs = self._parse_group_inputs(
+                inerts,
+                role="inert",
+                allow_empty=True,
+            )
+
+        if is_provided(igniters):
+            self._igniter_inputs = self._parse_group_inputs(
+                igniters,
+                role="igniter",
+                allow_empty=True,
+            )
+
+        if is_provided(mixture_ratio):
+            value = float(mixture_ratio)
+            if value < 0.0:
+                raise ValueError("mixture_ratio must be nonnegative.")
+            self._mixture_ratio = value
+
+        if is_provided(inert_fraction):
+            self._inert_fraction = self._validate_fraction(
+                inert_fraction,
+                "inert_fraction",
+            )
+
+        if is_provided(igniter_fraction):
+            self._igniter_fraction = self._validate_fraction(
+                igniter_fraction,
+                "igniter_fraction",
+            )
+
+        if is_provided(fuel_weights):
+            if len(fuel_weights) != len(self._fuel_inputs):
+                raise ValueError(
+                    f"Expected {len(self._fuel_inputs)} fuel weights, "
+                    f"got {len(fuel_weights)}."
+                )
+            self._fuel_inputs = [
+                (reactant, float(weight))
+                for (reactant, _), weight in zip(self._fuel_inputs, fuel_weights)
+            ]
+
+        if is_provided(oxidizer_weights):
+            if len(oxidizer_weights) != len(self._oxidizer_inputs):
+                raise ValueError(
+                    f"Expected {len(self._oxidizer_inputs)} oxidizer weights, "
+                    f"got {len(oxidizer_weights)}."
+                )
+            self._oxidizer_inputs = [
+                (reactant, float(weight))
+                for (reactant, _), weight in zip(self._oxidizer_inputs, oxidizer_weights)
+            ]
+
+        if is_provided(inert_weights):
+            if len(inert_weights) != len(self._inert_inputs):
+                raise ValueError(
+                    f"Expected {len(self._inert_inputs)} inert weights, "
+                    f"got {len(inert_weights)}."
+                )
+            self._inert_inputs = [
+                (reactant, float(weight))
+                for (reactant, _), weight in zip(self._inert_inputs, inert_weights)
+            ]
+
+        if is_provided(igniter_weights):
+            if len(igniter_weights) != len(self._igniter_inputs):
+                raise ValueError(
+                    f"Expected {len(self._igniter_inputs)} igniter weights, "
+                    f"got {len(igniter_weights)}."
+                )
+            self._igniter_inputs = [
+                (reactant, float(weight))
+                for (reactant, _), weight in zip(self._igniter_inputs, igniter_weights)
+            ]
+
+        if is_provided(fuel_mass_fractions):
+            self._fuel_inputs = self._updated_group_weights(
+                self._fuel_inputs,
+                fuel_mass_fractions,
+                role="fuel",
+            )
+
+        if is_provided(oxidizer_mass_fractions):
+            self._oxidizer_inputs = self._updated_group_weights(
+                self._oxidizer_inputs,
+                oxidizer_mass_fractions,
+                role="oxidizer",
+            )
+
+        if is_provided(inert_mass_fractions):
+            self._inert_inputs = self._updated_group_weights(
+                self._inert_inputs,
+                inert_mass_fractions,
+                role="inert",
+            )
+
+        if is_provided(igniter_mass_fractions):
+            self._igniter_inputs = self._updated_group_weights(
+                self._igniter_inputs,
+                igniter_mass_fractions,
+                role="igniter",
+            )
+
+        self._rebuild_entries()
+        return self
 
     @staticmethod
     def _validate_fraction(value: float, name: str) -> float:

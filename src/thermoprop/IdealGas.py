@@ -12,6 +12,7 @@ from .ReferenceState import normalize_reference_target
 from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
 from ._validation import validate_fraction_vector
+from ._state_api import UNSET, is_provided, provided_items
 
 class IdealGas(PropertyIntrospectionMixin):
     """
@@ -141,6 +142,7 @@ class IdealGas(PropertyIntrospectionMixin):
 
         self._reference_target = self._normalize_reference_target(set_reference)
         self._reference_offsets: tuple[float, float, float] | None = None
+        self._basis = basis
 
         self._species_ids: List[str] = []
         self._display_names: List[str] = []
@@ -240,6 +242,80 @@ class IdealGas(PropertyIntrospectionMixin):
         pm.config["unit_matter"] = "kg"
         pm.config["unit_volume"] = "m3"
         pm.config["unit_molar"] = "mol"
+
+    def update(
+        self,
+        fluid=UNSET,
+        *,
+        basis=UNSET,
+        pressure=UNSET,
+        enthalpy=UNSET,
+        temperature=UNSET,
+        internal_energy=UNSET,
+        density=UNSET,
+        quality=UNSET,
+        mole_fractions=UNSET,
+        mass_fractions=UNSET,
+        set_reference=UNSET,
+    ):
+        """Update composition and/or thermodynamic state in place.
+
+        This method batches changes that would otherwise require several setter
+        calls.  A supported state pair is solved with one internal state update;
+        a single state value preserves the existing setter behavior.
+        Structural changes, such as changing species or reference target, rebuild
+        the wrapper using the current state unless a new state pair is supplied.
+        """
+
+        if is_provided(quality) and quality is not None:
+            raise ValueError("IdealGas does not support vapor quality.")
+
+        state_updates = provided_items(
+            {
+                "pressure": pressure,
+                "enthalpy": enthalpy,
+                "temperature": temperature,
+                "internal_energy": internal_energy,
+                "density": density,
+            }
+        )
+
+        structural = any(is_provided(v) for v in (fluid, basis, set_reference))
+
+        if structural:
+            new_fluid = self._composition_argument() if not is_provided(fluid) else fluid
+            new_basis = self._basis if not is_provided(basis) else basis
+            new_reference = self._reference_target if not is_provided(set_reference) else set_reference
+
+            if len(state_updates) >= 2:
+                state_values = state_updates
+            else:
+                state_values = dict(self._last_state_values or {})
+                state_values.update(state_updates)
+
+            rebuilt = self.__class__(
+                new_fluid,
+                basis=new_basis,
+                set_reference=new_reference,
+                **state_values,
+            )
+            self.__dict__.update(rebuilt.__dict__)
+            return self
+
+        if is_provided(mole_fractions):
+            self.mole_fractions = mole_fractions
+
+        if is_provided(mass_fractions):
+            self.mass_fractions = mass_fractions
+
+        if len(state_updates) == 1:
+            name, value = next(iter(state_updates.items()))
+            setattr(self, name, value)
+        elif len(state_updates) > 1:
+            self._set_state(**state_updates)
+
+        return self
+
 
     # ---------------- Reference-state matching ---------------- #
 

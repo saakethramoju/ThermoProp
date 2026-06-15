@@ -11,6 +11,8 @@ lightweight registry loaders added for 1.0.1.
 
 from __future__ import annotations
 
+__version__ = "1.0.2"
+
 from .Fluid import Fluid
 from .IdealGas import IdealGas
 from .Propellant import Propellant
@@ -96,6 +98,7 @@ add_alias = add_species_alias
 
 
 __all__ = [
+    "__version__",
     "Fluid",
     "IdealGas",
     "Propellant",

@@ -36,6 +36,33 @@ pip install thermoprop
 
 ThermoProp requires Python 3.11 or newer.
 
+## 1.0.2 release focus
+
+ThermoProp 1.0.2 adds a consistent mutable-state API for iterative solvers such as transient and steady-state network models. Public wrappers now support batched `update()` calls while preserving the existing simple property setters.
+
+Example:
+
+```python
+from thermoprop import Propellant, Reactants, Equilibrium
+
+fuel = Propellant("rp-1", temperature=298.15, pressure=2.0e6)
+ox = Propellant("lox", temperature=90.17, pressure=2.0e6)
+reactants = Reactants(fuels=fuel, oxidizers=ox, mixture_ratio=2.2)
+
+eq = Equilibrium(reactants, pressure=2.0e6)
+
+# Later, inside a network iteration:
+fuel.update(pressure=2.1e6)
+ox.update(pressure=2.1e6)
+reactants.update(mixture_ratio=2.4)
+eq.update(reactants=reactants, pressure=2.1e6, solve=False)
+eq.solve()
+```
+
+For backward compatibility, direct setters such as `eq.pressure = ...`, `gas.temperature = ...`, and `propellant.pressure_temperature = (...)` still update immediately.
+
+This release does not change equilibrium solver math, condensed-phase selection rules, convergence behavior, transport equations, or CEA thermodynamic data evaluation.
+
 ## 1.0.1 release focus
 
 ThermoProp 1.0.1 is a cleanup, API-stability, and low-risk performance release. It keeps the 1.0.0 solver equations and property-model behavior intact while reducing repeated helper code, adding missing wrapper introspection support to `Equilibrium`, clarifying internal CEA-equilibrium documentation, adding snake_case `Equilibrium.combustion_gas` aliases, moving large registry data into packaged JSON files, vectorizing CEA thermo/transport helper paths, preserving class-based top-level imports, and cleaning the release source tree.

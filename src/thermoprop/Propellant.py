@@ -13,6 +13,7 @@ from .SpeciesDatabase import SpeciesDatabase
 from .ReferenceState import normalize_reference_target
 from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
+from ._state_api import UNSET, is_provided, provided_items
 
 class Propellant(PropertyIntrospectionMixin):
     """
@@ -833,6 +834,56 @@ class Propellant(PropertyIntrospectionMixin):
             f"Propellant.{property_name} is not supported by RocketProps or CEA "
             "for this wrapper."
         )
+
+    def update(
+        self,
+        propellant=UNSET,
+        *,
+        temperature=UNSET,
+        pressure=UNSET,
+        quality=UNSET,
+        set_reference=UNSET,
+    ):
+        """Update the propellant identity and/or state in place.
+
+        State-only updates reuse the existing RocketProps/CEA metadata and clear
+        cached properties once.  Changing the propellant name or reference target
+        rebuilds the object while preserving the current state unless replacement
+        state inputs are supplied.
+        """
+
+        structural = is_provided(propellant) or is_provided(set_reference)
+
+        if structural:
+            new_propellant = self._input_name if not is_provided(propellant) else propellant
+            new_temperature = self.temperature if not is_provided(temperature) else temperature
+            new_pressure = self.pressure if not is_provided(pressure) else pressure
+            new_quality = self._quality_override if not is_provided(quality) else quality
+            new_reference = self._reference_target if not is_provided(set_reference) else set_reference
+
+            rebuilt = self.__class__(
+                new_propellant,
+                temperature=new_temperature,
+                pressure=new_pressure,
+                quality=new_quality,
+                set_reference=new_reference,
+            )
+            self.__dict__.update(rebuilt.__dict__)
+            return self
+
+        if is_provided(pressure) and is_provided(temperature):
+            self.pressure_temperature = (pressure, temperature)
+        else:
+            if is_provided(temperature):
+                self.temperature = temperature
+            if is_provided(pressure):
+                self.pressure = pressure
+
+        if is_provided(quality):
+            self.quality = quality
+
+        return self
+
 
     # ---------------- State setters ---------------- #
 

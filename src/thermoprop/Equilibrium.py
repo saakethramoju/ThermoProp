@@ -32,6 +32,7 @@ from .Reactants import Reactants
 from .CombustionGas import CombustionGas
 from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
+from ._state_api import UNSET, is_provided, provided_items
 
 
 from .CEAEquilibrium.state import FeedState, EquilibriumState, EquilibriumResults
@@ -245,8 +246,9 @@ class Equilibrium(PropertyIntrospectionMixin):
         self._summary: EquilibriumSolveSummary | None = None
         self._gas_cache: CombustionGas | None = None
         self._cea_extended_range_hp_warning: bool = False
+        self._dirty: bool = True
 
-        self._solve()
+        self.solve()
 
     def _solver_config(self) -> EquilibriumConfig:
         """Collect current public inputs into an immutable solver config."""
@@ -288,6 +290,128 @@ class Equilibrium(PropertyIntrospectionMixin):
         self._results = run.results
         self._summary = run.summary
         self._cea_extended_range_hp_warning = run.cea_extended_range_hp_warning
+
+    def solve(self):
+        """Solve or re-solve the current equilibrium state in place.
+
+        This method is intentionally explicit so iterative callers can batch
+        input changes with ``update(..., solve=False)`` and solve exactly once.
+        The constructor and property setters still solve immediately for backward
+        compatibility with ThermoProp 1.0.x usage.
+        """
+
+        self._reactants = resolve_reactants(
+            self._input,
+            basis=self._basis,
+            temperature=self._temperature_input,
+            pressure=self._pressure,
+        )
+        self._solve()
+        self._dirty = False
+        return self
+
+    def update(
+        self,
+        reactants=UNSET,
+        *,
+        mode=UNSET,
+        temperature=UNSET,
+        pressure=UNSET,
+        basis=UNSET,
+        guess_temperature=UNSET,
+        candidates=UNSET,
+        include_condensed=UNSET,
+        include_ions=UNSET,
+        include_electron=UNSET,
+        combustion_gas_trace=UNSET,
+        combustion_gas_max_species=UNSET,
+        max_iterations=UNSET,
+        max_outer_iterations=UNSET,
+        verbose=UNSET,
+        equilibrium_derivative_temperature_step=UNSET,
+        solve: bool = True,
+    ):
+        """Update equilibrium inputs and optionally re-solve in place.
+
+        Parameters are the same public inputs accepted by the constructor.
+        Use ``solve=False`` inside residual loops to change several inputs and
+        call :meth:`solve` yourself when the state is ready.  With the default
+        ``solve=True`` this method preserves the old immediate-update behavior.
+        """
+
+        if is_provided(reactants):
+            self._input = reactants
+
+        if is_provided(mode):
+            self._mode = str(mode).lower().strip()
+
+        if is_provided(temperature):
+            if self._mode == "tp":
+                self._temperature_input = None if temperature is None else float(temperature)
+            else:
+                if temperature is not None:
+                    self._guess_temperature = float(temperature)
+
+        if is_provided(pressure):
+            self._pressure = None if pressure is None else float(pressure)
+
+        if is_provided(basis):
+            self._basis = basis
+
+        if is_provided(guess_temperature):
+            self._guess_temperature = float(guess_temperature)
+
+        if is_provided(candidates):
+            self._candidates = candidates
+
+        if is_provided(include_condensed):
+            self._include_condensed = bool(include_condensed)
+
+        if is_provided(include_ions):
+            self._include_ions = bool(include_ions)
+
+        if is_provided(include_electron):
+            self._include_electron = bool(include_electron)
+
+        if is_provided(combustion_gas_trace):
+            self._combustion_gas_trace = float(combustion_gas_trace)
+
+        if is_provided(combustion_gas_max_species):
+            self._combustion_gas_max_species = combustion_gas_max_species
+
+        if is_provided(max_iterations):
+            self._max_iterations = int(max_iterations)
+
+        if is_provided(max_outer_iterations):
+            self._max_outer_iterations = int(max_outer_iterations)
+
+        if is_provided(verbose):
+            self._verbose = bool(verbose)
+
+        if is_provided(equilibrium_derivative_temperature_step):
+            self._equilibrium_derivative_temperature_step = float(
+                equilibrium_derivative_temperature_step
+            )
+
+        self._reactants = resolve_reactants(
+            self._input,
+            basis=self._basis,
+            temperature=self._temperature_input,
+            pressure=self._pressure,
+        )
+        self._gas_cache = None
+        self._dirty = True
+
+        if solve:
+            return self.solve()
+
+        return self
+
+    @property
+    def is_stale(self) -> bool:
+        """Whether inputs have changed since the last completed solve."""
+
+        return self._dirty
 
     def _tp_neighbor_state(
         self,
@@ -384,8 +508,7 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @pressure.setter
     def pressure(self, value: float) -> None:
-        self._pressure = float(value)
-        self._solve()
+        self.update(pressure=value, solve=True)
 
     @property
     def temperature(self) -> float:
@@ -393,11 +516,7 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @temperature.setter
     def temperature(self, value: float) -> None:
-        if self._mode == "tp":
-            self._temperature_input = float(value)
-        else:
-            self._guess_temperature = float(value)
-        self._solve()
+        self.update(temperature=value, solve=True)
 
     @property
     def pressure_temperature(self) -> tuple[float, float]:
@@ -405,10 +524,7 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @pressure_temperature.setter
     def pressure_temperature(self, values: tuple[float, float]) -> None:
-        self._pressure = float(values[0])
-        self._temperature_input = float(values[1])
-        self._mode = "tp"
-        self._solve()
+        self.update(pressure=values[0], temperature=values[1], mode="tp", solve=True)
 
     @property
     def TP(self) -> tuple[float, float]:
@@ -416,10 +532,7 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @TP.setter
     def TP(self, values: tuple[float, float]) -> None:
-        self._temperature_input = float(values[0])
-        self._pressure = float(values[1])
-        self._mode = "tp"
-        self._solve()
+        self.update(temperature=values[0], pressure=values[1], mode="tp", solve=True)
 
     @property
     def HP(self) -> tuple[float, float]:

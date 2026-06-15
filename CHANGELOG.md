@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.2
+
+### Added
+
+* Added batched `update()` methods across the public wrapper API: `Fluid`, `IdealGas`, `Propellant`, `CombustionGas`, `Material`, `Reactants`, and `Equilibrium`.
+* Added explicit `Equilibrium.solve()` and `Equilibrium.is_stale` for iterative solvers that want to batch changes before solving.
+* Added shared state-update helpers so wrapper APIs can distinguish omitted arguments from intentionally supplied `None` values.
+
+### Improved
+
+* `Reactants.update()` rebuilds feed entries once after multiple changes, and can be called with no arguments to refresh entries after contained propellant/gas states change.
+* `Equilibrium.update(..., solve=False)` lets transient and steady-state workflows change reactants, pressure, temperature, mode, and solver options without immediately running the equilibrium solve.
+* State-only wrapper updates reuse existing backend metadata and caches where possible instead of forcing object reconstruction.
+* Existing simple property setters remain available and continue to update immediately for backward compatibility.
+
+### Notes
+
+* This is a state-management/API refactor only. It does not change TP/HP solver equations, convergence criteria, condensed-phase rules, transport formulas, CEA polynomial evaluation, or warm-start behavior.
+
 ## 1.0.1
 
 ### Improved

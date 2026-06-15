@@ -9,6 +9,7 @@ import numpy as np
 from .MaterialDatabase import MaterialDatabase
 from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
+from ._state_api import UNSET, is_provided, provided_items
 
 
 class Material(PropertyIntrospectionMixin):
@@ -184,8 +185,46 @@ class Material(PropertyIntrospectionMixin):
 
         self.temperature = temperature
 
+
+
+    def update(
+        self,
+        material=UNSET,
+        *,
+        temperature=UNSET,
+        pressure=UNSET,
+        allow_extrapolation=UNSET,
+    ):
+        """Update material selection or temperature in place.
+
+        Materials are temperature-dependent in ThermoProp.  Passing a non-None
+        pressure is rejected to match the existing pressure setter behavior.
+        """
+
+        if is_provided(pressure) and pressure is not None:
+            raise ValueError("Material properties are only temperature-dependent.")
+
+        if is_provided(material):
+            new_temperature = self.temperature if not is_provided(temperature) else temperature
+            new_allow = self.allow_extrapolation if not is_provided(allow_extrapolation) else allow_extrapolation
+            rebuilt = self.__class__(
+                material,
+                temperature=new_temperature,
+                allow_extrapolation=new_allow,
+            )
+            self.__dict__.update(rebuilt.__dict__)
+            return self
+
+        if is_provided(allow_extrapolation):
+            self.allow_extrapolation = bool(allow_extrapolation)
+
+        if is_provided(temperature):
+            self.temperature = temperature
+
+        return self
+
     def set_state(self, *, temperature: float):
-        self.temperature = temperature
+        self.update(temperature=temperature)
         return self
 
     # ---------------- Data access ---------------- #
