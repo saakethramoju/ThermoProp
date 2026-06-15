@@ -57,10 +57,6 @@ class ThermoArrays:
     valid: np.ndarray                       # bool mask
 
 
-def _thermo_molar_single(name: str, temperature: float) -> tuple[float, float, float]:
-    return CEA.thermo_molar(name, temperature)
-
-
 def thermo_arrays(
     names: Iterable[str],
     temperature: float,
@@ -68,19 +64,12 @@ def thermo_arrays(
     on_error: str = "raise",
 ) -> ThermoArrays:
     """
-    Evaluate CEA thermo for many species.
+    Evaluate CEA thermo for many species at one temperature.
 
-    Parameters
-    ----------
-    names:
-        CEA species names.
-
-    temperature:
-        Temperature [K].
-
-    on_error:
-        "raise" -> fail immediately
-        "nan"   -> fill failed species with NaN and mark valid=False
+    The heavy NASA-9 polynomial work is delegated to the vectorized
+    :class:`CEADatabase` array API so TP/HP solver iterations avoid one Python
+    call per species for Cp, h, and s.  Numerical formulas and units are
+    unchanged from the scalar CEA methods.
     """
     names = list(names)
     T = float(temperature)
@@ -88,28 +77,11 @@ def thermo_arrays(
     if T <= 0.0:
         raise ValueError("temperature must be positive.")
 
-    ns = len(names)
-
-    cp = np.empty(ns, dtype=float)
-    h = np.empty(ns, dtype=float)
-    s = np.empty(ns, dtype=float)
-    valid = np.ones(ns, dtype=bool)
-
-    for i, name in enumerate(names):
-        try:
-            cp_i, h_i, s_i = _thermo_molar_single(name, T)
-            cp[i] = float(cp_i)
-            h[i] = float(h_i)
-            s[i] = float(s_i)
-        except Exception:
-            if on_error == "raise":
-                raise
-            if on_error != "nan":
-                raise ValueError("on_error must be 'raise' or 'nan'.")
-            cp[i] = np.nan
-            h[i] = np.nan
-            s[i] = np.nan
-            valid[i] = False
+    cp, h, s, valid = CEA.thermo_molar_array(
+        names,
+        T,
+        on_error=on_error,
+    )
 
     h0_over_RT = h / (RU_KMOL * T)
     s0_over_R = s / RU_KMOL

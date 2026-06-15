@@ -786,6 +786,363 @@ class CEADatabase:
 
         return float(np.dot(x, mw_kg_per_kmol)) / 1000.0
 
+
+    def _indices_for_names(self, names: list[str] | tuple[str, ...]) -> tuple[list[str], np.ndarray]:
+        """Resolve strict CEA names and return their thermo-table indices."""
+        resolved = [self.resolve_name(name) for name in names]
+        indices = np.fromiter((self._thermo_index[name] for name in resolved), dtype=np.int64)
+        return resolved, indices
+
+    def molecular_weight_array(self, names: list[str] | tuple[str, ...]) -> np.ndarray:
+        """Return molecular weights for many CEA species [kg/kmol]."""
+        _, indices = self._indices_for_names(names)
+        return np.asarray(self._thermo["mw"][indices], dtype=float)
+
+    def molar_mass_array(self, names: list[str] | tuple[str, ...]) -> np.ndarray:
+        """Return molar masses for many CEA species [kg/mol]."""
+        return self.molecular_weight_array(names) / 1000.0
+
+    def _interval_indices_for_indices(
+        self,
+        indices: np.ndarray,
+        names: list[str],
+        temperature: float,
+        *,
+        on_error: str = "raise",
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorized NASA-polynomial interval lookup for thermo data."""
+        T = float(temperature)
+        n_intervals = np.asarray(self._thermo["n_intervals"][indices], dtype=np.int64)
+        ranges = np.asarray(self._thermo["t_ranges"][indices], dtype=float)
+        valid_slots = np.arange(ranges.shape[1])[None, :] < n_intervals[:, None]
+        in_interval = valid_slots & (ranges[:, :, 0] <= T) & (T <= ranges[:, :, 1])
+
+        interval_indices = np.zeros(indices.size, dtype=np.int64)
+        valid = n_intervals > 0
+
+        has_direct_interval = np.any(in_interval, axis=1)
+        interval_indices[has_direct_interval] = np.argmax(in_interval[has_direct_interval], axis=1)
+
+        unresolved = np.nonzero(valid & ~has_direct_interval)[0]
+        for row in unresolved:
+            try:
+                interval_indices[row] = self.interval_index(names[row], T)
+            except Exception:
+                valid[row] = False
+                if on_error == "raise":
+                    raise
+
+        if on_error not in {"raise", "nan"}:
+            raise ValueError("on_error must be 'raise' or 'nan'.")
+
+        if on_error == "raise" and np.any(~valid):
+            bad = names[int(np.nonzero(~valid)[0][0])]
+            raise ValueError(f"{bad!r} has no valid NASA polynomial ranges.")
+
+        return interval_indices, valid
+
+    def thermo_molar_array(
+        self,
+        names: list[str] | tuple[str, ...],
+        temperature: float,
+        *,
+        on_error: str = "raise",
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Vectorized CEA NASA-9 thermo evaluation for many species.
+
+        Returns
+        -------
+        cp, h, s0, valid:
+            Cp [J/kmol-K], enthalpy [J/kmol], standard entropy [J/kmol-K],
+            and a boolean validity mask.  ``on_error='raise'`` preserves the
+            scalar API behavior.  ``on_error='nan'`` fills invalid species with
+            NaN and marks them invalid.
+        """
+        T = float(temperature)
+        if T <= 0.0:
+            raise ValueError("temperature must be positive.")
+
+        if on_error not in {"raise", "nan"}:
+            raise ValueError("on_error must be 'raise' or 'nan'.")
+
+        resolved, indices = self._indices_for_names(tuple(names))
+        interval_indices, valid = self._interval_indices_for_indices(
+            indices,
+            resolved,
+            T,
+            on_error=on_error,
+        )
+
+        coeffs = np.asarray(self._thermo["coeffs"][indices, interval_indices], dtype=float)
+        finite_coeffs = np.all(np.isfinite(coeffs[:, :7]), axis=1)
+        valid &= finite_coeffs
+
+        if on_error == "raise" and np.any(~valid):
+            bad = resolved[int(np.nonzero(~valid)[0][0])]
+            raise ValueError(f"{bad!r} has invalid NASA-9 thermo coefficients.")
+
+        a0 = coeffs[:, 0]
+        a1 = coeffs[:, 1]
+        a2 = coeffs[:, 2]
+        a3 = coeffs[:, 3]
+        a4 = coeffs[:, 4]
+        a5 = coeffs[:, 5]
+        a6 = coeffs[:, 6]
+        b1 = coeffs[:, 7]
+        b2 = coeffs[:, 8]
+
+        lnT = np.log(T)
+        invT = 1.0 / T
+        invT2 = invT * invT
+        T2 = T * T
+        T3 = T2 * T
+        T4 = T2 * T2
+
+        cp_over_R = (
+            a0 * invT2
+            + a1 * invT
+            + a2
+            + a3 * T
+            + a4 * T2
+            + a5 * T3
+            + a6 * T4
+        )
+
+        h_over_RT = (
+            -a0 * invT2
+            + a1 * lnT * invT
+            + a2
+            + a3 * T / 2.0
+            + a4 * T2 / 3.0
+            + a5 * T3 / 4.0
+            + a6 * T4 / 5.0
+            + b1 * invT
+        )
+
+        s_over_R = (
+            -a0 * invT2 / 2.0
+            - a1 * invT
+            + a2 * lnT
+            + a3 * T
+            + a4 * T2 / 2.0
+            + a5 * T3 / 3.0
+            + a6 * T4 / 4.0
+            + b2
+        )
+
+        cp = cp_over_R * self._RU_KMOL
+        h = h_over_RT * self._RU_KMOL * T
+        s0 = s_over_R * self._RU_KMOL
+
+        if on_error == "nan" and np.any(~valid):
+            cp = cp.astype(float, copy=True)
+            h = h.astype(float, copy=True)
+            s0 = s0.astype(float, copy=True)
+            cp[~valid] = np.nan
+            h[~valid] = np.nan
+            s0[~valid] = np.nan
+
+        return cp, h, s0, valid
+
+    def thermo_mass_array(
+        self,
+        names: list[str] | tuple[str, ...],
+        temperature: float,
+        *,
+        on_error: str = "raise",
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Vectorized Cp, h, and s0 on a mass basis [J/kg, J/kg-K]."""
+        cp, h, s0, valid = self.thermo_molar_array(names, temperature, on_error=on_error)
+        mw = self.molecular_weight_array(tuple(names))
+        return cp / mw, h / mw, s0 / mw, valid
+
+    def _transport_interval_indices_for_indices(
+        self,
+        indices: np.ndarray,
+        names: list[str],
+        temperature: float,
+        kind: str,
+        *,
+        on_error: str = "raise",
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorized interval lookup for CEA transport fits."""
+        T = float(temperature)
+        kind = kind.lower()
+        if kind in {"viscosity", "mu"}:
+            counts = np.asarray(self._transport["n_v"][indices], dtype=np.int64)
+            ranges = np.asarray(self._transport["v_ranges"][indices], dtype=float)
+        elif kind in {"conductivity", "thermal_conductivity", "k"}:
+            counts = np.asarray(self._transport["n_c"][indices], dtype=np.int64)
+            ranges = np.asarray(self._transport["c_ranges"][indices], dtype=float)
+        else:
+            raise ValueError("kind must be 'viscosity' or 'conductivity'.")
+
+        valid_slots = np.arange(ranges.shape[1])[None, :] < counts[:, None]
+        in_interval = valid_slots & (ranges[:, :, 0] <= T) & (T <= ranges[:, :, 1])
+
+        interval_indices = np.zeros(indices.size, dtype=np.int64)
+        valid = counts > 0
+        has_direct_interval = np.any(in_interval, axis=1)
+        interval_indices[has_direct_interval] = np.argmax(in_interval[has_direct_interval], axis=1)
+
+        unresolved = np.nonzero(valid & ~has_direct_interval)[0]
+        for row in unresolved:
+            try:
+                interval_indices[row] = self.transport_interval_index(names[row], T, kind)
+            except Exception:
+                valid[row] = False
+                if on_error == "raise":
+                    raise
+
+        if on_error == "raise" and np.any(~valid):
+            bad = names[int(np.nonzero(~valid)[0][0])]
+            raise ValueError(f"{bad!r} has no valid CEA {kind} transport fit.")
+
+        return interval_indices, valid
+
+    def transport_fit_array(
+        self,
+        names: list[str] | tuple[str, ...],
+        temperature: float,
+        kind: str,
+        *,
+        on_error: str = "raise",
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorized CEA transport fit evaluation for many species or pairs."""
+        self._require_transport_loaded()
+        if on_error not in {"raise", "nan"}:
+            raise ValueError("on_error must be 'raise' or 'nan'.")
+
+        raw_names = [str(name).strip() for name in names]
+        indices = np.empty(len(raw_names), dtype=np.int64)
+        valid = np.ones(len(raw_names), dtype=bool)
+
+        for i, raw in enumerate(raw_names):
+            try:
+                indices[i] = self.transport_index(raw)
+            except Exception:
+                valid[i] = False
+                indices[i] = 0
+                if on_error == "raise":
+                    raise
+
+        interval_indices, interval_valid = self._transport_interval_indices_for_indices(
+            indices,
+            raw_names,
+            temperature,
+            kind,
+            on_error=on_error,
+        )
+        valid &= interval_valid
+
+        kind = kind.lower()
+        if kind in {"viscosity", "mu"}:
+            coeffs = np.asarray(self._transport["v_coeffs"][indices, interval_indices], dtype=float)
+        elif kind in {"conductivity", "thermal_conductivity", "k"}:
+            coeffs = np.asarray(self._transport["c_coeffs"][indices, interval_indices], dtype=float)
+        else:
+            raise ValueError("kind must be 'viscosity' or 'conductivity'.")
+
+        A = coeffs[:, 0]
+        B = coeffs[:, 1]
+        C = coeffs[:, 2]
+        D = coeffs[:, 3]
+        T = float(temperature)
+        values = np.exp(A * np.log(T) + B / T + C / (T * T) + D)
+
+        if on_error == "nan" and np.any(~valid):
+            values = values.astype(float, copy=True)
+            values[~valid] = np.nan
+
+        return values, valid
+
+    def viscosity_array(
+        self,
+        names: list[str] | tuple[str, ...],
+        temperature: float,
+        *,
+        on_error: str = "raise",
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorized pure-species viscosities [Pa-s]."""
+        values, valid = self.transport_fit_array(
+            names,
+            temperature,
+            "viscosity",
+            on_error=on_error,
+        )
+        return values * 1e-7, valid
+
+    def conductivity_array(
+        self,
+        names: list[str] | tuple[str, ...],
+        temperature: float,
+        *,
+        on_error: str = "raise",
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorized pure-species frozen thermal conductivities [W/m-K]."""
+        values, valid = self.transport_fit_array(
+            names,
+            temperature,
+            "conductivity",
+            on_error=on_error,
+        )
+        return values * 1e-4, valid
+
+    def binary_viscosity_interaction_matrix(
+        self,
+        names: list[str] | tuple[str, ...],
+        temperature: float,
+        *,
+        pure_viscosities: np.ndarray | None = None,
+        molecular_weights: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Return CEA eta_ij binary interaction matrix [Pa-s]."""
+        names = [self.resolve_name(name) for name in names]
+        ns = len(names)
+        if pure_viscosities is None:
+            pure_viscosities, _ = self.viscosity_array(names, temperature, on_error="nan")
+        else:
+            pure_viscosities = np.asarray(pure_viscosities, dtype=float)
+
+        if molecular_weights is None:
+            molecular_weights = self.molecular_weight_array(names)
+        else:
+            molecular_weights = np.asarray(molecular_weights, dtype=float)
+
+        Mi = molecular_weights[:, None]
+        Mj = molecular_weights[None, :]
+        mui = pure_viscosities[:, None]
+        muj = pure_viscosities[None, :]
+
+        ratio = np.sqrt(Mj / Mi)
+        eta = 5.656854 * mui * np.sqrt(Mj / (Mi + Mj))
+        eta = eta / (1.0 + np.sqrt(ratio * mui / muj)) ** 2
+        np.fill_diagonal(eta, pure_viscosities)
+
+        pair_keys: list[str] = []
+        pair_positions: list[tuple[int, int]] = []
+        for i, name_i in enumerate(names):
+            for j, name_j in enumerate(names):
+                if i == j:
+                    continue
+                key12 = f"{name_i}|{name_j}"
+                key21 = f"{name_j}|{name_i}"
+                if key12 in self._transport_index:
+                    pair_keys.append(key12)
+                    pair_positions.append((i, j))
+                elif key21 in self._transport_index:
+                    pair_keys.append(key21)
+                    pair_positions.append((i, j))
+
+        if pair_keys:
+            values, valid = self.viscosity_array(pair_keys, temperature, on_error="nan")
+            for (i, j), value, ok in zip(pair_positions, values, valid):
+                if ok and np.isfinite(value):
+                    eta[i, j] = float(value)
+
+        return eta
+
     def show_species(self) -> list[str]:
         for name in self.names:
             print(name)

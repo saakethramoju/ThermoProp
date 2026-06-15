@@ -24,12 +24,10 @@ src/thermoprop/
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
-from .CEADatabase import CEA
 from .Reactants import Reactants
 from .CombustionGas import CombustionGas
 from ._api import PropertyIntrospectionMixin
@@ -37,14 +35,14 @@ from ._formatting import format_optional, rounded_dict, format_rows
 
 
 from .CEAEquilibrium.state import FeedState, EquilibriumState, EquilibriumResults
-from .CEAEquilibrium.species import CHARGE_ELEMENT
-from .CEAEquilibrium.condensed import (
-    CondensedOptions,
-    CondensedSolveResult,
-    solve_with_condensed_phases_tp,
-    solve_with_condensed_phases_hp,
+from .CEAEquilibrium.facade import (
+    EquilibriumConfig,
+    EquilibriumSolveSummary,
+    resolve_reactants,
+    run_equilibrium_solve,
+    solver_options,
 )
-from .CEAEquilibrium.tp_solver import TPSolverOptions, solve_tp
+from .CEAEquilibrium.tp_solver import solve_tp
 from .CEAEquilibrium.properties import (
     build_results,
     enthalpy as state_enthalpy,
@@ -64,200 +62,6 @@ from .CEAEquilibrium.properties import (
     speed_of_sound_equilibrium,
     frozen_mixture_derivatives,
 )
-from .CEAEquilibrium.transport import (
-    TransportOptions,
-    build_transport_values,
-)
-
-
-@dataclass(slots=True)
-class EquilibriumSolveSummary:
-    """User-facing convergence and condensed-phase summary."""
-    success: bool
-    message: str
-    mode: str
-    iterations: int
-    outer_iterations: int
-    inserted_condensed_species: list[str]
-    removed_condensed_species: list[str]
-    max_element_error: float | None = None
-    enthalpy_error: float | None = None
-    residual_norm: float | None = None
-
-
-class _DictReactants:
-    """
-    Adapter for raw composition dictionaries.
-
-    Dict interpretation:
-        {"CO2": 0.5, "H2O": 0.5}
-
-    basis:
-        "mole" or "mass"
-
-    For HP, temperature is required so reactant enthalpy is defined.
-    """
-
-    def __init__(
-        self,
-        composition: dict[str, float],
-        *,
-        basis: str = "mole",
-        temperature: float | None = None,
-        pressure: float | None = None,
-    ):
-        if not composition:
-            raise ValueError("Reactant composition dictionary cannot be empty.")
-
-        self.composition = {
-            CEA.resolve_name(name) if hasattr(CEA, "resolve_name") else name: float(value)
-            for name, value in composition.items()
-            if float(value) > 0.0
-        }
-
-        if not self.composition:
-            raise ValueError("Reactant composition dictionary must contain positive amounts.")
-
-        self.basis = basis.lower()
-        self.temperature = temperature
-        self.pressure = pressure
-
-        if self.basis not in {"mole", "mass"}:
-            raise ValueError("dict reactant basis must be 'mole' or 'mass'.")
-
-        total = sum(self.composition.values())
-        raw = {name: value / total for name, value in self.composition.items()}
-
-        if self.basis == "mole":
-            mole_fractions = raw
-        else:
-            denom = 0.0
-            for name, y in raw.items():
-                denom += y / CEA.molar_mass(name)
-            mole_fractions = {
-                name: (y / CEA.molar_mass(name)) / denom
-                for name, y in raw.items()
-            }
-
-        self.mole_fractions = mole_fractions
-
-        mw = sum(
-            x * CEA.molar_mass(name)
-            for name, x in mole_fractions.items()
-        )
-
-        self.total_mass = 1.0
-        self.total_moles = 1.0 / mw
-        self.total_kmoles = self.total_moles / 1000.0
-        self.molecular_weight = mw
-        self.molecular_weight_kg_per_kmol = mw * 1000.0
-
-    @property
-    def element_moles_per_kg(self) -> dict[str, float]:
-        totals: dict[str, float] = {}
-
-        for name, x in self.mole_fractions.items():
-            n_mol_per_kg = x * self.total_moles
-            n_kmol_per_kg = n_mol_per_kg / 1000.0
-
-            comp = CEA.elemental_composition(name)
-
-            for element, count in comp.items():
-                totals[element] = totals.get(element, 0.0) + n_kmol_per_kg * float(count)
-
-        return dict(sorted(totals.items()))
-
-    @property
-    def reactant_enthalpy(self) -> float:
-        if self.temperature is None:
-            raise ValueError("HP equilibrium with dict reactants requires temperature.")
-
-        h = 0.0
-
-        for name, x in self.mole_fractions.items():
-            n_kmol_per_kg = x * self.total_kmoles
-            h_kmol = CEA.thermo_molar(name, self.temperature)[1]
-            h += n_kmol_per_kg * h_kmol
-
-        return float(h)
-
-    @property
-    def reactant_internal_energy(self) -> float:
-        return self.reactant_enthalpy - self.total_kmoles * 8314.46261815324 * float(self.temperature)
-
-    def element_vector(self, elements: list[str] | None = None) -> tuple[list[str], np.ndarray]:
-        if elements is None:
-            elements = sorted(self.element_moles_per_kg)
-
-        b = np.array(
-            [self.element_moles_per_kg.get(element, 0.0) for element in elements],
-            dtype=float,
-        )
-
-        return elements, b
-
-
-class _CombustionGasReactants:
-    def __init__(self, gas: CombustionGas):
-        self.gas = gas
-        self.total_mass = 1.0
-
-        mole_fractions = dict(gas.mole_fractions)
-
-        if not mole_fractions:
-            raise ValueError("CombustionGas composition cannot be empty.")
-
-        total_x = sum(float(x) for x in mole_fractions.values())
-
-        if total_x <= 0.0:
-            raise ValueError("CombustionGas mole fractions must sum to a positive value.")
-
-        self.mole_fractions = {
-            name: float(x) / total_x
-            for name, x in mole_fractions.items()
-            if float(x) > 0.0
-        }
-
-        self.molecular_weight = sum(
-            self.mole_fractions[name] * CEA.molar_mass(name)
-            for name in self.mole_fractions
-        )
-
-        self.molecular_weight_kg_per_kmol = self.molecular_weight * 1000.0
-        self.total_moles = 1.0 / self.molecular_weight
-        self.total_kmoles = self.total_moles / 1000.0
-
-    @property
-    def element_moles_per_kg(self) -> dict[str, float]:
-        totals: dict[str, float] = {}
-
-        for name, x in self.mole_fractions.items():
-            n_kmol_per_kg = x * self.total_kmoles
-            comp = CEA.elemental_composition(name)
-
-            for element, count in comp.items():
-                totals[element] = totals.get(element, 0.0) + n_kmol_per_kg * float(count)
-
-        return dict(sorted(totals.items()))
-
-    @property
-    def reactant_enthalpy(self) -> float:
-        return float(self.gas.enthalpy)
-
-    @property
-    def reactant_internal_energy(self) -> float:
-        return float(self.gas.internal_energy)
-
-    def element_vector(self, elements: list[str] | None = None) -> tuple[list[str], np.ndarray]:
-        if elements is None:
-            elements = sorted(self.element_moles_per_kg)
-
-        b = np.array(
-            [self.element_moles_per_kg.get(element, 0.0) for element in elements],
-            dtype=float,
-        )
-
-        return elements, b
 
 
 class Equilibrium(PropertyIntrospectionMixin):
@@ -427,7 +231,7 @@ class Equilibrium(PropertyIntrospectionMixin):
             equilibrium_derivative_temperature_step
         )
 
-        self._reactants = self._resolve_reactants(
+        self._reactants = resolve_reactants(
             reactants,
             basis=basis,
             temperature=temperature,
@@ -435,7 +239,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         )
 
         self._feed: FeedState | None = None
-        self._solve_result: CondensedSolveResult | None = None
+        self._solve_result = None
         self._state: EquilibriumState | None = None
         self._results: EquilibriumResults | None = None
         self._summary: EquilibriumSolveSummary | None = None
@@ -444,253 +248,46 @@ class Equilibrium(PropertyIntrospectionMixin):
 
         self._solve()
 
-    @staticmethod
-    def _resolve_reactants(
-        reactants,
-        *,
-        basis: str,
-        temperature: float | None,
-        pressure: float | None,
-    ):
-        if isinstance(reactants, Reactants):
-            return reactants
-
-        if isinstance(reactants, CombustionGas):
-            return _CombustionGasReactants(reactants)
-
-        if isinstance(reactants, dict):
-            return _DictReactants(
-                reactants,
-                basis=basis,
-                temperature=temperature,
-                pressure=pressure,
-            )
-
-        if reactants.__class__.__name__ == "Reactants":
-            return reactants
-
-        if reactants.__class__.__name__ == "CombustionGas":
-            return _CombustionGasReactants(reactants)
-
-        raise TypeError("reactants must be Reactants, CombustionGas, or dict.")
-
-    def _validate(self) -> None:
-        if self._pressure is None or self._pressure <= 0.0:
-            raise ValueError("Equilibrium requires positive pressure [Pa].")
-
-        if self._mode == "tp":
-            if self._temperature_input is None:
-                raise ValueError("TP equilibrium requires temperature [K].")
-            if self._temperature_input <= 0.0:
-                raise ValueError("temperature must be positive.")
-
-        elif self._mode == "hp":
-            if isinstance(self._input, dict) and self._temperature_input is None:
-                raise ValueError("HP equilibrium with dict reactants requires temperature.")
-            if self._guess_temperature <= 0.0:
-                raise ValueError("guess_temperature must be positive.")
-
-        else:
-            raise ValueError("mode must be 'tp' or 'hp'.")
-
-    def _build_feed(self) -> FeedState:
-        element_moles = dict(self._reactants.element_moles_per_kg)
-        elements = sorted(e for e in element_moles if e != CHARGE_ELEMENT)
-
-        b = np.array(
-            [element_moles.get(element, 0.0) for element in elements],
-            dtype=float,
-        )
-
-        # Reactants.element_moles_per_kg is mol element / kg mixture.
-        # The CEAEquilibrium solver uses kmol element / kg mixture.
-        if isinstance(self._input, Reactants) or self._input.__class__.__name__ == "Reactants":
-            b = b / 1000.0
-        if self._include_ions:
-            elements_with_charge = list(elements) + [CHARGE_ELEMENT]
-            b = np.append(b, 0.0)
-        else:
-            elements_with_charge = elements
-
-        return FeedState(
-            element_totals=b,
-            elements=elements_with_charge,
-            enthalpy=getattr(self._reactants, "reactant_enthalpy", None),
-            internal_energy=self._safe_reactant_internal_energy(),
-            temperature=self._temperature_input,
+    def _solver_config(self) -> EquilibriumConfig:
+        """Collect current public inputs into an immutable solver config."""
+        return EquilibriumConfig(
+            mode=self._mode,
             pressure=self._pressure,
-            source=self._reactants,
-        )
-        
-    def _safe_reactant_internal_energy(self) -> float | None:
-        try:
-            return float(self._reactants.reactant_internal_energy)
-        except Exception:
-            return None
-
-    def _solver_options(self):
-        from .CEAEquilibrium.tp_solver import TPSolverOptions
-        from .CEAEquilibrium.hp_solver import HPSolverOptions
-
-        tp_options = TPSolverOptions(
-            max_iterations=self._max_iterations,
-            species_trace=self._combustion_gas_trace,
-            verbose=self._verbose,
-        )
-
-        hp_options = HPSolverOptions(
-            max_iterations=self._max_iterations,
-            species_trace=self._combustion_gas_trace,
-            verbose=self._verbose,
-        )
-
-        condensed_options = CondensedOptions(
-            enabled=self._include_condensed,
-            max_outer_iterations=self._max_outer_iterations,
+            temperature_input=self._temperature_input,
+            basis=self._basis,
+            guess_temperature=self._guess_temperature,
+            candidates=self._candidates,
+            include_condensed=self._include_condensed,
             include_ions=self._include_ions,
             include_electron=self._include_electron,
+            combustion_gas_trace=self._combustion_gas_trace,
+            combustion_gas_max_species=self._combustion_gas_max_species,
+            max_iterations=self._max_iterations,
+            max_outer_iterations=self._max_outer_iterations,
             verbose=self._verbose,
-        )
-
-        transport_options = TransportOptions(
-            trace=self._combustion_gas_trace,
-            max_species=self._combustion_gas_max_species,
             equilibrium_derivative_temperature_step=self._equilibrium_derivative_temperature_step,
         )
 
-        return tp_options, hp_options, condensed_options, transport_options
+    def _solver_options(self):
+        """Backward-compatible internal hook used by neighbor TP solves."""
+        return solver_options(self._solver_config())
 
     def _solve(self) -> None:
-        self._validate()
-
         self._gas_cache = None
-        self._feed = self._build_feed()
 
-        elements_for_species = [
-            e for e in self._feed.elements if e != CHARGE_ELEMENT
-        ]
-
-        tp_options, hp_options, condensed_options, transport_options = self._solver_options()
-
-        if self._mode == "tp":
-            solve_result = solve_with_condensed_phases_tp(
-                elements=elements_for_species,
-                element_totals=self._feed.element_totals,
-                temperature=float(self._temperature_input),
-                pressure=float(self._pressure),
-                candidates=self._candidates,
-                tp_options=tp_options,
-                condensed_options=condensed_options,
-            )
-
-        else:
-            if self._feed.enthalpy is None:
-                raise ValueError("HP equilibrium requires reactant enthalpy.")
-
-            solve_result = solve_with_condensed_phases_hp(
-                elements=elements_for_species,
-                element_totals=self._feed.element_totals,
-                pressure=float(self._pressure),
-                target_enthalpy=float(self._feed.enthalpy),
-                guess_temperature=self._guess_temperature,
-                candidates=self._candidates,
-                hp_options=hp_options,
-                condensed_options=condensed_options,
-            )
-
-        self._solve_result = solve_result
-
-        self._cea_extended_range_hp_warning = (
-            self._mode == "hp"
-            and "extended-range" in str(solve_result.message).lower()
-            and self._feed.enthalpy is not None
-        )
-
-        hp_out_of_range_result = (
-            self._mode == "hp"
-            and not solve_result.success
-            and "lower temperature limit" in str(solve_result.message).lower()
-        )
-
-        if not solve_result.success and not hp_out_of_range_result:
-            raise RuntimeError(f"Equilibrium solve failed: {solve_result.message}")
-
-        self._state = solve_result.state
-
-        transport_values = build_transport_values(
-            self._state,
+        run = run_equilibrium_solve(
+            config=self._solver_config(),
+            original_input=self._input,
+            reactants=self._reactants,
             tp_neighbor_solver=self._tp_neighbor_state,
-            options=transport_options,
         )
 
-        self._results = build_results(
-            self._state,
-            tp_neighbor_solver=self._tp_neighbor_state,
-            equilibrium_derivative_step=self._equilibrium_derivative_temperature_step,
-            transport_values=transport_values,
-        )
-
-        if self._cea_extended_range_hp_warning and self._feed.enthalpy is not None:
-            # CEA prints the assigned HP enthalpy for these warning points even
-            # though the returned TP composition is outside the normal thermo
-            # range and cannot close the HP energy equation exactly.  Preserve
-            # the TP Gibbs free energy and back-compute the printed entropy from
-            # G = H - T*S, which reproduces CEA's warning-point table.
-            product_gibbs = state_gibbs_energy(self._state)
-            self._results.enthalpy = float(self._feed.enthalpy)
-            self._results.internal_energy = (
-                self._results.enthalpy
-                - float(self._pressure) / self._results.density
-            )
-            self._results.entropy = (
-                self._results.enthalpy - product_gibbs
-            ) / float(self._state.temperature)
-
-            self._results.gamma_equilibrium = 1.0
-            self._results.gamma_frozen = 1.0
-            self._results.cp_equilibrium = float("nan")
-
-            # CEA's transport output for the CH4(L)/LOX 191.66 K warning point
-            # uses the CEAM extended-range gas transport branch.  The normal
-            # gas-only CH4 transport fit gives the same viscosity but not the
-            # reported reaction/frozen Cp and conductivity.  Apply this only to
-            # that CEA warning pattern; ordinary low-temperature converged cases
-            # such as RP-1/O2 at MR=150 are left on the normal path.
-            gas_x = state_gas_mole_fractions(self._state, trace=0.0)
-            all_x = state_mole_fractions(self._state, trace=0.0)
-            is_ch4_warning = (
-                abs(float(self._state.temperature) - 191.66) < 0.05
-                and gas_x.get("CH4", 0.0) > 0.999
-                and all_x.get("H2O(cr)", 0.0) > 0.0
-                and all_x.get("C(gr)", 0.0) > 0.0
-            )
-            if is_ch4_warning and self._results.viscosity_equilibrium is not None:
-                cp_transport = 23255.5
-                conductivity = 0.07702
-                viscosity = float(self._results.viscosity_equilibrium)
-                prandtl = cp_transport * viscosity / conductivity
-
-                self._results.cp_transport_equilibrium = cp_transport
-                self._results.cp_transport_frozen = cp_transport
-                self._results.conductivity_equilibrium = conductivity
-                self._results.conductivity_frozen = conductivity
-                self._results.prandtl_equilibrium = prandtl
-                self._results.prandtl_frozen = prandtl
-
-        last = solve_result.last_solver_result
-
-        self._summary = EquilibriumSolveSummary(
-            success=solve_result.success,
-            message=solve_result.message,
-            mode=self._mode,
-            iterations=solve_result.inner_iterations,
-            outer_iterations=solve_result.outer_iterations,
-            inserted_condensed_species=list(solve_result.inserted_species),
-            removed_condensed_species=list(solve_result.removed_species),
-            max_element_error=getattr(last, "max_element_error", None),
-            enthalpy_error=getattr(last, "enthalpy_error", None),
-            residual_norm=getattr(last, "residual_norm", None),
-        )
+        self._feed = run.feed
+        self._solve_result = run.solve_result
+        self._state = run.state
+        self._results = run.results
+        self._summary = run.summary
+        self._cea_extended_range_hp_warning = run.cea_extended_range_hp_warning
 
     def _tp_neighbor_state(
         self,

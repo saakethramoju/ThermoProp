@@ -482,11 +482,12 @@ class CombustionGas(PropertyIntrospectionMixin):
         self._property_cache.clear()
 
     def _enthalpy_from_temperature(self, temperature: float) -> float:
-        value = np.array(
-            [CEA.enthalpy_mass(name, temperature) for name in self._species_names],
-            dtype=float,
+        _, h_mass, _, _ = CEA.thermo_mass_array(
+            self._species_names,
+            temperature,
+            on_error="raise",
         )
-        return float(np.dot(self._mass_fractions, value))
+        return float(np.dot(self._mass_fractions, h_mass))
 
     def _internal_energy_from_temperature(self, temperature: float) -> float:
         return self._enthalpy_from_temperature(temperature) - self.gas_constant * float(temperature)
@@ -882,9 +883,10 @@ class CombustionGas(PropertyIntrospectionMixin):
 
         pressure_correction_molar = -self._RU_KMOL * np.log(p_i / self._P_REF)
 
-        pure_s0_molar = np.array(
-            [CEA.entropy_molar_standard(name, self.temperature) for name in self._species_names],
-            dtype=float,
+        _, _, pure_s0_molar, _ = CEA.thermo_molar_array(
+            self._species_names,
+            self.temperature,
+            on_error="raise",
         )
 
         pure_s_mass_at_pi = (pure_s0_molar + pressure_correction_molar) / self._M
@@ -954,33 +956,36 @@ class CombustionGas(PropertyIntrospectionMixin):
         if cached is not None:
             return cached
 
-        value = np.array(
-            [CEA.cp_mass(name, self.temperature) for name in self._species_names],
-            dtype=float,
+        cp_mass, _, _, _ = CEA.thermo_mass_array(
+            self._species_names,
+            self.temperature,
+            on_error="raise",
         )
-        return self._cache_set("_pure_cp_mass", value)
+        return self._cache_set("_pure_cp_mass", cp_mass)
 
     def _pure_h_mass(self) -> np.ndarray:
         cached = self._cache_get("_pure_h_mass")
         if cached is not None:
             return cached
 
-        value = np.array(
-            [CEA.enthalpy_mass(name, self.temperature) for name in self._species_names],
-            dtype=float,
+        _, h_mass, _, _ = CEA.thermo_mass_array(
+            self._species_names,
+            self.temperature,
+            on_error="raise",
         )
-        return self._cache_set("_pure_h_mass", value)
+        return self._cache_set("_pure_h_mass", h_mass)
 
     def _pure_s0_mass(self) -> np.ndarray:
         cached = self._cache_get("_pure_s0_mass")
         if cached is not None:
             return cached
 
-        value = np.array(
-            [CEA.entropy_mass_standard(name, self.temperature) for name in self._species_names],
-            dtype=float,
+        _, _, s0_mass, _ = CEA.thermo_mass_array(
+            self._species_names,
+            self.temperature,
+            on_error="raise",
         )
-        return self._cache_set("_pure_s0_mass", value)
+        return self._cache_set("_pure_s0_mass", s0_mass)
 
     # ---------------- Transport properties ---------------- #
 
@@ -1058,13 +1063,19 @@ class CombustionGas(PropertyIntrospectionMixin):
         if cached is not None:
             return cached
 
-        values = []
+        values, valid = CEA.viscosity_array(
+            self._species_names,
+            self.temperature,
+            on_error="nan",
+        )
+        missing = (~valid) | (~np.isfinite(values)) | (values <= 0.0)
 
-        for name in self._species_names:
-            try:
-                values.append(CEA.viscosity(name, self.temperature))
-            except Exception:
-                values.append(self._estimated_viscosity(name))
+        if np.any(missing):
+            values = np.array(values, dtype=float, copy=True)
+            values[missing] = np.array(
+                [self._estimated_viscosity(self._species_names[i]) for i in np.nonzero(missing)[0]],
+                dtype=float,
+            )
 
         return self._cache_set("_pure_viscosities", np.asarray(values, dtype=float))
 
@@ -1074,18 +1085,25 @@ class CombustionGas(PropertyIntrospectionMixin):
             return cached
 
         viscosities = self._pure_viscosities()
-        values = []
+        values, valid = CEA.conductivity_array(
+            self._species_names,
+            self.temperature,
+            on_error="nan",
+        )
+        missing = (~valid) | (~np.isfinite(values)) | (values <= 0.0)
 
-        for k, name in enumerate(self._species_names):
-            try:
-                values.append(CEA.conductivity(name, self.temperature))
-            except Exception:
-                values.append(
+        if np.any(missing):
+            values = np.array(values, dtype=float, copy=True)
+            values[missing] = np.array(
+                [
                     self._estimated_conductivity(
-                        name,
-                        viscosity=float(viscosities[k]),
+                        self._species_names[i],
+                        viscosity=float(viscosities[i]),
                     )
-                )
+                    for i in np.nonzero(missing)[0]
+                ],
+                dtype=float,
+            )
 
         return self._cache_set("_pure_conductivities", np.asarray(values, dtype=float))
 
@@ -1113,28 +1131,12 @@ class CombustionGas(PropertyIntrospectionMixin):
             return cached
 
         pure_viscosities = self._pure_viscosities()
-        ns = len(self._species_names)
-        eta = np.zeros((ns, ns), dtype=float)
-
-        for i, name_i in enumerate(self._species_names):
-            for j, name_j in enumerate(self._species_names):
-                if i == j:
-                    eta[i, j] = pure_viscosities[i]
-                    continue
-
-                try:
-                    eta[i, j] = CEA.binary_viscosity_interaction(
-                        name_i,
-                        name_j,
-                        self.temperature,
-                    )
-                except Exception:
-                    eta[i, j] = self._estimated_binary_viscosity_interaction(
-                        i,
-                        j,
-                        pure_viscosities,
-                    )
-
+        eta = CEA.binary_viscosity_interaction_matrix(
+            self._species_names,
+            self.temperature,
+            pure_viscosities=pure_viscosities,
+            molecular_weights=self._M,
+        )
         return self._cache_set("_binary_viscosity_interaction_matrix", eta)
 
     def _cea_phi_matrix(self) -> np.ndarray:
@@ -1180,21 +1182,15 @@ class CombustionGas(PropertyIntrospectionMixin):
         values: np.ndarray,
         interaction_matrix: np.ndarray,
     ) -> float:
-        total = 0.0
-        ns = len(values)
+        mole_fractions = np.asarray(mole_fractions, dtype=float)
+        values = np.asarray(values, dtype=float)
+        interaction_matrix = np.asarray(interaction_matrix, dtype=float)
+        denominator = mole_fractions + interaction_matrix @ mole_fractions
 
-        for i in range(ns):
-            denominator = mole_fractions[i]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            terms = mole_fractions * values / denominator
 
-            for j in range(ns):
-                if i == j:
-                    continue
-
-                denominator += mole_fractions[j] * interaction_matrix[i, j]
-
-            total += mole_fractions[i] * values[i] / denominator
-
-        return float(total)
+        return float(np.sum(terms))
 
     @staticmethod
     def _wilke_phi(property_values: np.ndarray, molecular_weights: np.ndarray) -> np.ndarray:
@@ -1210,14 +1206,15 @@ class CombustionGas(PropertyIntrospectionMixin):
 
     @staticmethod
     def _wilke_mix(mole_fractions: np.ndarray, values: np.ndarray, molecular_weights: np.ndarray) -> float:
+        mole_fractions = np.asarray(mole_fractions, dtype=float)
+        values = np.asarray(values, dtype=float)
         phi = CombustionGas._wilke_phi(values, molecular_weights)
+        denominator = phi @ mole_fractions
 
-        return float(
-            sum(
-                mole_fractions[i] * values[i] / sum(mole_fractions[j] * phi[i, j] for j in range(len(values)))
-                for i in range(len(values))
-            )
-        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            terms = mole_fractions * values / denominator
+
+        return float(np.sum(terms))
 
     @property
     def dynamic_viscosity(self) -> float:

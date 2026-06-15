@@ -6,7 +6,7 @@
 
 * Added support for very high and low mixture ratio values.
 * Moved the large species and material registries out of Python source and into packaged JSON data files with thin typed loader modules.
-* Added lazy top-level imports so `import thermoprop as tp; tp.list_species()` and material/species discovery work without importing every optional backend immediately.
+* Preserved eager public wrapper imports so `from thermoprop import Propellant, Equilibrium` continues to return classes, not modules.
 * Added clearer `list_species()`, `list_materials()`, and `list_supported_species()` discovery aliases while preserving existing `species()` and `materials()` functions.
 * Added shared formatting helpers for wrapper `__str__` output, including consistent `N/A` handling for optional or non-finite properties.
 * Added a lightweight `examples/smoke_api.py` discovery smoke test that does not require CoolProp, PYroMat, or RocketProps.
@@ -17,6 +17,9 @@
 * Added lightweight docstrings for internal CEA equilibrium option/result dataclasses.
 * Clarified the `Equilibrium.py` module layout documentation.
 * Cleaned the release source tree by excluding local virtual environments, cached bytecode, previous distributions, Git internals, and the stale development `uv.lock`.
+* Added vectorized CEA thermo array evaluation for solver internals and gas wrappers.
+* Vectorized CEA mixture transport denominator assembly and reaction-conductivity pair accumulation.
+* Split Equilibrium input normalization and solver dispatch into `CEAEquilibrium.facade`, keeping `Equilibrium.py` focused on the public wrapper API.
 
 ### Fixed
 

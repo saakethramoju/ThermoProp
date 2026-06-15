@@ -183,14 +183,15 @@ def gas_only_cp_reaction(
 
     x_safe = np.maximum(x, 1e-300)
 
-    D = np.zeros((nr, nr), dtype=float)
-
     ns = len(names)
+    pair_i, pair_j = np.triu_indices(ns, k=1)
 
-    for k in range(ns - 1):
-        for l in range(k + 1, ns):
-            delta = alpha[:, k] / x_safe[k] - alpha[:, l] / x_safe[l]
-            D += x[k] * x[l] * np.outer(delta, delta)
+    if pair_i.size == 0:
+        return 0.0
+
+    delta = alpha[:, pair_i] / x_safe[pair_i] - alpha[:, pair_j] / x_safe[pair_j]
+    weights = x[pair_i] * x[pair_j]
+    D = (delta * weights) @ delta.T
 
     T = float(state.temperature)
     delta_h_over_RT = alpha @ h / (RU * T)
@@ -234,6 +235,36 @@ def _estimated_conductivity(name: str, T: float, viscosity: float) -> float:
     )
 
 
+def _estimated_viscosity_array(
+    molecular_weights: np.ndarray,
+    temperature: float,
+) -> np.ndarray:
+    """Vectorized fallback gas-viscosity estimate [Pa-s]."""
+    M = np.asarray(molecular_weights, dtype=float)
+    T = float(temperature)
+    omega = np.log(50.0 * M**4.6 / T**1.4)
+    omega = np.maximum(omega, 1.0)
+    return 2.67e-8 * np.sqrt(M * T) / omega
+
+
+def _estimated_conductivity_array(
+    names: list[str],
+    molecular_weights: np.ndarray,
+    temperature: float,
+    viscosities: np.ndarray,
+) -> np.ndarray:
+    """Vectorized fallback frozen thermal conductivity estimate [W/m-K]."""
+    cp_molar, _, _, _ = CEA.thermo_molar_array(names, temperature, on_error="nan")
+    cp_over_R = cp_molar / RU_KMOL
+    M = np.asarray(molecular_weights, dtype=float)
+    return (
+        np.asarray(viscosities, dtype=float)
+        * RU_KMOL
+        * (0.00375 + 0.00132 * (cp_over_R - 2.5))
+        / M
+    )
+
+
 def _estimated_binary_eta(i: int, j: int, names: list[str], mu_i: np.ndarray) -> float:
     Mi = CEA.molecular_weight(names[i])
     Mj = CEA.molecular_weight(names[j])
@@ -249,20 +280,17 @@ def _estimated_binary_eta(i: int, j: int, names: list[str], mu_i: np.ndarray) ->
 
 
 def _cea_mix(x: np.ndarray, values: np.ndarray, interaction: np.ndarray) -> float:
-    total = 0.0
-    ns = len(values)
+    """CEA mixture rule using vectorized denominator assembly."""
+    x = np.asarray(x, dtype=float)
+    values = np.asarray(values, dtype=float)
+    interaction = np.asarray(interaction, dtype=float)
 
-    for i in range(ns):
-        denom = x[i]
+    denom = x + interaction @ x
 
-        for j in range(ns):
-            if i == j:
-                continue
-            denom += x[j] * interaction[i, j]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        terms = x * values / denom
 
-        total += x[i] * values[i] / denom
-
-    return float(total)
+    return float(np.sum(terms))
 
 
 def frozen_transport(
@@ -270,6 +298,7 @@ def frozen_transport(
     *,
     options: TransportOptions | None = None,
 ) -> tuple[float | None, float | None, float | None]:
+    """Return frozen gas-mixture viscosity, conductivity, and Prandtl number."""
     if options is None:
         options = TransportOptions()
 
@@ -283,26 +312,28 @@ def frozen_transport(
         return None, None, None
 
     names = list(composition)
-    x = np.array([composition[name] for name in names], dtype=float)
+    x = np.fromiter((composition[name] for name in names), dtype=float)
     x = x / np.sum(x)
 
     T = float(state.temperature)
-    ns = len(names)
+    M = CEA.molecular_weight_array(names)
 
-    mu_i = np.zeros(ns, dtype=float)
-    k_i = np.zeros(ns, dtype=float)
-    M = np.array([CEA.molecular_weight(name) for name in names], dtype=float)
+    mu_i, mu_valid = CEA.viscosity_array(names, T, on_error="nan")
+    missing_mu = (~mu_valid) | (~np.isfinite(mu_i)) | (mu_i <= 0.0)
+    if np.any(missing_mu):
+        mu_i = np.array(mu_i, dtype=float, copy=True)
+        mu_i[missing_mu] = _estimated_viscosity_array(M[missing_mu], T)
 
-    for i, name in enumerate(names):
-        try:
-            mu_i[i] = CEA.viscosity(name, T)
-        except Exception:
-            mu_i[i] = _estimated_viscosity(name, T)
-
-        try:
-            k_i[i] = CEA.conductivity(name, T)
-        except Exception:
-            k_i[i] = _estimated_conductivity(name, T, mu_i[i])
+    k_i, k_valid = CEA.conductivity_array(names, T, on_error="nan")
+    missing_k = (~k_valid) | (~np.isfinite(k_i)) | (k_i <= 0.0)
+    if np.any(missing_k):
+        k_i = np.array(k_i, dtype=float, copy=True)
+        k_i[missing_k] = _estimated_conductivity_array(
+            [names[i] for i in np.nonzero(missing_k)[0]],
+            M[missing_k],
+            T,
+            mu_i[missing_k],
+        )
 
     if (
         np.any(~np.isfinite(mu_i))
@@ -312,22 +343,12 @@ def frozen_transport(
     ):
         return None, None, None
 
-    eta_ij = np.zeros((ns, ns), dtype=float)
-
-    for i in range(ns):
-        for j in range(ns):
-            if i == j:
-                eta_ij[i, j] = mu_i[i]
-                continue
-
-            try:
-                eta_ij[i, j] = CEA.binary_viscosity_interaction(
-                    names[i],
-                    names[j],
-                    T,
-                )
-            except Exception:
-                eta_ij[i, j] = _estimated_binary_eta(i, j, names, mu_i)
+    eta_ij = CEA.binary_viscosity_interaction_matrix(
+        names,
+        T,
+        pure_viscosities=mu_i,
+        molecular_weights=M,
+    )
 
     M_i = M[:, None]
     M_j = M[None, :]
@@ -357,7 +378,6 @@ def frozen_transport(
     return float(mu), float(k), pr
 
 
-
 def _transport_species_arrays(
     state: EquilibriumState,
     *,
@@ -374,15 +394,12 @@ def _transport_species_arrays(
     )
 
     names = list(composition)
-    x = np.array([composition[name] for name in names], dtype=float)
+    x = np.fromiter((composition[name] for name in names), dtype=float)
     x = x / np.sum(x)
 
-    M = np.array([CEA.molar_mass(name) for name in names], dtype=float)
-
-    h = np.array(
-        [CEA.thermo_molar(name, state.temperature)[1] / 1000.0 for name in names],
-        dtype=float,
-    )
+    M = CEA.molar_mass_array(names)
+    _, h_kmol, _, _ = CEA.thermo_molar_array(names, state.temperature, on_error="raise")
+    h = h_kmol / 1000.0
 
     return names, x, M, h
 
@@ -418,12 +435,7 @@ def _binary_viscosity_interaction_matrix(
     names: list[str],
     temperature: float,
 ) -> np.ndarray:
-    """
-    Get eta_ij interaction matrix.
-
-    Prefer CombustionGas private implementation if available. Otherwise fall
-    back to CEADatabase pair interactions when exposed.
-    """
+    """Get eta_ij interaction matrix for retained gas species."""
     if gas is not None:
         for attr in (
             "_binary_viscosity_interaction_matrix",
@@ -440,48 +452,20 @@ def _binary_viscosity_interaction_matrix(
                         pass
                 except Exception:
                     pass
-    ns = len(names)
-    eta = np.zeros((ns, ns), dtype=float)
 
-    for i, ni in enumerate(names):
-        for j, nj in enumerate(names):
-            if i == j:
-                try:
-                    eta[i, j] = float(CEA.viscosity(ni, temperature))
-                except Exception:
-                    eta[i, j] = np.nan
-                continue
+    mu, _ = CEA.viscosity_array(names, temperature, on_error="nan")
+    M = CEA.molecular_weight_array(names)
+    missing_mu = (~np.isfinite(mu)) | (mu <= 0.0)
+    if np.any(missing_mu):
+        mu = np.array(mu, dtype=float, copy=True)
+        mu[missing_mu] = _estimated_viscosity_array(M[missing_mu], temperature)
 
-            value = None
-
-            for func_name in (
-                "binary_viscosity_interaction",
-                "viscosity_interaction",
-            ):
-                if hasattr(CEA, func_name):
-                    try:
-                        value = float(getattr(CEA, func_name)(ni, nj, temperature))
-                        break
-                    except Exception:
-                        pass
-
-            if value is None:
-                try:
-                    mui = float(CEA.viscosity(ni, temperature))
-                    muj = float(CEA.viscosity(nj, temperature))
-                    Mi = float(CEA.molar_mass(ni))
-                    Mj = float(CEA.molar_mass(nj))
-                    value = (
-                        (1.0 + np.sqrt(mui / muj) * (Mj / Mi) ** 0.25) ** 2
-                        / np.sqrt(8.0 * (1.0 + Mi / Mj))
-                    )
-                except Exception:
-                    value = np.nan
-
-            eta[i, j] = value
-
-    return eta
-
+    return CEA.binary_viscosity_interaction_matrix(
+        names,
+        temperature,
+        pure_viscosities=mu,
+        molecular_weights=M,
+    )
 
 def reaction_conductivity(
     state: EquilibriumState,
@@ -507,11 +491,6 @@ def reaction_conductivity(
         return 0.0
 
     try:
-        gas = make_combustion_gas_for_transport(
-            state,
-            options=options,
-        )
-
         names, x, M, h = _transport_species_arrays(
             state,
             options=options,
@@ -537,7 +516,7 @@ def reaction_conductivity(
         return 0.0
 
     eta_ij = _binary_viscosity_interaction_matrix(
-        gas,
+        None,
         names,
         state.temperature,
     )
@@ -548,26 +527,27 @@ def reaction_conductivity(
 
     x_safe = np.maximum(x, 1e-300)
 
-    G = np.zeros((nr, nr), dtype=float)
-
     ns = len(names)
+    pair_i, pair_j = np.triu_indices(ns, k=1)
+    eta_pairs = eta_ij[pair_i, pair_j]
+    valid_pairs = (eta_pairs > 0.0) & np.isfinite(eta_pairs)
 
-    for k in range(ns - 1):
-        for l in range(k + 1, ns):
-            eta_kl = float(eta_ij[k, l])
+    if not np.any(valid_pairs):
+        return 0.0
 
-            if eta_kl <= 0.0 or not np.isfinite(eta_kl):
-                continue
+    pair_i = pair_i[valid_pairs]
+    pair_j = pair_j[valid_pairs]
+    eta_pairs = eta_pairs[valid_pairs]
 
-            diffusion_factor = (
-                5.0
-                * M[k]
-                * M[l]
-                / (3.0 * astar * eta_kl * (M[k] + M[l]))
-            )
-
-            delta = alpha[:, k] / x_safe[k] - alpha[:, l] / x_safe[l]
-            G += diffusion_factor * x[k] * x[l] * np.outer(delta, delta)
+    diffusion_factor = (
+        5.0
+        * M[pair_i]
+        * M[pair_j]
+        / (3.0 * astar * eta_pairs * (M[pair_i] + M[pair_j]))
+    )
+    weights = diffusion_factor * x[pair_i] * x[pair_j]
+    delta = alpha[:, pair_i] / x_safe[pair_i] - alpha[:, pair_j] / x_safe[pair_j]
+    G = (delta * weights) @ delta.T
 
     delta_h_over_RT = alpha @ h / RT
 
@@ -609,10 +589,8 @@ def equilibrium_transport(
     mu_f, k_f, pr_f = frozen_transport(state, options=options)
 
     cp_fr_transport = gas_only_cp_frozen(state)
-    cp_eq_transport = cp_fr_transport + gas_only_cp_reaction(
-        state,
-        options=options,
-    )
+    cp_re_transport = gas_only_cp_reaction(state, options=options)
+    cp_eq_transport = cp_fr_transport + cp_re_transport
 
     if k_f is None:
         k_re = None
@@ -625,9 +603,6 @@ def equilibrium_transport(
         k_eq = k_f + k_re
 
     mu_eq = mu_f
-
-    cp_re_transport = gas_only_cp_reaction(state, options=options)
-    cp_eq = cp_fr_transport + cp_re_transport
 
     if mu_f is None or k_f is None or k_f == 0.0:
         pr_f = None

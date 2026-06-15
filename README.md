@@ -38,7 +38,7 @@ ThermoProp requires Python 3.11 or newer.
 
 ## 1.0.1 release focus
 
-ThermoProp 1.0.1 is a cleanup and API-stability release. It keeps the 1.0.0 solver and property-model behavior intact while reducing repeated helper code, adding missing wrapper introspection support to `Equilibrium`, clarifying internal CEA-equilibrium documentation, adding snake_case `Equilibrium.combustion_gas` aliases, moving large registry data into packaged JSON files, adding lazy package imports, and cleaning the release source tree.
+ThermoProp 1.0.1 is a cleanup, API-stability, and low-risk performance release. It keeps the 1.0.0 solver equations and property-model behavior intact while reducing repeated helper code, adding missing wrapper introspection support to `Equilibrium`, clarifying internal CEA-equilibrium documentation, adding snake_case `Equilibrium.combustion_gas` aliases, moving large registry data into packaged JSON files, vectorizing CEA thermo/transport helper paths, preserving class-based top-level imports, and cleaning the release source tree.
 
 Use these wrapper-level inspection helpers consistently across the public API:
 
