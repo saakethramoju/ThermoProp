@@ -210,6 +210,59 @@ def gas_only_cp_reaction(
 
     return max(0.0, value)
 
+
+
+def _estimated_viscosity(name: str, T: float) -> float:
+    M = CEA.molecular_weight(name)
+    omega = np.log(50.0 * M**4.6 / T**1.4)
+    omega = max(float(omega), 1.0)
+    return float(2.67e-8 * np.sqrt(M * T) / omega)
+
+
+def _estimated_conductivity(name: str, T: float, viscosity: float) -> float:
+    M = CEA.molecular_weight(name)
+    cp_molar = CEA.thermo_molar(name, T)[0]
+    cp_over_R = cp_molar / RU_KMOL
+
+    return float(
+        viscosity
+        * RU_KMOL
+        * (0.00375 + 0.00132 * (cp_over_R - 2.5))
+        / M
+    )
+
+
+def _estimated_binary_eta(i: int, j: int, names: list[str], mu_i: np.ndarray) -> float:
+    Mi = CEA.molecular_weight(names[i])
+    Mj = CEA.molecular_weight(names[j])
+    etai = float(mu_i[i])
+    etaj = float(mu_i[j])
+
+    ratio = np.sqrt(Mj / Mi)
+
+    etaij = 5.656854 * etai * np.sqrt(Mj / (Mi + Mj))
+    etaij = etaij / (1.0 + np.sqrt(ratio * etai / etaj))**2
+
+    return float(etaij)
+
+
+def _cea_mix(x: np.ndarray, values: np.ndarray, interaction: np.ndarray) -> float:
+    total = 0.0
+    ns = len(values)
+
+    for i in range(ns):
+        denom = x[i]
+
+        for j in range(ns):
+            if i == j:
+                continue
+            denom += x[j] * interaction[i, j]
+
+        total += x[i] * values[i] / denom
+
+    return float(total)
+
+
 def frozen_transport(
     state: EquilibriumState,
     *,
@@ -218,29 +271,89 @@ def frozen_transport(
     if options is None:
         options = TransportOptions()
 
-    try:
-        gas = make_combustion_gas_for_transport(state, options=options)
-    except Exception:
+    composition = transport_composition(
+        state,
+        trace=options.trace,
+        max_species=options.max_species,
+    )
+
+    if not composition:
         return None, None, None
 
-    try:
-        mu = gas.dynamic_viscosity
-    except Exception:
-        mu = None
+    names = list(composition)
+    x = np.array([composition[name] for name in names], dtype=float)
+    x = x / np.sum(x)
 
-    try:
-        k = gas.conductivity
-    except Exception:
-        k = None
+    T = float(state.temperature)
+    ns = len(names)
+
+    mu_i = np.zeros(ns, dtype=float)
+    k_i = np.zeros(ns, dtype=float)
+    M = np.array([CEA.molecular_weight(name) for name in names], dtype=float)
+
+    for i, name in enumerate(names):
+        try:
+            mu_i[i] = CEA.viscosity(name, T)
+        except Exception:
+            mu_i[i] = _estimated_viscosity(name, T)
+
+        try:
+            k_i[i] = CEA.conductivity(name, T)
+        except Exception:
+            k_i[i] = _estimated_conductivity(name, T, mu_i[i])
+
+    if (
+        np.any(~np.isfinite(mu_i))
+        or np.any(~np.isfinite(k_i))
+        or np.any(mu_i <= 0.0)
+        or np.any(k_i <= 0.0)
+    ):
+        return None, None, None
+
+    eta_ij = np.zeros((ns, ns), dtype=float)
+
+    for i in range(ns):
+        for j in range(ns):
+            if i == j:
+                eta_ij[i, j] = mu_i[i]
+                continue
+
+            try:
+                eta_ij[i, j] = CEA.binary_viscosity_interaction(
+                    names[i],
+                    names[j],
+                    T,
+                )
+            except Exception:
+                eta_ij[i, j] = _estimated_binary_eta(i, j, names, mu_i)
+
+    M_i = M[:, None]
+    M_j = M[None, :]
+
+    phi = 2.0 * M_j * mu_i[:, None] / (eta_ij * (M_i + M_j))
+    np.fill_diagonal(phi, 0.0)
+
+    psi = phi * (
+        1.0
+        + 2.41
+        * (M_i - M_j)
+        * (M_i - 0.142 * M_j)
+        / (M_i + M_j) ** 2
+    )
+    np.fill_diagonal(psi, 0.0)
+
+    mu = _cea_mix(x, mu_i, phi)
+    k = _cea_mix(x, k_i, psi)
 
     cp_transport_frozen = gas_only_cp_frozen(state)
 
-    if mu is None or k is None or k == 0.0:
+    if k <= 0.0 or not np.isfinite(k):
         pr = None
     else:
         pr = cp_transport_frozen * mu / k
 
-    return mu, k, pr
+    return float(mu), float(k), pr
+
 
 
 def _transport_species_arrays(
@@ -299,7 +412,7 @@ def _nullspace(matrix: np.ndarray, tolerance: float = 1e-12) -> np.ndarray:
 
 
 def _binary_viscosity_interaction_matrix(
-    gas: CombustionGas,
+    gas,
     names: list[str],
     temperature: float,
 ) -> np.ndarray:
@@ -309,22 +422,22 @@ def _binary_viscosity_interaction_matrix(
     Prefer CombustionGas private implementation if available. Otherwise fall
     back to CEADatabase pair interactions when exposed.
     """
-    for attr in (
-        "_binary_viscosity_interaction_matrix",
-        "binary_viscosity_interaction_matrix",
-    ):
-        if hasattr(gas, attr):
-            method = getattr(gas, attr)
-            try:
-                return np.asarray(method(), dtype=float)
-            except TypeError:
+    if gas is not None:
+        for attr in (
+            "_binary_viscosity_interaction_matrix",
+            "binary_viscosity_interaction_matrix",
+        ):
+            if hasattr(gas, attr):
+                method = getattr(gas, attr)
                 try:
-                    return np.asarray(method(names, temperature), dtype=float)
+                    return np.asarray(method(), dtype=float)
+                except TypeError:
+                    try:
+                        return np.asarray(method(names, temperature), dtype=float)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
-            except Exception:
-                pass
-
     ns = len(names)
     eta = np.zeros((ns, ns), dtype=float)
 
@@ -392,10 +505,11 @@ def reaction_conductivity(
         return 0.0
 
     try:
-        gas = make_combustion_gas_for_transport(state, options=options)
         names, x, M, h = _transport_species_arrays(state, options=options)
     except Exception:
-        return None
+        return 0.0
+
+    gas = None
 
     if len(names) <= 1:
         return 0.0
@@ -498,9 +612,9 @@ def equilibrium_transport(
     else:
         k_re = reaction_conductivity(state, options=options)
         if k_re is None:
-            k_eq = None
-        else:
-            k_eq = k_f + k_re
+            k_re = 0.0
+
+        k_eq = k_f + k_re
 
     mu_eq = mu_f
 

@@ -658,8 +658,16 @@ class CEADatabase:
             if np.isfinite(tmin) and np.isfinite(tmax)
         ]
 
-    def transport_interval_index(self, name: str, temperature: float, kind: str) -> int:
+    def transport_interval_index(
+        self,
+        name: str,
+        temperature: float,
+        kind: str,
+        *,
+        extrapolation_margin: float = 50.0,
+    ) -> int:
         ranges = self.transport_temperature_ranges(name, kind)
+
         T = float(temperature)
         raw = str(name).strip()
 
@@ -667,10 +675,21 @@ class CEADatabase:
             if Tmin <= T <= Tmax:
                 return j
 
+        first_Tmin = float(ranges[0][0])
+
+        if first_Tmin - extrapolation_margin <= T < first_Tmin:
+            return 0
+
+        last_Tmax = float(ranges[-1][1])
+
+        if last_Tmax < T <= last_Tmax + extrapolation_margin:
+            return len(ranges) - 1
+
         raise ValueError(
             f"No CEA {kind} transport interval for {raw!r} at T={T:.6g} K."
         )
-
+    
+    
     def transport_fit(self, name: str, temperature: float, kind: str) -> float:
         self._require_transport_loaded()
 
