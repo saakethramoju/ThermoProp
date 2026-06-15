@@ -35,11 +35,6 @@ class MatrixSolution:
     raw_solution: np.ndarray
 
 
-def _split_counts(species: SpeciesSet) -> tuple[int, int, np.ndarray, np.ndarray]:
-    gas_idx = np.nonzero(species.gas_mask)[0]
-    condensed_idx = np.nonzero(species.condensed_mask)[0]
-    return len(gas_idx), len(condensed_idx), gas_idx, condensed_idx
-
 
 def _safe_gas_mole_fractions(
     n: np.ndarray,
@@ -48,7 +43,7 @@ def _safe_gas_mole_fractions(
     trace: float = 1e-300,
 ) -> tuple[np.ndarray, float]:
     gas_idx = np.nonzero(species.gas_mask)[0]
-    ng = np.maximum(n[gas_idx], 0.0)
+    ng = np.maximum(n[gas_idx], trace)
     ntot = float(np.sum(ng))
 
     if ntot <= 0.0:
@@ -99,7 +94,7 @@ def build_tp_matrix(
         trace=trace,
     )
 
-    ng = n[gas_idx]
+    ng = np.maximum(n[gas_idx], trace)
     Ag = A[:, gas_idx]
 
     element_current = A @ n
@@ -146,7 +141,14 @@ def solve_matrix_system(system: MatrixSystem) -> np.ndarray:
     try:
         return np.linalg.solve(system.matrix, system.rhs)
     except np.linalg.LinAlgError:
-        return np.linalg.lstsq(system.matrix, system.rhs, rcond=None)[0]
+        rank = np.linalg.matrix_rank(system.matrix)
+        size = system.matrix.shape[0]
+
+        if rank < size:
+            # Keep CEA-style robustness for now, but make singular behavior visible.
+            return np.linalg.lstsq(system.matrix, system.rhs, rcond=None)[0]
+
+        raise
 
 
 def unpack_tp_solution(
@@ -218,7 +220,7 @@ def build_hp_matrix(
         trace=trace,
     )
 
-    ng = n[gas_idx]
+    ng = np.maximum(n[gas_idx], trace)
     Ag = A[:, gas_idx]
 
     h_RT = thermo.h0_over_RT
@@ -412,8 +414,9 @@ def cea_damping_factor(
     return float(max(0.0, min(1.0, alpha)))
 
 
-def residual_norm(system: MatrixSystem) -> float:
-    return float(np.linalg.norm(system.rhs, ord=np.inf))
+def residual_norm(system: MatrixSystem, solution: np.ndarray) -> float:
+    residual = system.matrix @ solution - system.rhs
+    return float(np.linalg.norm(residual, ord=np.inf))
 
 
 def max_species_correction(species: SpeciesSet, correction: MatrixSolution) -> float:

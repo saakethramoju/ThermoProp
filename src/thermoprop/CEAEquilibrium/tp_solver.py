@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .state import EquilibriumState, NewtonCorrection, SpeciesSet
+from .state import EquilibriumState, SpeciesSet
 from .thermo import thermo_arrays_for_species_set
 from .matrix import (
     build_tp_matrix,
@@ -37,7 +37,6 @@ class TPSolverOptions:
 
     element_tolerance: float = 1e-8
     correction_tolerance: float = 5e-6
-    residual_tolerance: float = 1e-10
 
     size: float = 18.420681
 
@@ -53,6 +52,7 @@ class TPSolverResult:
     max_element_error: float
     max_correction: float
     residual_norm: float
+    element_potentials: np.ndarray | None = None
 
 
 def initial_tp_state(
@@ -190,7 +190,7 @@ def solve_tp(
         current.n = n_new
         current.total_gas_moles = float(np.sum(n_new[gas_idx]))
         current.iteration = iteration
-        current.residual_norm = residual_norm(system)
+        current.residual_norm = residual_norm(system, raw)
 
         element_error = species.A @ n_new - current.element_totals
         max_element_error = float(np.max(np.abs(element_error)))
@@ -227,6 +227,7 @@ def solve_tp(
                 max_element_error=max_element_error,
                 max_correction=max_corr,
                 residual_norm=current.residual_norm,
+                element_potentials=correction.element_potentials.copy(),
             )
 
     current.converged = False
@@ -238,6 +239,7 @@ def solve_tp(
         max_element_error=float(np.max(np.abs(species.A @ n - current.element_totals))),
         max_correction=max_corr if "max_corr" in locals() else np.inf,
         residual_norm=current.residual_norm,
+        element_potentials=correction.element_potentials.copy() if "correction" in locals() else None,
     )
 
 
@@ -257,6 +259,9 @@ def _tp_converged(
     explicit and SI/kmol based.
     """
     if max_element_error > options.element_tolerance:
+        return False
+
+    if current.residual_norm > 1e-10:
         return False
 
     if abs(correction.dln_total_gas_moles) > options.correction_tolerance:

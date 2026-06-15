@@ -66,7 +66,7 @@ def _database_species_names() -> list[str]:
     """
     Return the broadest CEA product species list available from CEADatabase.
     """
-    for attr in ("product_species", "species_names", "names"):
+    for attr in ("species_names", "names", "product_species"):
         if hasattr(CEA, attr):
             value = getattr(CEA, attr)
             if callable(value):
@@ -90,11 +90,29 @@ def _resolve_name(name: str) -> str:
         return CEA.resolve_name(name)
     return name
 
+
+
+def _name_has_condensed_phase_tag(name: str) -> bool:
+    lower = name.lower()
+    return (
+        "(l)" in lower
+        or "(cr" in lower
+        or "(a)" in lower
+        or "(b)" in lower
+        or "(i)" in lower
+        or "(ii)" in lower
+        or "(iii)" in lower
+        or "(iv)" in lower
+        or "(v)" in lower
+    )
+
+
+
 def species_valid_near_temperature(
     name: str,
     temperature: float | None,
     *,
-    margin: float = 250.0,
+    margin: float = 0.0,
 ) -> bool:
     if temperature is None:
         return True
@@ -119,36 +137,44 @@ def _has_species(name: str) -> bool:
     except Exception:
         return False
 
+
+
 def _temperature_limits(name: str) -> tuple[float, float] | None:
     try:
-        if hasattr(CEA, "temperature_limits"):
-            return tuple(float(x) for x in CEA.temperature_limits([name]))
+        if hasattr(CEA, "temperature_ranges"):
+            ranges = CEA.temperature_ranges(name)
+            if ranges:
+                lows = [float(r[0]) for r in ranges]
+                highs = [float(r[1]) for r in ranges]
+                return min(lows), max(highs)
     except Exception:
         pass
 
     try:
-        # fallback: infer by probing common valid CEA limits
-        # this avoids including species like Jet-A(g) below its valid interval
-        valid_T = []
-        for T in (200.0, 298.15, 300.0, 500.0, 1000.0, 3000.0, 6000.0, 10000.0, 20000.0):
-            try:
-                CEA.thermo_molar(name, T)
-                valid_T.append(T)
-            except Exception:
-                pass
-
-        if valid_T:
-            return min(valid_T), max(valid_T)
-
+        if hasattr(CEA, "temperature_limits"):
+            limits = CEA.temperature_limits(name)
+            return tuple(float(x) for x in limits)
     except Exception:
         pass
 
     return None
 
-def _has_thermo(name: str, temperature: float | None = None) -> bool:
-    if hasattr(CEA, "has_thermo") and not CEA.has_thermo(name):
-        return False
 
+
+def _has_thermo(
+    name: str,
+    temperature: float | None = None,
+) -> bool:
+
+    # Condensed species are allowed into equilibrium
+    # even when they do not have NASA9 intervals.
+    if _is_condensed(name):
+        return True
+
+    if hasattr(CEA, "has_thermo"):
+        if not CEA.has_thermo(name):
+            return False
+        
     if temperature is not None:
         try:
             if hasattr(CEA, "nasa9_coefficients"):
@@ -171,24 +197,32 @@ def _is_reactant(name: str) -> bool:
 
 
 def _is_gas(name: str) -> bool:
+    # CEA names with explicit condensed phase tags must be treated as condensed,
+    # even if CEADatabase metadata is incomplete.
+    if _name_has_condensed_phase_tag(name):
+        return False
+
     if hasattr(CEA, "is_gas"):
         try:
             return bool(CEA.is_gas(name))
         except Exception:
             pass
 
-    lower = name.lower()
-    return not any(tag in lower for tag in ("(l)", "(cr", "(a)", "(b)", "(i)", "(ii)"))
+    return True
 
 
 def _is_condensed(name: str) -> bool:
+    # Name syntax is authoritative for CEA condensed phases.
+    if _name_has_condensed_phase_tag(name):
+        return True
+
     if hasattr(CEA, "is_condensed"):
         try:
             return bool(CEA.is_condensed(name))
         except Exception:
             pass
 
-    return not _is_gas(name)
+    return False
 
 
 def _elemental_composition(name: str) -> dict[str, float]:
@@ -278,6 +312,7 @@ def build_species_names(
         except Exception:
             continue
 
+
         if name in seen:
             continue
 
@@ -347,13 +382,7 @@ def build_element_list(
     *,
     include_charge: bool = True,
 ) -> list[str]:
-    elements = set(normalize_elements(input_elements))
-
-    for name in species_names:
-        comp = _elemental_composition(name)
-        elements.update(comp)
-
-    ordered = normalize_elements(elements)
+    ordered = normalize_elements(input_elements)
 
     if include_charge and any(is_ion_name(name) for name in species_names):
         ordered.append(CHARGE_ELEMENT)
@@ -557,6 +586,11 @@ def active_species_indices_from_moles(
 
 
 def _is_reactant_only_species(name: str) -> bool:
+    # Condensed CEA phase species like O2(L), C(gr), H2O(L)
+    # must never be treated as reactant-only, even if they lack NASA intervals.
+    if _is_condensed(name):
+        return False
+
     try:
         if hasattr(CEA, "reactant_names"):
             reactants = CEA.reactant_names

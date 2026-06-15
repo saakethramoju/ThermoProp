@@ -280,7 +280,7 @@ def mixture_gibbs_energy(
     if ntot_gas > 0.0:
         xg = ng / ntot_gas
     else:
-        xg = np.zeros_like(ng)
+        xg = np.full_like(ng, 1.0 / max(len(ng), 1))
 
     mu_over_RT = chemical_potentials_over_RT(
         thermo,

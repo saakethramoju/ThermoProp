@@ -345,3 +345,5 @@ class EquilibriumResults:
     viscosity_equilibrium: float | None = None
     conductivity_equilibrium: float | None = None
     prandtl_equilibrium: float | None = None
+
+    conductivity_reaction: float | None = None

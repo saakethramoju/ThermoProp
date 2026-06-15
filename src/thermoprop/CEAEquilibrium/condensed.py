@@ -30,10 +30,13 @@ from .species import (
     build_species_set,
     add_species_to_set,
     remove_species_from_set,
+    _database_species_names,
+    _temperature_limits,
 )
 from .thermo import thermo_arrays_for_species_set
 from .tp_solver import TPSolverOptions, TPSolverResult, solve_tp, initial_tp_state
 from .hp_solver import HPSolverOptions, HPSolverResult, solve_hp, initial_hp_state
+from ..CEADatabase import CEA
 
 
 Mode = Literal["tp", "hp"]
@@ -70,22 +73,9 @@ def condensed_gibbs_test_values(
     *,
     active_state: EquilibriumState,
     dormant_condensed_species: SpeciesSet,
+    element_potentials: np.ndarray | None = None,
 ) -> list[CondensedPhaseCandidate]:
-    """
-    Evaluate CEA condensed appearance criterion for all dormant condensed species.
 
-    For a dormant condensed species c, the CEA criterion is essentially:
-
-        g_c / RT - sum_i(a_ic * pi_i) < 0
-
-    where pi_i are element potentials recovered from the active gas equilibrium.
-
-    Here pi_i are estimated by least-squares from active gas species:
-
-        mu_j/RT ≈ A_j^T pi + ln(n_gas)
-
-    The most negative test value is inserted first.
-    """
     active_species = active_state.species
     T = active_state.temperature
 
@@ -93,33 +83,33 @@ def condensed_gibbs_test_values(
         return []
     P = active_state.pressure
 
-    thermo_active = thermo_arrays_for_species_set(active_species, T)
+    if element_potentials is None:
+        thermo_active = thermo_arrays_for_species_set(active_species, T)
 
-    gas_idx = np.nonzero(active_species.gas_mask)[0]
-    ng = active_state.n[gas_idx]
-    total_gas = float(np.sum(ng))
+        gas_idx = np.nonzero(active_species.gas_mask)[0]
+        ng = active_state.n[gas_idx]
+        total_gas = float(np.sum(ng))
 
-    if total_gas <= 0.0:
-        return []
+        if total_gas <= 0.0:
+            return []
 
-    xg = ng / total_gas
+        xg = ng / total_gas
 
-    from .thermo import chemical_potentials_over_RT
+        from .thermo import chemical_potentials_over_RT
 
-    mu_active = chemical_potentials_over_RT(
-        thermo_active,
-        xg,
-        P,
-        gas_mask=active_species.gas_mask,
-        condensed_mask=active_species.condensed_mask,
-    )
+        mu_active = chemical_potentials_over_RT(
+            thermo_active,
+            xg,
+            P,
+            gas_mask=active_species.gas_mask,
+            condensed_mask=active_species.condensed_mask,
+        )
 
-    Ag = active_species.A[:, gas_idx]
-    mug = mu_active[gas_idx]
-
-    # Estimate element potentials pi from gas species equilibrium condition.
-    # At exact equilibrium this is consistent with the reduced Gibbs equations.
-    pi, *_ = np.linalg.lstsq(Ag.T, mug, rcond=None)
+        Ag = active_species.A[:, gas_idx]
+        mug = mu_active[gas_idx]
+        pi, *_ = np.linalg.lstsq(Ag.T, mug, rcond=None)
+    else:
+        pi = np.asarray(element_potentials, dtype=float)
 
     thermo_dormant = thermo_arrays_for_species_set(
         dormant_condensed_species,
@@ -188,6 +178,34 @@ def condensed_species_to_remove(
     return remove
 
 
+
+def invalid_trace_species_to_remove(
+    state: EquilibriumState,
+    *,
+    mole_tolerance: float = 1e-40,
+) -> list[str]:
+    T = float(state.temperature)
+    remove: list[str] = []
+
+    for i, name in enumerate(state.species.names):
+        limits = _temperature_limits(name)
+
+        if limits is None:
+            continue
+
+        Tmin, Tmax = limits
+
+        if Tmin <= T <= Tmax:
+            continue
+
+        if state.n[i] <= mole_tolerance:
+            remove.append(name)
+
+    return remove
+
+
+
+
 def _gas_only_species_set(
     *,
     elements: list[str],
@@ -221,7 +239,7 @@ def _all_condensed_species_set(
 ) -> SpeciesSet:
     return build_species_set(
         elements,
-        candidates=candidates,
+        candidates=CEA.condensed_species,
         options=SpeciesBuildOptions(
             include_gases=False,
             include_condensed=True,
@@ -232,7 +250,6 @@ def _all_condensed_species_set(
             temperature=temperature,
         ),
     )
-
 
 def _transfer_state_to_species_set(
     old_state: EquilibriumState,
@@ -291,7 +308,7 @@ def solve_with_condensed_phases_tp(
 
     dormant_condensed = _all_condensed_species_set(
         elements=elements,
-        temperature=temperature,
+        temperature=None,
         candidates=candidates,
         include_ions=condensed_options.include_ions,
         include_electron=condensed_options.include_electron,
@@ -327,10 +344,19 @@ def solve_with_condensed_phases_tp(
         
         state = last_result.state
 
+        state, phase_changed = reconcile_condensed_phases(
+            state,
+            initial_new_moles=condensed_options.initial_condensed_moles,
+        )
+
+        if phase_changed:
+            continue
+
         remove_now = condensed_species_to_remove(
             state,
             tolerance=condensed_options.removal_tolerance,
         )
+
 
         if remove_now:
             active_species = remove_species_from_set(state.species, remove_now)
@@ -381,6 +407,7 @@ def solve_with_condensed_phases_tp(
         tests = condensed_gibbs_test_values(
             active_state=state,
             dormant_condensed_species=dormant_subset,
+            element_potentials=getattr(last_result, "element_potentials", None),
         )
 
         chosen = choose_condensed_species_to_insert(
@@ -465,7 +492,7 @@ def solve_with_condensed_phases_hp(
 
     dormant_condensed = _all_condensed_species_set(
         elements=elements,
-        temperature=guess_temperature,
+        temperature=None,
         candidates=candidates,
         include_ions=condensed_options.include_ions,
         include_electron=condensed_options.include_electron,
@@ -495,10 +522,31 @@ def solve_with_condensed_phases_hp(
         if not last_result.success:
             state = last_result.state
 
+            state, phase_changed = reconcile_condensed_phases(
+                state,
+                initial_new_moles=condensed_options.initial_condensed_moles,
+            )
+
+            if phase_changed:
+                continue
+
+            remove_invalid = invalid_trace_species_to_remove(state)
+
+            if remove_invalid:
+                active_species = remove_species_from_set(state.species, remove_invalid)
+                state = _transfer_state_to_species_set(state, active_species)
+                removed.extend(remove_invalid)
+
+                if condensed_options.verbose:
+                    print(f"Removed invalid trace species: {remove_invalid}")
+
+                continue
+
             if condensed_options.enabled:
                 tests = condensed_gibbs_test_values(
                     active_state=state,
                     dormant_condensed_species=dormant_condensed,
+                    element_potentials=getattr(last_result, "element_potentials", None),
                 )
 
                 chosen = choose_condensed_species_to_insert(
@@ -550,11 +598,33 @@ def solve_with_condensed_phases_hp(
 
         state = last_result.state
 
+        state, phase_changed = reconcile_condensed_phases(
+            state,
+            initial_new_moles=condensed_options.initial_condensed_moles,
+        )
+
+        if phase_changed:
+            continue
+
+
+        remove_invalid = invalid_trace_species_to_remove(state)
+
+        if remove_invalid:
+            active_species = remove_species_from_set(state.species, remove_invalid)
+            state = _transfer_state_to_species_set(state, active_species)
+            removed.extend(remove_invalid)
+
+            if condensed_options.verbose:
+                print(f"Removed invalid trace species: {remove_invalid}")
+
+            continue
 
         remove_now = condensed_species_to_remove(
             state,
             tolerance=condensed_options.removal_tolerance,
         )
+
+
 
         if remove_now:
             active_species = remove_species_from_set(state.species, remove_now)
@@ -605,6 +675,7 @@ def solve_with_condensed_phases_hp(
         tests = condensed_gibbs_test_values(
             active_state=state,
             dormant_condensed_species=dormant_subset,
+            element_potentials=getattr(last_result, "element_potentials", None),
         )
 
         chosen = choose_condensed_species_to_insert(
@@ -660,3 +731,74 @@ def solve_with_condensed_phases_hp(
         removed_species=removed,
         last_solver_result=last_result,
     )
+
+
+
+def valid_condensed_phase_for_temperature(name: str, T: float) -> str | None:
+    base = name.split("(", 1)[0]
+
+    candidates = [
+        candidate
+        for candidate in _database_species_names()
+        if candidate.startswith(base + "(")
+    ]
+
+    valid = []
+    for candidate in candidates:
+        try:
+            CEA.thermo_molar(candidate, T)
+            valid.append(candidate)
+        except Exception:
+            pass
+
+    if not valid:
+        return None
+
+    # Prefer exact current phase if still valid.
+    if name in valid:
+        return name
+
+    return valid[0]
+
+
+
+
+def reconcile_condensed_phases(
+    state: EquilibriumState,
+    *,
+    initial_new_moles: float = 1e-12,
+) -> tuple[EquilibriumState, bool]:
+    T = float(state.temperature)
+    species = state.species
+    changed = False
+
+    for name in list(species.names):
+        idx = species.name_to_index[name]
+
+        if not species.condensed_mask[idx]:
+            continue
+
+        replacement = valid_condensed_phase_for_temperature(name, T)
+
+        if replacement is None or replacement == name:
+            continue
+
+        old_moles = state.n[idx]
+
+        new_species = remove_species_from_set(state.species, [name])
+        new_species = add_species_to_set(new_species, [replacement])
+
+        new_state = _transfer_state_to_species_set(
+            state,
+            new_species,
+            initial_new_moles=initial_new_moles,
+        )
+
+        new_idx = new_state.species.name_to_index[replacement]
+        new_state.n[new_idx] = max(float(old_moles), initial_new_moles)
+
+        state = new_state
+        species = state.species
+        changed = True
+
+    return state, changed

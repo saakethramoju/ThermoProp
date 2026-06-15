@@ -204,7 +204,8 @@ class CEADatabase:
     def condensed_species(self) -> list[str]:
         if self._condensed_species_cache is None:
             self._condensed_species_cache = sorted(
-                name for name in self.product_names if self.is_condensed(name)
+                name for name in self.names
+                if self.is_condensed(name)
             )
 
         return list(self._condensed_species_cache)
@@ -400,18 +401,20 @@ class CEADatabase:
     def phase_label(self, name: str) -> str | None:
         name = self.resolve_name(name)
         return self._phase_label_from_name(name)
+        
+    def is_condensed_phase_name(self, name: str) -> bool:
+        name = self.resolve_name(name)
+        return self._is_condensed_phase_label(
+            self.phase_label(name)
+        )
 
     def is_condensed(self, name: str) -> bool:
         name = self.resolve_name(name)
-
-        if not self.has_thermo(name):
-            return False
-
-        return self._is_condensed_phase_label(self.phase_label(name))
+        return self.is_condensed_phase_name(name)
 
     def is_gas(self, name: str) -> bool:
         name = self.resolve_name(name)
-        return self.has_thermo(name) and not self.is_condensed(name)
+        return not self.is_condensed(name)
 
     def element_set(self, name: str) -> set[str]:
         return set(self.elemental_composition(name).keys())
@@ -446,17 +449,35 @@ class CEADatabase:
 
         return max(mins), min(maxs)
 
-    def interval_index(self, name: str, temperature: float) -> int:
+    def interval_index(
+        self,
+        name: str,
+        temperature: float,
+        *,
+        extrapolation_margin: float = 50.0,
+    ) -> int:
         name = self.resolve_name(name)
         idx = self.index(name)
         n = int(self._thermo["n_intervals"][idx])
         T = float(temperature)
 
-        for j in range(n):
-            Tmin, Tmax = self._thermo["t_ranges"][idx, j]
+        if n <= 0:
+            raise ValueError(f"{name!r} has no valid NASA polynomial ranges.")
 
+        ranges = self._thermo["t_ranges"][idx, :n]
+
+        for j in range(n):
+            Tmin, Tmax = ranges[j]
             if Tmin <= T <= Tmax:
                 return int(j)
+
+        first_Tmin = float(ranges[0, 0])
+        if first_Tmin - extrapolation_margin <= T < first_Tmin:
+            return 0
+
+        last_Tmax = float(ranges[n - 1, 1])
+        if last_Tmax < T <= last_Tmax + extrapolation_margin:
+            return int(n - 1)
 
         raise ValueError(f"No CEA polynomial interval for {name!r} at T={T:.6g} K.")
 

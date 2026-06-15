@@ -441,7 +441,7 @@ def build_results(
     cvf = cv_frozen(state)
     gammaf = cpf / cvf if cvf > 0.0 else np.nan
 
-    if tp_neighbor_solver is not None:
+    if tp_neighbor_solver is not None and not has_condensed_species(state):
         cpe = equilibrium_cp_finite_difference(
             state,
             tp_neighbor_solver=tp_neighbor_solver,
@@ -485,4 +485,12 @@ def build_results(
         viscosity_equilibrium=transport_values.get("viscosity_equilibrium"),
         conductivity_equilibrium=transport_values.get("conductivity_equilibrium"),
         prandtl_equilibrium=transport_values.get("prandtl_equilibrium"),
+        conductivity_reaction=transport_values.get("conductivity_reaction"),
     )
+
+
+def has_condensed_species(state: EquilibriumState) -> bool:
+    condensed_idx = np.nonzero(state.species.condensed_mask)[0]
+    if len(condensed_idx) == 0:
+        return False
+    return bool(np.any(state.n[condensed_idx] > 0.0))

@@ -39,11 +39,11 @@ class HPSolverOptions:
     species_trace: float = 1e-12
 
     element_tolerance: float = 1e-8
-    enthalpy_tolerance: float = 1e-3
+    enthalpy_tolerance: float = 1e-1
     correction_tolerance: float = 5e-6
-    temperature_correction_tolerance: float = 1e-4
+    temperature_correction_tolerance: float = 5e-4
 
-    min_temperature: float = 200.0
+    min_temperature: float = 150
     max_temperature: float = 20000.0
 
     size: float = 18.420681
@@ -61,6 +61,7 @@ class HPSolverResult:
     max_correction: float
     temperature_correction: float
     residual_norm: float
+    element_potentials: np.ndarray | None = None
 
 
 def initial_hp_state(
@@ -216,22 +217,44 @@ def solve_hp(
         if not np.isfinite(T_new):
             T_new = T
 
-        T_new = float(np.clip(T_new, options.min_temperature, options.max_temperature))
+        T_new = float(
+            np.clip(
+                T_new,
+                options.min_temperature,
+                options.max_temperature,
+            )
+        )
 
         current.n = n_new
         current.temperature = T_new
         current.total_gas_moles = float(np.sum(n_new[gas_idx]))
         current.iteration = iteration
-        current.residual_norm = residual_norm(system)
+        current.residual_norm = residual_norm(system, raw)
 
 
-        thermo_new = thermo_arrays_for_species_set(
-            species,
-            current.temperature,
-            on_error="raise",
-        )
+        try:
+            thermo_new = thermo_arrays_for_species_set(
+                species,
+                current.temperature,
+                on_error="raise",
+            )
+        except Exception as exc:
+            current.converged = False
+            return HPSolverResult(
+                state=current,
+                success=False,
+                message=f"HP active species thermo invalid at updated temperature: {exc}",
+                iterations=iteration,
+                max_element_error=np.inf,
+                enthalpy_error=np.inf,
+                max_correction=max_corr,
+                temperature_correction=dlnT_abs,
+                residual_norm=current.residual_norm,
+                element_potentials=correction.element_potentials.copy(),
+            )
+
         h_products = mixture_enthalpy(n_new, thermo_new)
-        h_error = h_products - float(target_enthalpy)
+        h_error = float(target_enthalpy) - h_products
 
         element_error = species.A @ n_new - current.element_totals
         max_element_error = float(np.max(np.abs(element_error)))
@@ -277,6 +300,7 @@ def solve_hp(
                 max_correction=max_corr,
                 temperature_correction=dlnT_abs,
                 residual_norm=current.residual_norm,
+                element_potentials=correction.element_potentials.copy(),
             )
 
     current.converged = False
@@ -289,6 +313,7 @@ def solve_hp(
             "h_err =", h_error,
             "corr =", max_corr,
         )
+
     return HPSolverResult(
         state=current,
         success=False,
@@ -299,6 +324,7 @@ def solve_hp(
         max_correction=max_corr,
         temperature_correction=dlnT_abs,
         residual_norm=current.residual_norm,
+        element_potentials=correction.element_potentials.copy() if "correction" in locals() else None,
     )
 
 
@@ -312,6 +338,9 @@ def _hp_converged(
     options: HPSolverOptions,
 ) -> bool:
     if max_element_error > options.element_tolerance:
+        return False
+
+    if current.residual_norm > 1e-10:
         return False
 
     if abs(enthalpy_error) > options.enthalpy_tolerance:

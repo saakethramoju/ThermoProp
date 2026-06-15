@@ -397,7 +397,7 @@ class Equilibrium:
         include_ions: bool = False,
         include_electron: bool = False,
         combustion_gas_trace: float = 1e-12,
-        combustion_gas_max_species: int | None = 50,
+        combustion_gas_max_species: int | None = None,
         max_iterations: int = 120,
         max_outer_iterations: int = 30,
         verbose: bool = False,
@@ -1040,18 +1040,6 @@ class Equilibrium:
     @property
     def gamma(self) -> float:
         return self.gamma_equilibrium
-        
-    @property
-    def conductivity(self) -> float | None:
-        return self.thermal_conductivity_equilibrium
-
-    @property
-    def thermal_conductivity(self) -> float | None:
-        return self.thermal_conductivity_equilibrium
-
-    @property
-    def specific_heat_ratio(self) -> float:
-        return self.gamma_equilibrium
 
     @property
     def dynamic_viscosity_frozen(self) -> float | None:
@@ -1107,6 +1095,14 @@ class Equilibrium:
     @property
     def conductivity(self) -> float | None:
         return self.thermal_conductivity
+        
+    @property
+    def conductivity_reaction(self) -> float | None:
+        return self._results.conductivity_reaction
+        
+    @property
+    def thermal_conductivity_reaction(self) -> float | None:
+        return self.conductivity_reaction
 
     @property
     def prandtl_frozen(self) -> float | None:
@@ -1262,6 +1258,7 @@ class Equilibrium:
             "dynamic_viscosity_frozen": self.dynamic_viscosity_frozen,
             "dynamic_viscosity_equilibrium": self.dynamic_viscosity_equilibrium,
             "thermal_conductivity_frozen": self.thermal_conductivity_frozen,
+            "thermal_conductivity_reaction": self.conductivity_reaction,
             "thermal_conductivity_equilibrium": self.thermal_conductivity_equilibrium,
             "prandtl_frozen": self.prandtl_frozen,
             "prandtl_equilibrium": self.prandtl_equilibrium,
