@@ -66,7 +66,7 @@ cea_thermochemical_database = "Thermochemical and transport data adapted from NA
 
 [tool.uv.build-backend]
 module-name = "thermoprop"
-source-include = ["src/thermoprop/cea_data/**"]
+source-include = ["src/thermoprop/cea_data/**", "src/thermoprop/data/**"]
 
 [build-system]
 requires = ["uv_build>=0.11.18,<0.12.0"]

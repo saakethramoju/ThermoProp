@@ -12,6 +12,7 @@ from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
 from .ReferenceState import normalize_reference_target
 from ._api import PropertyIntrospectionMixin
+from ._formatting import format_optional, rounded_dict, format_rows
 
 class Propellant(PropertyIntrospectionMixin):
     """
@@ -1907,13 +1908,7 @@ class Propellant(PropertyIntrospectionMixin):
     # ---------------- String output ---------------- #
 
     def _safe(self, value, fmt=".3e"):
-        if value is None:
-            return "N/A"
-        try:
-            return f"{value:{fmt}}"
-        except Exception:
-            return str(value)
-
+        return format_optional(value, fmt)
     def _safe_property(self, property_name: str, fmt=".3e"):
         try:
             return self._safe(getattr(self, property_name), fmt)
@@ -2035,8 +2030,7 @@ class Propellant(PropertyIntrospectionMixin):
             ("Speed of sound [m/s]" + label("speed_of_sound"), self._safe(speed_of_sound, ".3f")),
         ]
 
-        width = max(len(r[0]) for r in rows)
-        return "\n".join(f"{key:<{width}} : {val}" for key, val in rows)
+        return format_rows(rows)
 
     def __repr__(self) -> str:
         pressure = "None" if self.pressure is None else f"{self.pressure:.3e}"

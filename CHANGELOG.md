@@ -4,6 +4,12 @@
 
 ### Improved
 
+* Added support for very high and low mixture ratio values.
+* Moved the large species and material registries out of Python source and into packaged JSON data files with thin typed loader modules.
+* Added lazy top-level imports so `import thermoprop as tp; tp.list_species()` and material/species discovery work without importing every optional backend immediately.
+* Added clearer `list_species()`, `list_materials()`, and `list_supported_species()` discovery aliases while preserving existing `species()` and `materials()` functions.
+* Added shared formatting helpers for wrapper `__str__` output, including consistent `N/A` handling for optional or non-finite properties.
+* Added a lightweight `examples/smoke_api.py` discovery smoke test that does not require CoolProp, PYroMat, or RocketProps.
 * Added shared public-API helpers for wrapper property introspection.
 * Added shared fraction-vector validation for `Fluid`, `IdealGas`, and `CombustionGas`.
 * Added missing `Equilibrium.supported_properties()`, `Equilibrium.show_supported_properties()`, and `Equilibrium.supports_property()` support through the shared API mixin.

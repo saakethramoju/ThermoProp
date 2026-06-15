@@ -33,6 +33,7 @@ from .CEADatabase import CEA
 from .Reactants import Reactants
 from .CombustionGas import CombustionGas
 from ._api import PropertyIntrospectionMixin
+from ._formatting import format_optional, rounded_dict, format_rows
 
 
 from .CEAEquilibrium.state import FeedState, EquilibriumState, EquilibriumResults
@@ -1349,12 +1350,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         }
 
     def _safe(self, value, fmt=".6g") -> str:
-        if value is None:
-            return "None"
-        try:
-            return f"{value:{fmt}}"
-        except Exception:
-            return str(value)
+        return format_optional(value, fmt, missing="None")
 
     def __str__(self) -> str:
         rows = [
@@ -1397,10 +1393,7 @@ class Equilibrium(PropertyIntrospectionMixin):
 
         rows.append(("Equilibrium mole fractions", ""))
 
-        width = max(len(key) for key, _ in rows)
-        header = "\n".join(f"{key:<{width}} : {value}" for key, value in rows)
-
-        return header + "\n\n" + self._format_species_table()
+        return format_rows(rows) + "\n\n" + self._format_species_table()
     
 
     def _format_species_table(self, trace: float | None = None, max_species: int | None = 25) -> str:

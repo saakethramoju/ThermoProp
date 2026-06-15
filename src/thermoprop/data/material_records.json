@@ -1,0 +1,74 @@
+{
+  "1018 Carbon Steel": {
+    "category": "Steel",
+    "name": "1018 Carbon Steel"
+  },
+  "1045 Carbon Steel": {
+    "category": "Steel",
+    "name": "1045 Carbon Steel"
+  },
+  "3140 Low-Alloy Steel": {
+    "category": "Steel",
+    "name": "3140 Low-Alloy Steel"
+  },
+  "4140 Steel": {
+    "category": "Steel",
+    "name": "4140 Steel"
+  },
+  "A286 Steel": {
+    "category": "Stainless Steel",
+    "name": "A286 Steel"
+  },
+  "Aluminum 6061": {
+    "category": "Aluminum Alloy",
+    "name": "Aluminum 6061"
+  },
+  "Aluminum 7075": {
+    "category": "Aluminum Alloy",
+    "name": "Aluminum 7075"
+  },
+  "Copper C101": {
+    "category": "Copper Alloy",
+    "name": "Copper C101"
+  },
+  "Copper C11000": {
+    "category": "Copper Alloy",
+    "name": "Copper C11000"
+  },
+  "Copper C17200": {
+    "category": "Copper Alloy",
+    "name": "Copper C17200"
+  },
+  "GRCop-42": {
+    "category": "Copper Alloy",
+    "name": "GRCop-42"
+  },
+  "GRCop-84": {
+    "category": "Copper Alloy",
+    "name": "GRCop-84"
+  },
+  "Graphite": {
+    "category": "Ceramic / Non-Metal",
+    "name": "Graphite"
+  },
+  "Inconel 625": {
+    "category": "Nickel Superalloy",
+    "name": "Inconel 625"
+  },
+  "Inconel 718": {
+    "category": "Nickel Superalloy",
+    "name": "Inconel 718"
+  },
+  "Stainless Steel 303": {
+    "category": "Stainless Steel",
+    "name": "Stainless Steel 303"
+  },
+  "Stainless Steel 304": {
+    "category": "Stainless Steel",
+    "name": "Stainless Steel 304"
+  },
+  "Stainless Steel 316": {
+    "category": "Stainless Steel",
+    "name": "Stainless Steel 316"
+  }
+}

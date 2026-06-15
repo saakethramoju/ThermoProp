@@ -38,7 +38,7 @@ ThermoProp requires Python 3.11 or newer.
 
 ## 1.0.1 release focus
 
-ThermoProp 1.0.1 is a cleanup and API-stability release. It keeps the 1.0.0 solver and property-model behavior intact while reducing repeated helper code, adding missing wrapper introspection support to `Equilibrium`, clarifying internal CEA-equilibrium documentation, adding snake_case `Equilibrium.combustion_gas` aliases, and cleaning the release source tree.
+ThermoProp 1.0.1 is a cleanup and API-stability release. It keeps the 1.0.0 solver and property-model behavior intact while reducing repeated helper code, adding missing wrapper introspection support to `Equilibrium`, clarifying internal CEA-equilibrium documentation, adding snake_case `Equilibrium.combustion_gas` aliases, moving large registry data into packaged JSON files, adding lazy package imports, and cleaning the release source tree.
 
 Use these wrapper-level inspection helpers consistently across the public API:
 
@@ -135,18 +135,21 @@ from thermoprop import SpeciesDatabase
 from thermoprop import MaterialDatabase
 ```
 
-ThermoProp also exposes convenience functions:
+ThermoProp also exposes convenience functions. The `list_*` names are recommended because they are harder to accidentally shadow with local variables; the shorter `species()` and `materials()` names remain available for compatibility.
 
 ```python
-from thermoprop import species
+from thermoprop import list_species
 from thermoprop import supported_species
 from thermoprop import species_aliases
 from thermoprop import add_species_alias
 
-from thermoprop import materials
+from thermoprop import list_materials
 from thermoprop import supported_materials
 from thermoprop import material_aliases
 from thermoprop import add_material_alias
+
+print(list_species()[:10])
+print(list_materials())
 ```
 
 ---

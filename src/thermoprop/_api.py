@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from ._formatting import format_optional
 
 
 class PropertyIntrospectionMixin:
@@ -41,17 +41,3 @@ class PropertyIntrospectionMixin:
     def supports_property(cls, property_name: str) -> bool:
         """Return True when ``property_name`` is a supported wrapper property."""
         return property_name in cls.supported_properties()
-
-
-def format_optional(value: Any, fmt: str = ".3e") -> str:
-    """Format a scalar for user-facing ``__str__`` output.
-
-    ``None`` is represented explicitly. Non-numeric values fall back to ``str``.
-    """
-    if value is None:
-        return "None"
-
-    try:
-        return f"{value:{fmt}}"
-    except Exception:
-        return str(value)

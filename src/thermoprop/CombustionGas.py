@@ -9,6 +9,7 @@ from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
 from .ReferenceState import normalize_reference_target
 from ._api import PropertyIntrospectionMixin
+from ._formatting import format_optional, rounded_dict, format_rows
 from ._validation import validate_fraction_vector
 
 class CombustionGas(PropertyIntrospectionMixin):
@@ -1357,17 +1358,9 @@ class CombustionGas(PropertyIntrospectionMixin):
     # ---------------- String output ---------------- #
 
     def _safe(self, value, fmt=".3e"):
-        if value is None:
-            return "N/A"
-        try:
-            return f"{value:{fmt}}"
-        except Exception:
-            return str(value)
+        return format_optional(value, fmt)
 
     def __str__(self):
-        def format_dict(d: dict, decimals=5):
-            return {k: round(v, decimals) for k, v in d.items()}
-
         pressure = self.pressure
         temperature = self.temperature
         density = self.density if self._pressure is not None else None
@@ -1387,8 +1380,8 @@ class CombustionGas(PropertyIntrospectionMixin):
         rows = [
             ("Gas(es)", ", ".join(self._species_names)),
             ("Backend", self.backend),
-            ("Mole fractions", format_dict(self.mole_fractions, 5)),
-            ("Mass fractions", format_dict(self.mass_fractions, 5)),
+            ("Mole fractions", rounded_dict(self.mole_fractions, 5)),
+            ("Mass fractions", rounded_dict(self.mass_fractions, 5)),
             ("Phase", self.phase),
             ("Pressure [Pa]", self._safe(pressure, ".3e")),
             ("Temperature [K]", self._safe(temperature, ".2f")),
@@ -1411,8 +1404,7 @@ class CombustionGas(PropertyIntrospectionMixin):
         if self.estimated_transport_species:
             rows.append(("Estimated transport", self.estimated_transport_species))
 
-        width = max(len(r[0]) for r in rows)
-        return "\n".join(f"{key:<{width}} : {val}" for key, val in rows)
+        return format_rows(rows)
 
     def __repr__(self) -> str:
         species_str = ", ".join(self._species_names)

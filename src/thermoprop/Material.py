@@ -8,6 +8,7 @@ import numpy as np
 
 from .MaterialDatabase import MaterialDatabase
 from ._api import PropertyIntrospectionMixin
+from ._formatting import format_optional, rounded_dict, format_rows
 
 
 class Material(PropertyIntrospectionMixin):
@@ -463,13 +464,7 @@ class Material(PropertyIntrospectionMixin):
     # ---------------- String output ---------------- #
 
     def _safe(self, value, fmt=".3e"):
-        if value is None:
-            return "N/A"
-        try:
-            return f"{value:{fmt}}"
-        except Exception:
-            return str(value)
-
+        return format_optional(value, fmt)
     def _safe_property(self, property_name: str, fmt=".3e"):
         try:
             return self._safe(getattr(self, property_name), fmt)
@@ -498,8 +493,7 @@ class Material(PropertyIntrospectionMixin):
             ("Electrical resistivity [Ohm-m]", self._safe_property("electrical_resistivity", ".3e")),
         ]
 
-        width = max(len(r[0]) for r in rows)
-        return "\n".join(f"{key:<{width}} : {val}" for key, val in rows)
+        return format_rows(rows)
 
     def __repr__(self) -> str:
         return (
