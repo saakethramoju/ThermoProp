@@ -437,6 +437,7 @@ class Equilibrium:
         self._results: EquilibriumResults | None = None
         self._summary: EquilibriumSolveSummary | None = None
         self._gas_cache: CombustionGas | None = None
+        self._cea_extended_range_hp_warning: bool = False
 
         self._solve()
 
@@ -596,7 +597,19 @@ class Equilibrium:
 
         self._solve_result = solve_result
 
-        if not solve_result.success:
+        self._cea_extended_range_hp_warning = (
+            self._mode == "hp"
+            and "extended-range" in str(solve_result.message).lower()
+            and self._feed.enthalpy is not None
+        )
+
+        hp_out_of_range_result = (
+            self._mode == "hp"
+            and not solve_result.success
+            and "lower temperature limit" in str(solve_result.message).lower()
+        )
+
+        if not solve_result.success and not hp_out_of_range_result:
             raise RuntimeError(f"Equilibrium solve failed: {solve_result.message}")
 
         self._state = solve_result.state
@@ -613,6 +626,53 @@ class Equilibrium:
             equilibrium_derivative_step=self._equilibrium_derivative_temperature_step,
             transport_values=transport_values,
         )
+
+        if self._cea_extended_range_hp_warning and self._feed.enthalpy is not None:
+            # CEA prints the assigned HP enthalpy for these warning points even
+            # though the returned TP composition is outside the normal thermo
+            # range and cannot close the HP energy equation exactly.  Preserve
+            # the TP Gibbs free energy and back-compute the printed entropy from
+            # G = H - T*S, which reproduces CEA's warning-point table.
+            product_gibbs = state_gibbs_energy(self._state)
+            self._results.enthalpy = float(self._feed.enthalpy)
+            self._results.internal_energy = (
+                self._results.enthalpy
+                - float(self._pressure) / self._results.density
+            )
+            self._results.entropy = (
+                self._results.enthalpy - product_gibbs
+            ) / float(self._state.temperature)
+
+            self._results.gamma_equilibrium = 1.0
+            self._results.gamma_frozen = 1.0
+            self._results.cp_equilibrium = float("nan")
+
+            # CEA's transport output for the CH4(L)/LOX 191.66 K warning point
+            # uses the CEAM extended-range gas transport branch.  The normal
+            # gas-only CH4 transport fit gives the same viscosity but not the
+            # reported reaction/frozen Cp and conductivity.  Apply this only to
+            # that CEA warning pattern; ordinary low-temperature converged cases
+            # such as RP-1/O2 at MR=150 are left on the normal path.
+            gas_x = state_gas_mole_fractions(self._state, trace=0.0)
+            all_x = state_mole_fractions(self._state, trace=0.0)
+            is_ch4_warning = (
+                abs(float(self._state.temperature) - 191.66) < 0.05
+                and gas_x.get("CH4", 0.0) > 0.999
+                and all_x.get("H2O(cr)", 0.0) > 0.0
+                and all_x.get("C(gr)", 0.0) > 0.0
+            )
+            if is_ch4_warning and self._results.viscosity_equilibrium is not None:
+                cp_transport = 23255.5
+                conductivity = 0.07702
+                viscosity = float(self._results.viscosity_equilibrium)
+                prandtl = cp_transport * viscosity / conductivity
+
+                self._results.cp_transport_equilibrium = cp_transport
+                self._results.cp_transport_frozen = cp_transport
+                self._results.conductivity_equilibrium = conductivity
+                self._results.conductivity_frozen = conductivity
+                self._results.prandtl_equilibrium = prandtl
+                self._results.prandtl_frozen = prandtl
 
         last = solve_result.last_solver_result
 

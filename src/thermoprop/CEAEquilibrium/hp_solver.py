@@ -43,8 +43,9 @@ class HPSolverOptions:
     correction_tolerance: float = 5e-6
     temperature_correction_tolerance: float = 5e-4
 
-    min_temperature: float = 150
+    min_temperature: float = 100.0
     max_temperature: float = 20000.0
+
 
     size: float = 18.420681
     verbose: bool = False
@@ -73,16 +74,9 @@ def initial_hp_state(
     total_gas_moles_guess: float | None = None,
     trace: float = 1e-300,
 ) -> EquilibriumState:
-    """
-    CEA-style crude initial HP estimate.
-
-    CEA uses 3800 K unless a better estimate is supplied. Condensed species
-    start at zero. Gas species are distributed uniformly.
-    """
     element_totals = np.asarray(element_totals, dtype=float)
 
     T = float(guess_temperature)
-
     n = np.zeros(species.nspecies, dtype=float)
 
     gas_idx = np.nonzero(species.gas_mask)[0]
@@ -117,20 +111,6 @@ def solve_hp(
     target_enthalpy: float,
     options: HPSolverOptions | None = None,
 ) -> HPSolverResult:
-    """
-    Solve HP equilibrium for the active SpeciesSet.
-
-    Parameters
-    ----------
-    state:
-        Initial equilibrium state.
-
-    target_enthalpy:
-        Reactant enthalpy [J/kg].
-
-    options:
-        Solver controls.
-    """
     if options is None:
         options = HPSolverOptions()
 
@@ -157,6 +137,7 @@ def solve_hp(
     dlnT_abs = np.inf
     h_error = np.inf
     max_element_error = np.inf
+    correction = None
 
     for iteration in range(1, options.max_iterations + 1):
         T = float(np.clip(T, options.min_temperature, options.max_temperature))
@@ -212,14 +193,14 @@ def solve_hp(
                 n_new[condensed_idx[tiny_negative]] = 0.0
 
         dlnT = 0.0 if correction.dln_temperature is None else correction.dln_temperature
-        T_new = T * np.exp(np.clip(damping * dlnT, -5.0, 5.0))
+        T_new_raw = T * np.exp(np.clip(damping * dlnT, -5.0, 5.0))
 
-        if not np.isfinite(T_new):
-            T_new = T
+        if not np.isfinite(T_new_raw):
+            T_new_raw = T
 
         T_new = float(
             np.clip(
-                T_new,
+                T_new_raw,
                 options.min_temperature,
                 options.max_temperature,
             )
@@ -230,7 +211,6 @@ def solve_hp(
         current.total_gas_moles = float(np.sum(n_new[gas_idx]))
         current.iteration = iteration
         current.residual_norm = residual_norm(system, raw)
-
 
         try:
             thermo_new = thermo_arrays_for_species_set(
@@ -274,9 +254,10 @@ def solve_hp(
                 f"elem={max_element_error:.3e} "
                 f"h_err={h_error:.3e} "
                 f"corr={max_corr:.3e} "
-                f"dlnT={dlnT_abs:.3e} "
+                f"dlnT={dlnT:.3e} "
                 f"ngas={current.total_gas_moles:.6e}"
             )
+
 
         n = n_new
         T = T_new
@@ -314,19 +295,27 @@ def solve_hp(
             "corr =", max_corr,
         )
 
+    if current.temperature <= options.min_temperature + 1e-9 and h_error < 0.0:
+        message = (
+            "HP equilibrium reached the lower temperature limit with unresolved "
+            "enthalpy. The assigned reactant enthalpy is below the reachable "
+            "product enthalpy for the available species set."
+        )
+    else:
+        message = "HP equilibrium did not converge within max_iterations."
+
     return HPSolverResult(
         state=current,
         success=False,
-        message="HP equilibrium did not converge within max_iterations.",
+        message=message,
         iterations=options.max_iterations,
         max_element_error=max_element_error,
         enthalpy_error=h_error,
         max_correction=max_corr,
         temperature_correction=dlnT_abs,
         residual_norm=current.residual_norm,
-        element_potentials=correction.element_potentials.copy() if "correction" in locals() else None,
+        element_potentials=correction.element_potentials.copy() if correction is not None else None,
     )
-
 
 def _hp_converged(
     *,

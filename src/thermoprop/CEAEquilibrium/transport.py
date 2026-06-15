@@ -120,16 +120,12 @@ def make_combustion_gas_for_transport(
     if not composition:
         raise RuntimeError("Cannot build transport gas; no gas species are present.")
 
-    try:
-        return CombustionGas(
-            composition,
-            basis="mole",
-            pressure=state.pressure,
-            temperature=state.temperature,
-        )
-    except Exception as e:
-        print("TRANSPORT BUILD FAILED:", repr(e))
-        raise
+    return CombustionGas(
+        composition,
+        basis="mole",
+        pressure=state.pressure,
+        temperature=state.temperature,
+    )
 
 def gas_mass_fraction(state: EquilibriumState) -> float:
     gas_mask = state.species.gas_mask
@@ -659,11 +655,26 @@ def build_transport_values(
     tp_neighbor_solver=None,
     options: TransportOptions | None = None,
 ) -> dict[str, float | None]:
-    result = equilibrium_transport(
-        state,
-        tp_neighbor_solver=tp_neighbor_solver,
-        options=options,
-    )
+    empty = {
+        "cp_transport_frozen": None,
+        "viscosity_frozen": None,
+        "conductivity_frozen": None,
+        "prandtl_frozen": None,
+        "cp_transport_equilibrium": None,
+        "viscosity_equilibrium": None,
+        "conductivity_equilibrium": None,
+        "prandtl_equilibrium": None,
+        "conductivity_reaction": None,
+    }
+
+    try:
+        result = equilibrium_transport(
+            state,
+            tp_neighbor_solver=tp_neighbor_solver,
+            options=options,
+        )
+    except Exception:
+        return empty
 
     return {
         "cp_transport_frozen": result.cp_frozen,

@@ -471,15 +471,30 @@ class CEADatabase:
             if Tmin <= T <= Tmax:
                 return int(j)
 
+        # CEA behavior: warn out of range, but still evaluate the polynomial.
+        # Use the nearest interval, but keep the actual requested T.
         first_Tmin = float(ranges[0, 0])
-        if first_Tmin - extrapolation_margin <= T < first_Tmin:
+        if first_Tmin - 25.0 <= T < first_Tmin:
             return 0
 
         last_Tmax = float(ranges[n - 1, 1])
-        if last_Tmax < T <= last_Tmax + extrapolation_margin:
+        if last_Tmax < T <= last_Tmax + 25.0:
             return int(n - 1)
 
-        raise ValueError(f"No CEA polynomial interval for {name!r} at T={T:.6g} K.")
+        # CEA behavior: use nearest interval outside range.
+        first_Tmin = float(ranges[0, 0])
+        if T < first_Tmin:
+            return 0
+
+        last_Tmax = float(ranges[n - 1, 1])
+        if T > last_Tmax:
+            return int(n - 1)
+
+        raise ValueError(
+            f"No CEA polynomial interval for {name!r} at T={T:.6g} K."
+        )
+
+
 
     def nasa9_coefficients(self, name: str, temperature: float) -> np.ndarray:
         name = self.resolve_name(name)

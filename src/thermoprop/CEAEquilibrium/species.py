@@ -161,30 +161,15 @@ def _temperature_limits(name: str) -> tuple[float, float] | None:
 
 
 
-def _has_thermo(
-    name: str,
-    temperature: float | None = None,
-) -> bool:
-
-    # Condensed species are allowed into equilibrium
-    # even when they do not have NASA9 intervals.
-    if _is_condensed(name):
-        return True
-
+def _has_thermo(name: str, temperature: float | None = None) -> bool:
     if hasattr(CEA, "has_thermo"):
-        if not CEA.has_thermo(name):
-            return False
-        
-    if temperature is not None:
-        try:
-            if hasattr(CEA, "nasa9_coefficients"):
-                CEA.nasa9_coefficients(name, temperature)
-            else:
-                CEA.thermo_molar(name, temperature)
-        except Exception:
-            return False
+        return bool(CEA.has_thermo(name))
 
-    return True
+    try:
+        CEA.thermo_molar(name, 298.15)
+        return True
+    except Exception:
+        return False
 
 
 def _is_reactant(name: str) -> bool:
@@ -343,12 +328,11 @@ def build_species_names(
         ):
             continue
 
-        if not species_valid_near_temperature(name, options.temperature):
-            continue
+        # Do NOT skip species because T is outside nominal thermo range.
+        # CEA extrapolates and warns instead of removing species.
 
         if options.require_thermo and not _has_thermo(name, options.temperature):
             continue
-
 
         names.append(name)
         seen.add(name)

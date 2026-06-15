@@ -57,17 +57,6 @@ class ThermoArrays:
 
 
 def _thermo_molar_single(name: str, temperature: float) -> tuple[float, float, float]:
-    """
-    Return (cp, h, s0) in CEA molar units.
-
-    Expected CEADatabase convention:
-        cp : J/kmol-K
-        h  : J/kmol
-        s0 : J/kmol-K
-
-    If your CEADatabase returns J/mol instead, fix that at CEADatabase level,
-    not here.
-    """
     return CEA.thermo_molar(name, temperature)
 
 

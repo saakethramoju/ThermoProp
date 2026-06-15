@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .state import SpeciesSet
-from .thermo import ThermoArrays, chemical_potentials_over_RT
+from .thermo import ThermoArrays, chemical_potentials_over_RT, RU_KMOL
 
 
 @dataclass(slots=True)
@@ -193,10 +193,19 @@ def build_hp_matrix(
     trace: float = 1e-300,
 ) -> MatrixSystem:
     """
-    Build reduced Gibbs HP system.
+    Build the CEA/RP-1311 HP reduced iteration matrix.
 
     Unknown order:
-        [pi_i..., dn_condensed_j..., dln_n, dln_T]
+        [pi_i..., dn_condensed_j..., dln_n_gas, dln_T]
+
+    This matrix is dimensionless in the same way CEA's MATRIX routine is:
+        H0 = h/(R*T)
+        Cp = cp/R
+        target enthalpy enters as h_target/(R*T)
+
+    Species amounts n are kmol/kg. Therefore h_target/(R*T) and sum(n*H0)
+    both have units kmol/kg. Do not put dimensional J/kg quantities in this
+    matrix; doing so makes the HP temperature correction wrong by O(RT).
     """
     n = np.asarray(n, dtype=float)
     b = np.asarray(element_totals, dtype=float)
@@ -223,21 +232,24 @@ def build_hp_matrix(
     ng = np.maximum(n[gas_idx], trace)
     Ag = A[:, gas_idx]
 
-    h_RT = thermo.h0_over_RT
-    h = thermo.enthalpy_molar
-    cp = thermo.specific_heat_cp_molar
-    T = thermo.temperature
+    H0 = thermo.h0_over_RT
+    Cp0 = thermo.cp_over_R
+    T = float(thermo.temperature)
 
     element_current = A @ n
     gas_element_current = Ag @ ng
 
-    H = float(np.sum(n * h))
-    H_error = float(target_enthalpy - H)
+    H0_g = H0[gas_idx]
+    mu_g = mu[gas_idx]
+
+    total_H0 = float(np.sum(n * H0))
+    gas_H0 = float(np.sum(ng * H0_g))
+    target_H0 = float(target_enthalpy) / (RU_KMOL * T)
 
     matrix = np.zeros((size, size), dtype=float)
     rhs = np.zeros(size, dtype=float)
 
-    # Eq. 2.24, with temperature column
+    # Element-balance rows, CEA MATRIX lines 2827-2837 and 2891-2893.
     matrix[:ne, :ne] = Ag @ (ng[:, None] * Ag.T)
 
     if nc:
@@ -246,44 +258,45 @@ def build_hp_matrix(
         matrix[ne:ne + nc, :ne] = Ac.T
 
     matrix[:ne, ne + nc] = gas_element_current
-    matrix[:ne, ne + nc + 1] = Ag @ (ng * h_RT[gas_idx])
+    matrix[:ne, ne + nc + 1] = Ag @ (ng * H0_g)
 
     rhs[:ne] = (
         b
         - element_current
-        + Ag @ (ng * mu[gas_idx])
+        + Ag @ (ng * mu_g)
     )
 
-    # Eq. 2.25 condensed equations
+    # Condensed-species equilibrium rows, CEA MATRIX lines 2858-2870.
     if nc:
-        matrix[ne:ne + nc, ne + nc + 1] = h_RT[condensed_idx]
+        matrix[ne:ne + nc, ne + nc + 1] = H0[condensed_idx]
         rhs[ne:ne + nc] = mu[condensed_idx]
 
-    # Eq. 2.26 total gas mole equation
+    # Total gas mole row, CEA MATRIX lines 2877-2879 and 2894.
     row_n = ne + nc
     matrix[row_n, :ne] = gas_element_current
     matrix[row_n, ne + nc] = 0.0
-    matrix[row_n, ne + nc + 1] = float(np.sum(ng * h_RT[gas_idx]))
-    rhs[row_n] = float(np.sum(ng * mu[gas_idx]))
+    matrix[row_n, ne + nc + 1] = gas_H0
+    rhs[row_n] = float(np.sum(ng * mu_g))
 
-    # Eq. 2.27 enthalpy equation
+    # HP energy row, CEA MATRIX lines 2842-2847 and 2896-2901.
     row_h = ne + nc + 1
 
-    gas_H = float(np.sum(ng * h[gas_idx]))
-
-    matrix[row_h, :ne] = Ag @ (ng * h[gas_idx])
+    matrix[row_h, :ne] = Ag @ (ng * H0_g)
 
     if nc:
-        matrix[row_h, ne:ne + nc] = h[condensed_idx]
+        matrix[row_h, ne:ne + nc] = H0[condensed_idx]
 
-    matrix[row_h, ne + nc] = gas_H
-
+    matrix[row_h, ne + nc] = gas_H0
     matrix[row_h, ne + nc + 1] = float(
-        np.sum(n * cp * T)
-        + np.sum(ng * h[gas_idx] * h_RT[gas_idx])
+        np.sum(n * Cp0)
+        + np.sum(ng * H0_g * H0_g)
     )
 
-    rhs[row_h] = H_error + float(np.sum(ng * h[gas_idx] * mu[gas_idx]))
+    rhs[row_h] = (
+        target_H0
+        - total_H0
+        + float(np.sum(ng * H0_g * mu_g))
+    )
 
     return MatrixSystem(
         matrix=matrix,
@@ -292,7 +305,6 @@ def build_hp_matrix(
         element_current=element_current,
         total_gas_moles=total_gas,
     )
-
 
 def unpack_hp_solution(
     raw: np.ndarray,

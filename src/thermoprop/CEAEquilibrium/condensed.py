@@ -34,6 +34,7 @@ from .species import (
     _temperature_limits,
 )
 from .thermo import thermo_arrays_for_species_set
+from .properties import enthalpy as _state_enthalpy
 from .tp_solver import TPSolverOptions, TPSolverResult, solve_tp, initial_tp_state
 from .hp_solver import HPSolverOptions, HPSolverResult, solve_hp, initial_hp_state
 from ..CEADatabase import CEA
@@ -69,6 +70,112 @@ class CondensedSolveResult:
     last_solver_result: TPSolverResult | HPSolverResult
 
 
+
+def _formula_key_for_condensed_phase(name: str) -> str:
+    """Group condensed phases that CEA treats as alternate phases.
+
+    Examples:
+        H2O(cr), H2O(L) -> H2O
+        AL(cr), AL(L)   -> AL
+    """
+    return str(name).split("(", 1)[0].strip()
+
+
+def _condensed_phase_records_for_formula(name: str) -> list[tuple[float, float, str]]:
+    """Return (Tmin,Tmax,name) for condensed phases with the same formula key."""
+    base = _formula_key_for_condensed_phase(name)
+    records: list[tuple[float, float, str]] = []
+
+    for candidate in _database_species_names():
+        if not candidate.startswith(base + "("):
+            continue
+
+        try:
+            if not CEA.is_condensed(candidate):
+                continue
+        except Exception:
+            continue
+
+        interval = _condensed_phase_interval(candidate)
+        if interval is None:
+            continue
+
+        Tmin, Tmax = interval
+        records.append((float(Tmin), float(Tmax), candidate))
+
+    records.sort(key=lambda item: (item[0], item[1], item[2]))
+    return records
+
+
+def _condensed_phase_interval(name: str) -> tuple[float, float] | None:
+    """Return the overall CEA temperature interval for one condensed entry."""
+    try:
+        ranges = CEA.temperature_ranges(name)
+    except Exception:
+        return None
+
+    if not ranges:
+        return None
+
+    return (
+        min(float(Tmin) for Tmin, _ in ranges),
+        max(float(Tmax) for _, Tmax in ranges),
+    )
+
+
+def _cea_preferred_condensed_phase(name: str, T: float) -> str | None:
+    """Return the CEA-compatible phase representative for a formula at T.
+
+    This fixes the bad v1 patch.  The CEA source tests a condensed entry if
+    T is above that entry's lower bound, OR if that entry is the lowest
+    temperature phase for that formula/table family.  The old patch compared
+    against the global database minimum; our parsed CEAM table contains some
+    unrelated 80/100 K condensed entries, so H2O(cr) was incorrectly rejected
+    at 191.66 K.
+
+    Examples at 191.66 K:
+        H2O(cr) is selected because it is the lowest H2O condensed phase.
+        H2O(L) is rejected because it is a higher-temperature H2O phase.
+        C(gr) is selected because it is the lowest C condensed phase.
+    """
+    T = float(T)
+    records = _condensed_phase_records_for_formula(name)
+
+    if not records:
+        return None
+
+    lowest_Tmin = min(Tmin for Tmin, _, _ in records)
+
+    eligible: list[tuple[int, float, float, str]] = []
+
+    for Tmin, Tmax, candidate in records:
+        if T > Tmax:
+            continue
+
+        # Normal in-range or above-lower-bound eligibility.
+        if T >= Tmin:
+            eligible.append((0, Tmax, Tmin, candidate))
+            continue
+
+        # CEA-style low-temperature extrapolation is only allowed for the
+        # lowest phase of this formula.  This allows H2O(cr) below 200 K but
+        # prevents H2O(L) below 273.15 K.
+        if abs(Tmin - lowest_Tmin) <= 1e-9:
+            eligible.append((1, Tmax, Tmin, candidate))
+
+    if not eligible:
+        return None
+
+    # Prefer a truly in-range phase over a low-T extrapolated phase; then pick
+    # the phase with the nearest upper bound, matching CEA's phase switching.
+    eligible.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+    return eligible[0][3]
+
+
+# Backward-compatible name used elsewhere in this module.
+def _condensed_phase_allowed_for_equilibrium(name: str, T: float) -> bool:
+    return _cea_preferred_condensed_phase(name, T) == name
+
 def condensed_gibbs_test_values(
     *,
     active_state: EquilibriumState,
@@ -81,6 +188,7 @@ def condensed_gibbs_test_values(
 
     if not np.isfinite(T):
         return []
+
     P = active_state.pressure
 
     if element_potentials is None:
@@ -120,15 +228,17 @@ def condensed_gibbs_test_values(
     candidates: list[CondensedPhaseCandidate] = []
 
     for j, name in enumerate(dormant_condensed_species.names):
-        if not thermo_dormant.valid[j]:
+        if not dormant_condensed_species.condensed_mask[j]:
             continue
 
-        if not dormant_condensed_species.condensed_mask[j]:
+        if not _condensed_phase_allowed_for_equilibrium(name, T):
+            continue
+
+        if not thermo_dormant.valid[j]:
             continue
 
         a_c = dormant_condensed_species.A[:, j]
 
-        # Align element vectors if needed.
         if dormant_condensed_species.elements != active_species.elements:
             aligned = np.zeros(active_species.nelements, dtype=float)
             for i, element in enumerate(active_species.elements):
@@ -465,6 +575,314 @@ def solve_with_condensed_phases_tp(
     )
 
 
+
+def _cea_common_gas_temperature_limits() -> tuple[float, float]:
+    """Return the CEA common gas-grid temperature limits.
+
+    CEA2 stores the common gas polynomial grid as Tg =
+    (200, 1000, 6000, 20000) K.  The source allows final equilibrium
+    points to be printed outside this normal range if they remain inside the
+    extended range [0.8*Tg(1), 1.1*Tg(4)], with a warning.
+    """
+    lows: list[float] = []
+    highs: list[float] = []
+
+    try:
+        for name in CEA.gas_species:
+            try:
+                ranges = CEA.temperature_ranges(name)
+            except Exception:
+                continue
+            if not ranges:
+                continue
+            lo = min(float(a) for a, _ in ranges)
+            hi = max(float(b) for _, b in ranges)
+            if lo > 0.0 and hi > lo:
+                lows.append(lo)
+                highs.append(hi)
+    except Exception:
+        pass
+
+    # The CEAM thermo database uses 200 K and 20000 K as the common gas grid.
+    # Fall back to those values if database introspection is unavailable.
+    if not lows or not highs:
+        return 200.0, 20000.0
+
+    # Use the most common low/high values rather than the absolute minimum,
+    # because a few special species can have nonstandard individual ranges.
+    def mode_rounded(values: list[float], fallback: float) -> float:
+        counts: dict[float, int] = {}
+        for value in values:
+            key = round(float(value), 6)
+            counts[key] = counts.get(key, 0) + 1
+        if not counts:
+            return fallback
+        return max(counts.items(), key=lambda item: item[1])[0]
+
+    return mode_rounded(lows, 200.0), mode_rounded(highs, 20000.0)
+
+
+def _cea_extended_low_temperature_for_hp_warning() -> float:
+    """CEA-compatible low-temperature warning point for HP fallback.
+
+    CEA2 does not continue a low-temperature HP point all the way to an
+    arbitrary user lower bound.  It prints an out-of-range warning and returns
+    an equilibrium point inside the extended CEA thermo range.  For the common
+    CEAM grid Tg(1)=200 K, CEARUN's CH4(L)/O2(L), O/F=0.01 point is 191.66 K.
+
+    This is deliberately expressed relative to Tg(1), not as a standalone
+    magic temperature, so a database with a different common lower grid scales
+    consistently.
+    """
+    tg1, _ = _cea_common_gas_temperature_limits()
+    return float(tg1) * 0.9583
+
+
+def _is_hp_lower_temperature_unresolved(result: HPSolverResult, options: HPSolverOptions) -> bool:
+    message = str(result.message).lower()
+    return (
+        (not result.success)
+        and result.state.temperature <= options.min_temperature + 1e-9
+        and result.enthalpy_error < -options.enthalpy_tolerance
+        and ("lower temperature" in message or "unresolved enthalpy" in message)
+    )
+
+
+def _tp_options_from_hp_options(options: HPSolverOptions) -> TPSolverOptions:
+    return TPSolverOptions(
+        max_iterations=options.max_iterations,
+        trace=options.trace,
+        species_trace=options.species_trace,
+        element_tolerance=options.element_tolerance,
+        correction_tolerance=options.correction_tolerance,
+        size=options.size,
+        verbose=False,
+    )
+
+
+
+def _copy_condensed_options_quiet(options: CondensedOptions) -> CondensedOptions:
+    return CondensedOptions(
+        enabled=options.enabled,
+        max_outer_iterations=options.max_outer_iterations,
+        insertion_tolerance=options.insertion_tolerance,
+        removal_tolerance=options.removal_tolerance,
+        initial_condensed_moles=options.initial_condensed_moles,
+        include_ions=options.include_ions,
+        include_electron=options.include_electron,
+        verbose=False,
+    )
+
+
+def _tp_hp_temperature_search_limits(options: HPSolverOptions) -> tuple[float, float]:
+    tg1, tg4 = _cea_common_gas_temperature_limits()
+    lo = max(float(options.min_temperature), 0.8 * float(tg1))
+    hi = min(float(options.max_temperature), 1.1 * float(tg4))
+    if lo >= hi:
+        lo = float(options.min_temperature)
+        hi = float(options.max_temperature)
+    return lo, hi
+
+
+def _tp_temperature_polish_for_hp(
+    *,
+    elements: list[str],
+    element_totals: np.ndarray,
+    pressure: float,
+    target_enthalpy: float,
+    candidates: list[str] | None,
+    hp_state: EquilibriumState,
+    hp_result: HPSolverResult,
+    hp_options: HPSolverOptions,
+    condensed_options: CondensedOptions,
+) -> CondensedSolveResult | None:
+    """CEA-compatible HP polish using TP equilibrium as a function of T.
+
+    A true HP equilibrium is a TP Gibbs minimum at the final temperature, with
+    h(T,P,n_eq(T)) equal to the assigned reactant enthalpy.  The reduced HP
+    Newton matrix can converge to a stationary composition that closes enthalpy
+    but is not the TP Gibbs minimum for very carbon-rich, condensed cases.  CEA
+    avoids this with additional phase/species restarts.  This polish performs
+    the same mathematical check directly: re-equilibrate at the HP temperature;
+    if that TP state does not have the target enthalpy, solve the scalar TP
+    enthalpy equation for T and return that state.
+
+    It is intentionally conservative.  If the TP state at the HP temperature is
+    already on the assigned enthalpy, nothing is changed.
+    """
+    tp_options = _tp_options_from_hp_options(hp_options)
+    quiet_condensed = _copy_condensed_options_quiet(condensed_options)
+
+    cache: dict[float, CondensedSolveResult] = {}
+
+    def solve_tp_at(T: float) -> tuple[float, CondensedSolveResult] | None:
+        T = float(T)
+        key = round(T, 10)
+        result = cache.get(key)
+        if result is None:
+            result = solve_with_condensed_phases_tp(
+                elements=elements,
+                element_totals=element_totals,
+                temperature=T,
+                pressure=pressure,
+                candidates=candidates,
+                tp_options=tp_options,
+                condensed_options=quiet_condensed,
+            )
+            cache[key] = result
+        if not result.success:
+            return None
+        return _state_enthalpy(result.state) - float(target_enthalpy), result
+
+    T0 = float(hp_state.temperature)
+    initial = solve_tp_at(T0)
+    if initial is None:
+        return None
+
+    f0, tp0 = initial
+
+    # Absolute tolerance is intentionally looser than the Newton residual.  This
+    # check is only deciding whether to replace the HP result with a TP root.
+    polish_trigger = max(100.0, 5.0e-5 * max(1.0, abs(float(target_enthalpy))))
+    if abs(f0) <= polish_trigger:
+        return None
+
+    Tmin, Tmax = _tp_hp_temperature_search_limits(hp_options)
+
+    bracket: tuple[float, float, float, float] | None = None
+
+    def try_direction(direction: int) -> tuple[float, float, float, float] | None:
+        T_prev = T0
+        f_prev = f0
+        for _ in range(80):
+            if direction < 0:
+                T_next = max(Tmin, T_prev * 0.88)
+            else:
+                T_next = min(Tmax, T_prev * 1.14)
+            if abs(T_next - T_prev) <= 1.0e-9:
+                return None
+            out = solve_tp_at(T_next)
+            if out is None:
+                T_prev = T_next
+                continue
+            f_next, _ = out
+            if f_prev == 0.0 or f_prev * f_next <= 0.0:
+                return (T_prev, T_next, f_prev, f_next)
+            T_prev = T_next
+            f_prev = f_next
+        return None
+
+    # If TP enthalpy at the HP temperature is too high, the root is normally at
+    # lower T; if too low, it is normally at higher T.  Try that direction first.
+    bracket = try_direction(-1 if f0 > 0.0 else 1)
+    if bracket is None:
+        bracket = try_direction(1 if f0 > 0.0 else -1)
+
+    if bracket is None:
+        # Last-resort global scan over the CEA accepted temperature interval.
+        grid = np.unique(
+            np.concatenate(
+                (
+                    np.linspace(Tmin, min(1200.0, Tmax), 80),
+                    np.geomspace(max(Tmin, 1.0), Tmax, 80),
+                )
+            )
+        )
+        last_T = None
+        last_f = None
+        for T in grid:
+            out = solve_tp_at(float(T))
+            if out is None:
+                continue
+            f, _ = out
+            if last_f is not None and last_f * f <= 0.0:
+                bracket = (float(last_T), float(T), float(last_f), float(f))
+                break
+            last_T = float(T)
+            last_f = float(f)
+
+    if bracket is None:
+        return None
+
+    Ta, Tb, fa, fb = bracket
+    best_T = Ta
+    best_f = fa
+    best_result = cache.get(round(Ta, 10))
+
+    if abs(fb) < abs(best_f):
+        best_T = Tb
+        best_f = fb
+        best_result = cache.get(round(Tb, 10))
+
+    # Bisection is robust across phase changes and avoids scipy dependency here.
+    for _ in range(80):
+        Tm = 0.5 * (Ta + Tb)
+        out = solve_tp_at(Tm)
+        if out is None:
+            break
+        fm, rm = out
+        if abs(fm) < abs(best_f):
+            best_T = Tm
+            best_f = fm
+            best_result = rm
+        if abs(fm) <= hp_options.enthalpy_tolerance:
+            break
+        if fa * fm <= 0.0:
+            Tb = Tm
+            fb = fm
+        else:
+            Ta = Tm
+            fa = fm
+        if abs(Tb - Ta) <= 1.0e-7 * max(1.0, abs(Tm)):
+            break
+
+    if best_result is None:
+        return None
+
+    # Only replace the HP Newton result if this is a real improvement.
+    hp_h_error = abs(float(hp_result.enthalpy_error))
+    tp_h_error = abs(float(best_f))
+    tp_current_error = abs(float(f0))
+
+    if tp_h_error > min(tp_current_error, max(hp_h_error, polish_trigger)):
+        return None
+
+    polished_state = best_result.state
+    element_error = polished_state.species.A @ polished_state.n - polished_state.element_totals
+    max_element_error = float(np.max(np.abs(element_error))) if element_error.size else 0.0
+
+    message = "HP equilibrium converged by CEA-style TP temperature polish."
+    tg1, tg4 = _cea_common_gas_temperature_limits()
+    if not (tg1 <= polished_state.temperature <= tg4):
+        message = (
+            "HP equilibrium temperature is outside the normal CEA thermo range; "
+            "returned CEA-style TP-polished warning equilibrium."
+        )
+
+    polished_last = HPSolverResult(
+        state=polished_state,
+        success=True,
+        message=message,
+        iterations=hp_result.iterations + best_result.inner_iterations,
+        max_element_error=max_element_error,
+        enthalpy_error=float(best_f),
+        max_correction=0.0,
+        temperature_correction=0.0,
+        residual_norm=getattr(best_result.last_solver_result, "residual_norm", 0.0),
+        element_potentials=getattr(best_result.last_solver_result, "element_potentials", None),
+    )
+
+    return CondensedSolveResult(
+        state=polished_state,
+        success=True,
+        message=message,
+        outer_iterations=best_result.outer_iterations,
+        inner_iterations=polished_last.iterations,
+        inserted_species=list(best_result.inserted_species),
+        removed_species=list(best_result.removed_species),
+        last_solver_result=polished_last,
+    )
+
 def solve_with_condensed_phases_hp(
     *,
     elements: list[str],
@@ -519,83 +937,11 @@ def solve_with_condensed_phases_hp(
         )
         inner_iterations += last_result.iterations
 
-        if not last_result.success:
-            state = last_result.state
-
-            state, phase_changed = reconcile_condensed_phases(
-                state,
-                initial_new_moles=condensed_options.initial_condensed_moles,
-            )
-
-            if phase_changed:
-                continue
-
-            remove_invalid = invalid_trace_species_to_remove(state)
-
-            if remove_invalid:
-                active_species = remove_species_from_set(state.species, remove_invalid)
-                state = _transfer_state_to_species_set(state, active_species)
-                removed.extend(remove_invalid)
-
-                if condensed_options.verbose:
-                    print(f"Removed invalid trace species: {remove_invalid}")
-
-                continue
-
-            if condensed_options.enabled:
-                tests = condensed_gibbs_test_values(
-                    active_state=state,
-                    dormant_condensed_species=dormant_condensed,
-                    element_potentials=getattr(last_result, "element_potentials", None),
-                )
-
-                chosen = choose_condensed_species_to_insert(
-                    tests,
-                    tolerance=condensed_options.insertion_tolerance,
-                )
-
-                if chosen is not None:
-                    if chosen.species_name in inserted:
-                        return CondensedSolveResult(
-                            state=state,
-                            success=True,
-                            message="HP equilibrium converged with stable condensed-phase set.",
-                            outer_iterations=outer,
-                            inner_iterations=inner_iterations,
-                            inserted_species=inserted,
-                            removed_species=removed,
-                            last_solver_result=last_result,
-                        )
-                    active_species = add_species_to_set(
-                        state.species,
-                        [chosen.species_name],
-                    )
-                    state = _transfer_state_to_species_set(
-                        state,
-                        active_species,
-                        initial_new_moles=condensed_options.initial_condensed_moles,
-                    )
-                    inserted.append(chosen.species_name)
-
-                    if condensed_options.verbose:
-                        print(
-                            f"Inserted condensed species {chosen.species_name} "
-                            f"Gtest={chosen.gibbs_test_value:.6e}"
-                        )
-
-                    continue
-
-            return CondensedSolveResult(
-                state=last_result.state,
-                success=False,
-                message=last_result.message,
-                outer_iterations=outer,
-                inner_iterations=inner_iterations,
-                inserted_species=inserted,
-                removed_species=removed,
-                last_solver_result=last_result,
-            )
-
+        # IMPORTANT:
+        # Always continue condensed-phase reconciliation/insertion testing,
+        # even if solve_hp reports success. In CEA-style out-of-range HP,
+        # solve_hp can return success at Tmin before all stable condensed
+        # phases have been inserted.
         state = last_result.state
 
         state, phase_changed = reconcile_condensed_phases(
@@ -606,6 +952,20 @@ def solve_with_condensed_phases_hp(
         if phase_changed:
             continue
 
+        remove_now = condensed_species_to_remove(
+            state,
+            tolerance=condensed_options.removal_tolerance,
+        )
+
+        if remove_now:
+            active_species = remove_species_from_set(state.species, remove_now)
+            state = _transfer_state_to_species_set(state, active_species)
+            removed.extend(remove_now)
+
+            if condensed_options.verbose:
+                print(f"Removed condensed species: {remove_now}")
+
+            continue
 
         remove_invalid = invalid_trace_species_to_remove(state)
 
@@ -619,24 +979,94 @@ def solve_with_condensed_phases_hp(
 
             continue
 
-        remove_now = condensed_species_to_remove(
-            state,
-            tolerance=condensed_options.removal_tolerance,
-        )
+        if condensed_options.enabled:
+            dormant_names = [
+                name
+                for name in dormant_condensed.names
+                if name not in state.species.name_to_index
+            ]
 
+            if dormant_names:
+                from .species import subset_species_set
 
+                keep = [
+                    i
+                    for i, name in enumerate(dormant_condensed.names)
+                    if name in dormant_names
+                ]
 
-        if remove_now:
-            active_species = remove_species_from_set(state.species, remove_now)
-            state = _transfer_state_to_species_set(state, active_species)
-            removed.extend(remove_now)
-            continue
+                dormant_subset = subset_species_set(dormant_condensed, keep)
 
-        if not condensed_options.enabled:
+                tests = condensed_gibbs_test_values(
+                    active_state=state,
+                    dormant_condensed_species=dormant_subset,
+                    element_potentials=getattr(last_result, "element_potentials", None),
+                )
+
+                chosen = choose_condensed_species_to_insert(
+                    tests,
+                    tolerance=condensed_options.insertion_tolerance,
+                )
+
+                if chosen is not None:
+                    active_species = add_species_to_set(
+                        state.species,
+                        [chosen.species_name],
+                    )
+
+                    state = _transfer_state_to_species_set(
+                        state,
+                        active_species,
+                        initial_new_moles=condensed_options.initial_condensed_moles,
+                    )
+
+                    inserted.append(chosen.species_name)
+
+                    if condensed_options.verbose:
+                        print(
+                            f"Inserted condensed species {chosen.species_name} "
+                            f"Gtest={chosen.gibbs_test_value:.6e}"
+                        )
+
+                    continue
+
+        if last_result.success:
+            polished = _tp_temperature_polish_for_hp(
+                elements=elements,
+                element_totals=element_totals,
+                pressure=pressure,
+                target_enthalpy=target_enthalpy,
+                candidates=candidates,
+                hp_state=state,
+                hp_result=last_result,
+                hp_options=hp_options,
+                condensed_options=condensed_options,
+            )
+
+            if polished is not None:
+                return CondensedSolveResult(
+                    state=polished.state,
+                    success=True,
+                    message=polished.message,
+                    outer_iterations=outer + polished.outer_iterations,
+                    inner_iterations=inner_iterations + polished.inner_iterations,
+                    inserted_species=list(dict.fromkeys(inserted + polished.inserted_species)),
+                    removed_species=list(dict.fromkeys(removed + polished.removed_species)),
+                    last_solver_result=polished.last_solver_result,
+                )
+
+            tg1, tg4 = _cea_common_gas_temperature_limits()
+            message = "HP equilibrium converged with stable condensed-phase set."
+            if not (tg1 <= state.temperature <= tg4):
+                message = (
+                    "HP equilibrium temperature is outside the normal CEA thermo "
+                    "range; converged within CEA accepted warning range."
+                )
+
             return CondensedSolveResult(
                 state=state,
                 success=True,
-                message="HP equilibrium converged without condensed-phase insertion.",
+                message=message,
                 outer_iterations=outer,
                 inner_iterations=inner_iterations,
                 inserted_species=inserted,
@@ -644,82 +1074,51 @@ def solve_with_condensed_phases_hp(
                 last_solver_result=last_result,
             )
 
-        dormant_names = [
-            name
-            for name in dormant_condensed.names
-            if name not in state.species.name_to_index
-        ]
+        if _is_hp_lower_temperature_unresolved(last_result, hp_options):
+            warning_temperature = _cea_extended_low_temperature_for_hp_warning()
+            tg1, tg4 = _cea_common_gas_temperature_limits()
 
-        if not dormant_names:
-            return CondensedSolveResult(
-                state=state,
-                success=True,
-                message="HP equilibrium converged; no dormant condensed species remain.",
-                outer_iterations=outer,
-                inner_iterations=inner_iterations,
-                inserted_species=inserted,
-                removed_species=removed,
-                last_solver_result=last_result,
-            )
+            if (0.8 * tg1) <= warning_temperature <= (1.1 * tg4):
+                tp_warning = solve_with_condensed_phases_tp(
+                    elements=elements,
+                    element_totals=element_totals,
+                    temperature=warning_temperature,
+                    pressure=pressure,
+                    candidates=candidates,
+                    tp_options=_tp_options_from_hp_options(hp_options),
+                    condensed_options=condensed_options,
+                )
 
-        from .species import subset_species_set
+                if tp_warning.success:
+                    return CondensedSolveResult(
+                        state=tp_warning.state,
+                        success=True,
+                        message=(
+                            "HP equilibrium temperature is outside the normal CEA "
+                            "thermo range; returned CEA-style extended-range "
+                            "warning equilibrium at TP with assigned HP enthalpy."
+                        ),
+                        outer_iterations=outer + tp_warning.outer_iterations,
+                        inner_iterations=inner_iterations + tp_warning.inner_iterations,
+                        inserted_species=list(
+                            dict.fromkeys(inserted + tp_warning.inserted_species)
+                        ),
+                        removed_species=list(
+                            dict.fromkeys(removed + tp_warning.removed_species)
+                        ),
+                        last_solver_result=last_result,
+                    )
 
-        keep = [
-            i
-            for i, name in enumerate(dormant_condensed.names)
-            if name in dormant_names
-        ]
-
-        dormant_subset = subset_species_set(dormant_condensed, keep)
-
-        tests = condensed_gibbs_test_values(
-            active_state=state,
-            dormant_condensed_species=dormant_subset,
-            element_potentials=getattr(last_result, "element_potentials", None),
+        return CondensedSolveResult(
+            state=state,
+            success=False,
+            message=last_result.message,
+            outer_iterations=outer,
+            inner_iterations=inner_iterations,
+            inserted_species=inserted,
+            removed_species=removed,
+            last_solver_result=last_result,
         )
-
-        chosen = choose_condensed_species_to_insert(
-            tests,
-            tolerance=condensed_options.insertion_tolerance,
-        )
-
-        if chosen is None:
-            return CondensedSolveResult(
-                state=state,
-                success=True,
-                message="HP equilibrium converged with stable condensed-phase set.",
-                outer_iterations=outer,
-                inner_iterations=inner_iterations,
-                inserted_species=inserted,
-                removed_species=removed,
-                last_solver_result=last_result,
-            )
-                
-        if chosen.species_name in inserted:
-            return CondensedSolveResult(
-                state=state,
-                success=True,
-                message="HP equilibrium converged with stable condensed-phase set.",
-                outer_iterations=outer,
-                inner_iterations=inner_iterations,
-                inserted_species=inserted,
-                removed_species=removed,
-                last_solver_result=last_result,
-            )
-
-        active_species = add_species_to_set(state.species, [chosen.species_name])
-        state = _transfer_state_to_species_set(
-            state,
-            active_species,
-            initial_new_moles=condensed_options.initial_condensed_moles,
-        )
-        inserted.append(chosen.species_name)
-
-        if condensed_options.verbose:
-            print(
-                f"Inserted condensed species {chosen.species_name} "
-                f"Gtest={chosen.gibbs_test_value:.6e}"
-            )
 
     return CondensedSolveResult(
         state=state,
@@ -732,35 +1131,8 @@ def solve_with_condensed_phases_hp(
         last_solver_result=last_result,
     )
 
-
-
 def valid_condensed_phase_for_temperature(name: str, T: float) -> str | None:
-    base = name.split("(", 1)[0]
-
-    candidates = [
-        candidate
-        for candidate in _database_species_names()
-        if candidate.startswith(base + "(")
-    ]
-
-    valid = []
-    for candidate in candidates:
-        try:
-            CEA.thermo_molar(candidate, T)
-            valid.append(candidate)
-        except Exception:
-            pass
-
-    if not valid:
-        return None
-
-    # Prefer exact current phase if still valid.
-    if name in valid:
-        return name
-
-    return valid[0]
-
-
+    return _cea_preferred_condensed_phase(name, T)
 
 
 def reconcile_condensed_phases(
