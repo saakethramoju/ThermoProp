@@ -120,12 +120,16 @@ def make_combustion_gas_for_transport(
     if not composition:
         raise RuntimeError("Cannot build transport gas; no gas species are present.")
 
-    return CombustionGas(
-        composition,
-        basis="mole",
-        pressure=state.pressure,
-        temperature=state.temperature,
-    )
+    try:
+        return CombustionGas(
+            composition,
+            basis="mole",
+            pressure=state.pressure,
+            temperature=state.temperature,
+        )
+    except Exception as e:
+        print("TRANSPORT BUILD FAILED:", repr(e))
+        raise
 
 def gas_mass_fraction(state: EquilibriumState) -> float:
     gas_mask = state.species.gas_mask
@@ -505,11 +509,17 @@ def reaction_conductivity(
         return 0.0
 
     try:
-        names, x, M, h = _transport_species_arrays(state, options=options)
+        gas = make_combustion_gas_for_transport(
+            state,
+            options=options,
+        )
+
+        names, x, M, h = _transport_species_arrays(
+            state,
+            options=options,
+        )
     except Exception:
         return 0.0
-
-    gas = None
 
     if len(names) <= 1:
         return 0.0

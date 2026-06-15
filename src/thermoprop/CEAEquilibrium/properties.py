@@ -441,16 +441,22 @@ def build_results(
     cvf = cv_frozen(state)
     gammaf = cpf / cvf if cvf > 0.0 else np.nan
 
-    if tp_neighbor_solver is not None and not has_condensed_species(state):
+    if tp_neighbor_solver is not None:
         cpe = equilibrium_cp_finite_difference(
             state,
             tp_neighbor_solver=tp_neighbor_solver,
-            dT=equilibrium_derivative_step,
+            dT=max(
+                0.05,
+                1e-4 * state.temperature,
+            )
         )
         derivs = finite_difference_equilibrium_derivatives(
             state,
             tp_neighbor_solver=tp_neighbor_solver,
-            dT=equilibrium_derivative_step,
+            dT=max(
+                0.05,
+                1e-4 * state.temperature,
+            )
         )
         cve = equilibrium_cv_from_derivatives(
             state,
