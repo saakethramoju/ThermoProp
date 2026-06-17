@@ -1136,6 +1136,10 @@ class Propellant(PropertyIntrospectionMixin):
             return self._cache_set("specific_heat_ratio", None)
 
         return self._cache_set("specific_heat_ratio", self._source("specific_heat_ratio", cp / cv, "CEA ideal gas"))
+    
+    @property
+    def gamma(self) -> float | None:
+        return self.specific_heat_ratio
 
 
     @property

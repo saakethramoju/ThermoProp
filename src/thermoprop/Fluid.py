@@ -1112,6 +1112,11 @@ class Fluid(PropertyIntrospectionMixin):
 
         except Exception:
             return None
+        
+
+    @property
+    def gamma(self) -> float:
+        return self.specific_heat_ratio
 
     @property
     def specific_volume(self) -> float:

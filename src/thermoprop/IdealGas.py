@@ -1047,6 +1047,10 @@ class IdealGas(PropertyIntrospectionMixin):
         cv = self.specific_heat_cv
         value = None if cv == 0 else cp / cv
         return self._cache_set("specific_heat_ratio", value)
+    
+    @property
+    def gamma(self) -> float:
+        return self.specific_heat_ratio
 
     @property
     def free_energy(self) -> float:

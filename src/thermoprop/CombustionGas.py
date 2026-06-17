@@ -945,6 +945,10 @@ class CombustionGas(PropertyIntrospectionMixin):
 
         cv = self.specific_heat_cv
         return self._cache_set("specific_heat_ratio", None if cv == 0.0 else self.specific_heat_cp / cv)
+    
+    @property
+    def gamma(self) -> float:
+        return self.specific_heat_ratio
 
     @property
     def entropy(self) -> float:
