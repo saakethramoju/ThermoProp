@@ -360,6 +360,29 @@ class IdealGas(PropertyIntrospectionMixin):
             self._REFERENCE_PRESSURE,
         )
 
+
+    def cache_key(self) -> tuple:
+        """Stable state fingerprint for FullFlow ``Lookup`` caching.
+
+        ``Lookup`` may pass ThermoProp objects between wrapped callables. These
+        objects are mutable, so identity alone is not enough to decide whether a
+        downstream lookup must re-evaluate.
+        """
+
+        state = self._last_state_values or {}
+        return (
+            "IdealGas",
+            self._basis,
+            self._reference_target,
+            self._composition_cache_key(),
+            tuple(
+                sorted(
+                    (key, None if value is None else round(float(value), 12))
+                    for key, value in state.items()
+                )
+            ),
+        )
+
     def _raw_reference_properties(self) -> tuple[float, float, float]:
         T = self._REFERENCE_TEMPERATURE
         P = self._REFERENCE_PRESSURE

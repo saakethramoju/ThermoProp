@@ -442,6 +442,49 @@ class Equilibrium(PropertyIntrospectionMixin):
 
         return result.state
 
+
+    @staticmethod
+    def _object_cache_key(value) -> tuple:
+        cache_key = getattr(value, "cache_key", None)
+
+        if callable(cache_key):
+            try:
+                return ("cache_key", cache_key())
+            except Exception:
+                pass
+
+        return ("object", type(value).__name__, id(value))
+
+    def cache_key(self) -> tuple:
+        """Stable state fingerprint for FullFlow ``Lookup`` caching."""
+
+        try:
+            species_state = tuple(
+                sorted(
+                    (name, round(float(n), 18))
+                    for name, n in self.species_moles.items()
+                    if abs(float(n)) > self._combustion_gas_trace
+                )
+            )
+        except Exception:
+            species_state = ()
+
+        return (
+            "Equilibrium",
+            self._object_cache_key(self._input),
+            self._mode,
+            None if self._pressure is None else round(float(self._pressure), 12),
+            None if self._temperature_input is None else round(float(self._temperature_input), 12),
+            self._basis,
+            None if self._candidates is None else tuple(self._candidates),
+            self._include_condensed,
+            self._include_ions,
+            self._include_electron,
+            round(float(self._combustion_gas_trace), 30),
+            self._combustion_gas_max_species,
+            species_state,
+        )
+
     @property
     def backend(self) -> str:
         return self._BACKEND_NAME

@@ -116,6 +116,15 @@ class Material(PropertyIntrospectionMixin):
         self.allow_extrapolation = bool(allow_extrapolation)
         self._curve_cache: dict[str, tuple[str, np.ndarray, np.ndarray]] = {}
 
+    def cache_key(self) -> tuple:
+        return (
+            self.__class__.__module__,
+            self.__class__.__qualname__,
+            self.material,
+            float(self.temperature),
+            bool(self.allow_extrapolation),
+        )
+
     # ---------------- Core package-style API ---------------- #
 
     @property

@@ -368,6 +368,24 @@ class Fluid(PropertyIntrospectionMixin):
             self._REFERENCE_PRESSURE,
         )
 
+
+    def cache_key(self) -> tuple:
+        """Stable state fingerprint for FullFlow ``Lookup`` caching."""
+
+        state = self._last_state_values or {}
+        return (
+            "Fluid",
+            self._basis,
+            self._reference_target,
+            self._composition_cache_key(),
+            tuple(
+                sorted(
+                    (key, None if value is None else round(float(value), 12))
+                    for key, value in state.items()
+                )
+            ),
+        )
+
     def _raw_reference_properties(self) -> tuple[float, float, float]:
         obj = self.__class__(
             self._composition_argument(),

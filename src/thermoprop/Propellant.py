@@ -301,6 +301,19 @@ class Propellant(PropertyIntrospectionMixin):
             self._REFERENCE_PRESSURE,
         )
 
+
+    def cache_key(self) -> tuple:
+        """Stable state fingerprint for FullFlow ``Lookup`` caching."""
+
+        return (
+            "Propellant",
+            self._input_name,
+            self._reference_target,
+            None if self.temperature is None else round(float(self.temperature), 12),
+            None if self.pressure is None else round(float(self.pressure), 12),
+            self._quality_override,
+        )
+
     def _raw_property_value(self, property_name: str):
         old_target = self._reference_target
         try:

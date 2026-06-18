@@ -327,6 +327,29 @@ class CombustionGas(PropertyIntrospectionMixin):
             self._REFERENCE_PRESSURE,
         )
 
+
+    def cache_key(self) -> tuple:
+        """Stable state fingerprint for FullFlow ``Lookup`` caching.
+
+        ``Lookup`` may pass ThermoProp objects between wrapped callables. These
+        objects are mutable, so identity alone is not enough to decide whether a
+        downstream lookup must re-evaluate.
+        """
+
+        state = self._last_state_values or {}
+        return (
+            "CombustionGas",
+            self._basis,
+            self._reference_target,
+            self._composition_cache_key(),
+            tuple(
+                sorted(
+                    (key, None if value is None else round(float(value), 12))
+                    for key, value in state.items()
+                )
+            ),
+        )
+
     def _raw_entropy_at(self, temperature: float, pressure: float) -> float:
         p_i = self._mole_fractions * float(pressure)
         p_i = np.maximum(p_i, np.finfo(float).tiny)

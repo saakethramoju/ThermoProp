@@ -617,6 +617,39 @@ class Reactants:
 
         return updated
 
+
+    @staticmethod
+    def _object_cache_key(value) -> tuple:
+        cache_key = getattr(value, "cache_key", None)
+
+        if callable(cache_key):
+            try:
+                return ("cache_key", cache_key())
+            except Exception:
+                pass
+
+        return ("object", type(value).__name__, id(value))
+
+    def cache_key(self) -> tuple:
+        """Stable state fingerprint for FullFlow ``Lookup`` caching."""
+
+        def group_key(group):
+            return tuple(
+                (self._object_cache_key(reactant), round(float(weight), 15))
+                for reactant, weight in group
+            )
+
+        return (
+            "Reactants",
+            round(float(self._mixture_ratio), 15),
+            round(float(self._inert_fraction), 15),
+            round(float(self._igniter_fraction), 15),
+            group_key(self._fuel_inputs),
+            group_key(self._oxidizer_inputs),
+            group_key(self._inert_inputs),
+            group_key(self._igniter_inputs),
+        )
+
     @property
     def mixture_ratio(self) -> float:
         return self._mixture_ratio
