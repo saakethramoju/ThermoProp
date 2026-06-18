@@ -106,6 +106,11 @@ class CombustionGas(PropertyIntrospectionMixin):
         frozenset(("temperature",)),
         frozenset(("enthalpy",)),
         frozenset(("internal_energy",)),
+        frozenset(("pressure", "entropy")),
+        frozenset(("temperature", "entropy")),
+        frozenset(("enthalpy", "entropy")),
+        frozenset(("internal_energy", "entropy")),
+        frozenset(("density", "entropy")),
         frozenset(("pressure", "density")),
         frozenset(("pressure", "temperature")),
         frozenset(("pressure", "enthalpy")),
@@ -123,6 +128,7 @@ class CombustionGas(PropertyIntrospectionMixin):
         enthalpy: float | None = None,
         temperature: float | None = None,
         internal_energy: float | None = None,
+        entropy: float | None = None,
         density: float | None = None,
         quality: float | None = None,
         set_reference: str | None = None,
@@ -209,6 +215,7 @@ class CombustionGas(PropertyIntrospectionMixin):
             temperature=temperature,
             enthalpy=enthalpy,
             internal_energy=internal_energy,
+            entropy=entropy,
             density=density,
         )
 
@@ -227,6 +234,7 @@ class CombustionGas(PropertyIntrospectionMixin):
         enthalpy=UNSET,
         temperature=UNSET,
         internal_energy=UNSET,
+        entropy=UNSET,
         density=UNSET,
         quality=UNSET,
         mole_fractions=UNSET,
@@ -251,6 +259,7 @@ class CombustionGas(PropertyIntrospectionMixin):
                 "enthalpy": enthalpy,
                 "temperature": temperature,
                 "internal_energy": internal_energy,
+                "entropy": entropy,
                 "density": density,
             }
         )
@@ -414,11 +423,13 @@ class CombustionGas(PropertyIntrospectionMixin):
     def _to_raw_basis(self, name: str, value: float) -> float:
         if self._reference_target is None:
             return float(value)
-        dh, du, _ = self._get_reference_offsets()
+        dh, du, ds = self._get_reference_offsets()
         if name == "enthalpy":
             return float(value) - dh
         if name == "internal_energy":
             return float(value) - du
+        if name == "entropy":
+            return float(value) - ds
         return float(value)
 
     def _from_raw_basis(self, name: str, value: float | None) -> float | None:
@@ -496,6 +507,7 @@ class CombustionGas(PropertyIntrospectionMixin):
         temperature: float | None = None,
         enthalpy: float | None = None,
         internal_energy: float | None = None,
+        entropy: float | None = None,
         density: float | None = None,
     ) -> None:
         self._clear_property_cache()
@@ -505,6 +517,7 @@ class CombustionGas(PropertyIntrospectionMixin):
             "temperature": temperature,
             "enthalpy": enthalpy,
             "internal_energy": internal_energy,
+            "entropy": entropy,
             "density": density,
         }
         self._last_state_values = {
@@ -521,6 +534,9 @@ class CombustionGas(PropertyIntrospectionMixin):
         if internal_energy is not None:
             internal_energy = self._to_raw_basis("internal_energy", internal_energy)
 
+        if entropy is not None:
+            entropy = self._to_raw_basis("entropy", entropy)
+
         if provided not in self._FLASH_INPUTS:
             raise LookupError(
                 "Unsupported combustion-gas state input combination. "
@@ -532,6 +548,39 @@ class CombustionGas(PropertyIntrospectionMixin):
             self._temperature = self._pressure / (float(density) * self.gas_constant)
             self._validate_temperature()
             self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+            return
+
+        if entropy is not None:
+            if pressure is not None:
+                self._pressure = float(pressure)
+                self._temperature = self._temperature_from_pressure_entropy(self._pressure, float(entropy))
+                self._validate_temperature()
+                self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+            elif temperature is not None:
+                self._temperature = float(temperature)
+                self._validate_temperature()
+                self._pressure = self._pressure_from_temperature_entropy(self._temperature, float(entropy))
+                self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+            elif enthalpy is not None:
+                self._enthalpy = float(enthalpy)
+                self._temperature = self._temperature_from_enthalpy(self._enthalpy)
+                self._validate_temperature()
+                self._pressure = self._pressure_from_temperature_entropy(self._temperature, float(entropy))
+
+            elif internal_energy is not None:
+                self._temperature = self._temperature_from_internal_energy(float(internal_energy))
+                self._validate_temperature()
+                self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+                self._pressure = self._pressure_from_temperature_entropy(self._temperature, float(entropy))
+
+            elif density is not None:
+                self._temperature = self._temperature_from_density_entropy(float(density), float(entropy))
+                self._validate_temperature()
+                self._pressure = float(density) * self.gas_constant * self._temperature
+                self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
             return
 
         if temperature is not None:
@@ -610,6 +659,34 @@ class CombustionGas(PropertyIntrospectionMixin):
             "internal_energy",
             internal_energy_target,
         )
+
+    def _temperature_from_pressure_entropy(self, pressure: float, entropy_target: float) -> float:
+        def residual(temperature):
+            return self._raw_entropy_at(temperature, pressure) - entropy_target
+
+        return self._solve_temperature_from_residual(
+            residual,
+            "entropy",
+            entropy_target,
+        )
+
+    def _temperature_from_density_entropy(self, density: float, entropy_target: float) -> float:
+        def residual(temperature):
+            pressure = density * self.gas_constant * temperature
+            return self._raw_entropy_at(temperature, pressure) - entropy_target
+
+        return self._solve_temperature_from_residual(
+            residual,
+            "entropy",
+            entropy_target,
+        )
+
+    def _pressure_from_temperature_entropy(self, temperature: float, entropy_target: float) -> float:
+        entropy_at_reference_pressure = self._raw_entropy_at(
+            temperature,
+            self._REFERENCE_PRESSURE,
+        )
+        return float(self._REFERENCE_PRESSURE * np.exp((entropy_at_reference_pressure - entropy_target) / self.gas_constant))
 
     def _solve_temperature_from_residual(
         self,
@@ -994,6 +1071,65 @@ class CombustionGas(PropertyIntrospectionMixin):
 
         pure_s_mass_at_pi = (pure_s0_molar + pressure_correction_molar) / self._M
         return self._cache_set("entropy", self._from_raw_basis("entropy", float(np.dot(self._mass_fractions, pure_s_mass_at_pi))))
+
+    @entropy.setter
+    def entropy(self, value: float):
+        self._require_pressure("Entropy")
+        self._clear_property_cache()
+        raw_value = self._to_raw_basis("entropy", value)
+        self._temperature = self._temperature_from_pressure_entropy(self._pressure, raw_value)
+        self._validate_temperature()
+        self._enthalpy = self._enthalpy_from_temperature(self._temperature)
+
+    @property
+    def pressure_entropy(self) -> Tuple[float | None, float]:
+        return self._pressure, self.entropy
+
+    @pressure_entropy.setter
+    def pressure_entropy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("pressure_entropy must be set with (pressure, entropy)")
+        self._set_state(pressure=values[0], entropy=values[1])
+
+    @property
+    def temperature_entropy(self) -> Tuple[float, float]:
+        return self._temperature, self.entropy
+
+    @temperature_entropy.setter
+    def temperature_entropy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("temperature_entropy must be set with (temperature, entropy)")
+        self._set_state(temperature=values[0], entropy=values[1])
+
+    @property
+    def enthalpy_entropy(self) -> Tuple[float, float]:
+        return self.enthalpy, self.entropy
+
+    @enthalpy_entropy.setter
+    def enthalpy_entropy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("enthalpy_entropy must be set with (enthalpy, entropy)")
+        self._set_state(enthalpy=values[0], entropy=values[1])
+
+    @property
+    def internal_energy_entropy(self) -> Tuple[float, float]:
+        return self.internal_energy, self.entropy
+
+    @internal_energy_entropy.setter
+    def internal_energy_entropy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("internal_energy_entropy must be set with (internal_energy, entropy)")
+        self._set_state(internal_energy=values[0], entropy=values[1])
+
+    @property
+    def density_entropy(self) -> Tuple[float, float]:
+        return self.density, self.entropy
+
+    @density_entropy.setter
+    def density_entropy(self, values: Tuple[float, float]):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError("density_entropy must be set with (density, entropy)")
+        self._set_state(density=values[0], entropy=values[1])
 
     @property
     def gibbs_energy(self) -> float:

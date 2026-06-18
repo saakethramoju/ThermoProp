@@ -1,7 +1,8 @@
 from typing import List, Union, Dict, Tuple
 
+import math
 import numpy as np
-from scipy.optimize import root_scalar
+from scipy.optimize import root, root_scalar
 from functools import lru_cache
 
 import CoolProp.CoolProp as CP
@@ -122,6 +123,30 @@ class Fluid(PropertyIntrospectionMixin):
             "HmassT_INPUTS",
             ("enthalpy", "temperature"),
         ),
+        frozenset(("pressure", "entropy")): (
+            "PSmass_INPUTS",
+            ("pressure", "entropy"),
+        ),
+        frozenset(("temperature", "entropy")): (
+            "SmassT_INPUTS",
+            ("entropy", "temperature"),
+        ),
+        frozenset(("enthalpy", "entropy")): (
+            "HmassSmass_INPUTS",
+            ("enthalpy", "entropy"),
+        ),
+        frozenset(("density", "entropy")): (
+            "DmassSmass_INPUTS",
+            ("density", "entropy"),
+        ),
+        frozenset(("internal_energy", "entropy")): (
+            "SmassUmass_INPUTS",
+            ("entropy", "internal_energy"),
+        ),
+        frozenset(("quality", "entropy")): (
+            "QSmass_INPUTS",
+            ("quality", "entropy"),
+        ),
     }
 
     def __init__(
@@ -134,6 +159,7 @@ class Fluid(PropertyIntrospectionMixin):
         quality: float = None,
         density: float = None,
         internal_energy: float = None,
+        entropy: float = None,
         set_reference: str | None = None,
     ):
         """
@@ -234,6 +260,7 @@ class Fluid(PropertyIntrospectionMixin):
             "quality": quality,
             "density": density,
             "internal_energy": internal_energy,
+            "entropy": entropy,
         }
 
         provided = {
@@ -263,6 +290,7 @@ class Fluid(PropertyIntrospectionMixin):
         quality=UNSET,
         density=UNSET,
         internal_energy=UNSET,
+        entropy=UNSET,
         mole_fractions=UNSET,
         mass_fractions=UNSET,
         set_reference=UNSET,
@@ -288,6 +316,7 @@ class Fluid(PropertyIntrospectionMixin):
                 "quality": quality,
                 "density": density,
                 "internal_energy": internal_energy,
+                "entropy": entropy,
             }
         )
 
@@ -448,11 +477,13 @@ class Fluid(PropertyIntrospectionMixin):
     def _to_raw_basis(self, name: str, value: float) -> float:
         if self._reference_target is None:
             return float(value)
-        dh, du, _ = self._get_reference_offsets()
+        dh, du, ds = self._get_reference_offsets()
         if name == "enthalpy":
             return float(value) - dh
         if name == "internal_energy":
             return float(value) - du
+        if name == "entropy":
+            return float(value) - ds
         return float(value)
 
     def _from_raw_basis(self, name: str, value: float | None) -> float | None:
@@ -513,6 +544,9 @@ class Fluid(PropertyIntrospectionMixin):
         if "internal_energy" in raw_values:
             raw_values["internal_energy"] = self._to_raw_basis("internal_energy", raw_values["internal_energy"])
 
+        if "entropy" in raw_values:
+            raw_values["entropy"] = self._to_raw_basis("entropy", raw_values["entropy"])
+
         if keys not in Fluid._FLASH_PAIRS:
             raise ValueError(
                 f"Unsupported flash pair: {sorted(keys)}. "
@@ -537,6 +571,13 @@ class Fluid(PropertyIntrospectionMixin):
             self._sync_from_backend()
             return
 
+        if keys == frozenset(("internal_energy", "entropy")):
+            self._set_state_from_internal_energy_entropy(
+                float(raw_values["internal_energy"]),
+                float(raw_values["entropy"]),
+            )
+            return
+
         input_pair_name, order = Fluid._FLASH_PAIRS[keys]
 
         if not hasattr(CP, input_pair_name):
@@ -552,6 +593,83 @@ class Fluid(PropertyIntrospectionMixin):
         self._sync_from_backend()
 
 
+
+    def _set_state_from_internal_energy_entropy(self, internal_energy: float, entropy: float) -> None:
+        pressure_guesses = []
+        temperature_guesses = []
+
+        if self._P is not None:
+            pressure_guesses.append(self._P)
+        pressure_guesses.extend([self._REFERENCE_PRESSURE, 1.0e5, 1.0e6, 1.0e4])
+
+        try:
+            temperature_guesses.append(self.temperature)
+        except Exception:
+            pass
+        temperature_guesses.extend([self._REFERENCE_TEMPERATURE, 300.0, 500.0, 100.0])
+
+        pressure_guesses = [p for i, p in enumerate(pressure_guesses) if p is not None and p > 0.0 and p not in pressure_guesses[:i]]
+        temperature_guesses = [T for i, T in enumerate(temperature_guesses) if T is not None and T > 0.0 and T not in temperature_guesses[:i]]
+
+        internal_energy_scale = max(abs(float(internal_energy)), 1.0e5)
+        entropy_scale = max(abs(float(entropy)), 1.0e3)
+
+        best_error = math.inf
+        best_state = None
+        last_error = None
+
+        def residual(log_state):
+            clipped_state = np.clip(log_state, -700.0, 700.0)
+            pressure = float(np.exp(clipped_state[0]))
+            temperature = float(np.exp(clipped_state[1]))
+
+            try:
+                self._update_state(CP.PT_INPUTS, pressure, temperature)
+                u = float(self._backend.umass())
+                s = float(self._backend.smass())
+            except Exception:
+                return np.array([1.0e6, 1.0e6])
+
+            return np.array([
+                (u - internal_energy) / internal_energy_scale,
+                (s - entropy) / entropy_scale,
+            ])
+
+        for pressure_guess in pressure_guesses:
+            for temperature_guess in temperature_guesses:
+                try:
+                    solution = root(
+                        residual,
+                        np.log([pressure_guess, temperature_guess]),
+                        method="hybr",
+                    )
+                    pressure = float(np.exp(solution.x[0]))
+                    temperature = float(np.exp(solution.x[1]))
+                    self._update_state(CP.PT_INPUTS, pressure, temperature)
+                    error = max(
+                        abs(float(self._backend.umass()) - internal_energy) / internal_energy_scale,
+                        abs(float(self._backend.smass()) - entropy) / entropy_scale,
+                    )
+
+                    if error < best_error:
+                        best_error = error
+                        best_state = (pressure, temperature)
+
+                    if solution.success and error < 1.0e-7:
+                        self._sync_from_backend()
+                        return
+                except Exception as exc:
+                    last_error = exc
+                    continue
+
+        if best_state is not None and best_error < 1.0e-5:
+            self._update_state(CP.PT_INPUTS, best_state[0], best_state[1])
+            self._sync_from_backend()
+            return
+
+        raise ValueError(
+            "Could not solve Fluid state from internal_energy and entropy."
+        ) from last_error
 
     def set_pyfluid(self):
         """Rebuild backend CoolProp state using current pressure and enthalpy."""
@@ -1011,6 +1129,11 @@ class Fluid(PropertyIntrospectionMixin):
     def entropy(self) -> float:
         """Mass-specific entropy in J/kg-K."""
         return self._from_raw_basis("entropy", float(self._backend.smass()))
+
+    @entropy.setter
+    def entropy(self, value: float):
+        """Update entropy while holding pressure constant."""
+        self.pressure_entropy = (self.pressure, float(value))
 
     @property
     def freezing_temperature(self) -> float:
