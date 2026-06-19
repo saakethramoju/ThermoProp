@@ -12,6 +12,7 @@ from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
 from ._validation import validate_fraction_vector
 from ._state_api import UNSET, is_provided, provided_items
+from ._composition import composition_dict
 
 class CombustionGas(PropertyIntrospectionMixin):
     """
@@ -313,6 +314,29 @@ class CombustionGas(PropertyIntrospectionMixin):
     @property
     def set_reference(self) -> str:
         return self.reference
+
+    @property
+    def composition(self) -> dict[str, float]:
+        """Return the chainable gas-species composition dictionary.
+
+        The returned fractions use this object's active composition basis.
+        For the default ``basis="mass"``, this is identical to
+        ``mass_fractions``. For ``basis="mole"``, this is identical to
+        ``mole_fractions``.
+        """
+
+        fractions = self._mole_fractions if self._basis == "mole" else self._mass_fractions
+        return composition_dict(self._display_names, fractions)
+
+    @property
+    def basis(self) -> str:
+        """Composition basis used by ``composition``."""
+        return self._basis
+
+    @property
+    def composition_basis(self) -> str:
+        """Readable alias for ``basis``."""
+        return self._basis
 
     def _composition_cache_key(self) -> tuple:
         return tuple(

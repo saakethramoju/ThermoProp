@@ -10,6 +10,7 @@ from .MaterialDatabase import MaterialDatabase
 from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
 from ._state_api import UNSET, is_provided, provided_items
+from ._composition import normalize_single_component
 
 
 class Material(PropertyIntrospectionMixin):
@@ -98,10 +99,11 @@ class Material(PropertyIntrospectionMixin):
 
     def __init__(
         self,
-        material: str,
+        material: str | dict[str, float],
         temperature: float = 298.15,
         allow_extrapolation: bool = True,
     ):
+        material, self._composition = normalize_single_component(material, self.__class__.__name__)
         self._material_name = self._normalize_name(material)
 
         try:
@@ -142,6 +144,27 @@ class Material(PropertyIntrospectionMixin):
     @property
     def species(self) -> list[str]:
         return [self.material]
+
+    @property
+    def composition(self) -> dict[str, float]:
+        """Return the chainable material composition dictionary.
+
+        ``Material`` is currently a pure-material wrapper, so this always returns
+        one normalized entry. The dictionary form keeps the API consistent with
+        fluid and gas wrappers and leaves room for future alloy/composite models.
+        """
+
+        return {self.material: 1.0}
+
+    @property
+    def basis(self) -> str:
+        """Composition basis used by ``composition``."""
+        return "mass"
+
+    @property
+    def composition_basis(self) -> str:
+        """Readable alias for ``basis``."""
+        return "mass"
 
     @property
     def category(self) -> str:

@@ -14,6 +14,7 @@ from .ReferenceState import normalize_reference_target
 from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
 from ._state_api import UNSET, is_provided, provided_items
+from ._composition import normalize_single_component
 
 class Propellant(PropertyIntrospectionMixin):
     """
@@ -124,7 +125,7 @@ class Propellant(PropertyIntrospectionMixin):
 
     def __init__(
         self,
-        propellant: str,
+        propellant: str | dict[str, float],
         temperature: float | None = None,
         pressure: float | None = None,
         quality: float | None = None,
@@ -132,6 +133,7 @@ class Propellant(PropertyIntrospectionMixin):
     ):
         self._reference_target = self._normalize_reference_target(set_reference)
         self._reference_offsets: tuple[float, float, float] | None = None
+        propellant, self._composition = normalize_single_component(propellant, self.__class__.__name__)
 
         quality = self._validate_quality(quality)
 
@@ -209,7 +211,7 @@ class Propellant(PropertyIntrospectionMixin):
 
     @staticmethod
     def _temperature_from_fluid_quality(
-        propellant: str,
+        propellant: str | dict[str, float],
         *,
         pressure: float,
         quality: float,
@@ -220,7 +222,7 @@ class Propellant(PropertyIntrospectionMixin):
 
     @staticmethod
     def _pressure_from_fluid_quality(
-        propellant: str,
+        propellant: str | dict[str, float],
         *,
         temperature: float,
         quality: float,
@@ -285,6 +287,27 @@ class Propellant(PropertyIntrospectionMixin):
     @property
     def set_reference(self) -> str:
         return self.reference
+
+    @property
+    def composition(self) -> dict[str, float]:
+        """Return the chainable propellant composition dictionary.
+
+        ``Propellant`` is currently a pure-component wrapper, so this always
+        returns one normalized entry. The dictionary form is useful when passing
+        the propellant identity from one ``Lookup`` to another.
+        """
+
+        return {self.propellant: 1.0}
+
+    @property
+    def basis(self) -> str:
+        """Composition basis used by ``composition``."""
+        return "mass"
+
+    @property
+    def composition_basis(self) -> str:
+        """Readable alias for ``basis``."""
+        return "mass"
 
     def _composition_cache_key(self) -> tuple:
         return ((self.propellant, 1.0),)
