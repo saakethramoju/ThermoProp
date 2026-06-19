@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -362,7 +363,7 @@ class Reactants:
         return isinstance(value, (Propellant, CombustionGas))
 
     @staticmethod
-    def _group_items(reactants: ReactantGroup) -> list[ReactantEntry]:
+    def _group_items(reactants: ReactantGroup, role: str) -> list[ReactantEntry]:
         if reactants is None:
             return []
 
@@ -379,6 +380,13 @@ class Reactants:
             if len(reactants) == 2 and Reactants._is_reactant_object(reactants[0]):
                 return [reactants]
 
+        if not isinstance(reactants, IterableABC):
+            raise TypeError(
+                f"{role} must be a Propellant, CombustionGas, weighted "
+                f"({role}, weight) tuple, or iterable of those. "
+                f"Got {type(reactants).__name__}."
+            )
+
         return list(reactants)
 
     @staticmethod
@@ -387,7 +395,7 @@ class Reactants:
         role: str,
         allow_empty: bool = False,
     ) -> list[tuple[ThermoReactant, float]]:
-        items = Reactants._group_items(reactants)
+        items = Reactants._group_items(reactants, role=role)
 
         if not items:
             if allow_empty:
