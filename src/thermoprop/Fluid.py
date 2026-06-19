@@ -525,6 +525,11 @@ class Fluid(PropertyIntrospectionMixin):
         return composition_dict(self._display_names, fractions)
 
     @property
+    def fluid(self) -> dict[str, float]:
+        """Alias for ``composition`` used for FullFlow lookup chaining."""
+        return self.composition
+
+    @property
     def basis(self) -> str:
         """Composition basis used by ``composition``."""
         return self._basis

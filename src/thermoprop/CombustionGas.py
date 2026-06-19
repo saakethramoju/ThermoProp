@@ -329,6 +329,26 @@ class CombustionGas(PropertyIntrospectionMixin):
         return composition_dict(self._display_names, fractions)
 
     @property
+    def fluid(self) -> dict[str, float]:
+        """Alias for ``composition`` used for FullFlow lookup chaining."""
+        return self.composition
+
+    @property
+    def gas(self) -> dict[str, float]:
+        """Gas-composition alias for ``composition``."""
+        return self.composition
+
+    @property
+    def combustiongas(self) -> dict[str, float]:
+        """Class-specific alias for ``composition``."""
+        return self.composition
+
+    @property
+    def combustion_gas_composition_input(self) -> dict[str, float]:
+        """Explicit alias for passing this gas composition into another wrapper."""
+        return self.composition
+
+    @property
     def basis(self) -> str:
         """Composition basis used by ``composition``."""
         return self._basis

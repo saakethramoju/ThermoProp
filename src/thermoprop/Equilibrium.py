@@ -724,8 +724,18 @@ class Equilibrium(PropertyIntrospectionMixin):
         return self.combustion_gas
 
     @property
+    def combustiongas(self) -> CombustionGas:
+        """Lowercase alias for ``combustion_gas``."""
+        return self.combustion_gas
+
+    @property
     def gas(self) -> CombustionGas:
         return self.combustion_gas
+
+    @property
+    def fluid(self) -> dict[str, float]:
+        """Gas-only composition dictionary for fluid-property chaining."""
+        return self.combustion_gas.composition
 
     @property
     def density(self) -> float:

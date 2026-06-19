@@ -300,6 +300,20 @@ class Propellant(PropertyIntrospectionMixin):
         return {self.propellant: 1.0}
 
     @property
+    def fluid(self) -> dict[str, float]:
+        """Alias for ``composition`` used for FullFlow lookup chaining."""
+        return self.composition
+
+    @property
+    def propellant_composition(self) -> dict[str, float]:
+        """Explicit dictionary-form alias for ``composition``.
+
+        The existing ``propellant`` property remains the resolved propellant name
+        for backward compatibility.
+        """
+        return self.composition
+
+    @property
     def basis(self) -> str:
         """Composition basis used by ``composition``."""
         return "mass"
