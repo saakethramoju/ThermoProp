@@ -427,6 +427,63 @@ class Propellant(PropertyIntrospectionMixin):
 
     # ---------------- Resolution ---------------- #
 
+    def _resolve_shared_cea_propellant(self, cea_name: str) -> bool:
+        """Resolve an exact CEA name through a shared ThermoProp propellant card.
+
+        Exact CEA names remain strict for equilibrium math, but some CEA
+        reactant/condensed names describe the same feed material as a
+        RocketProps-backed ThermoProp propellant. For example, ``H2O(L)`` and
+        ``Water`` should use the same propellant card while keeping the active
+        CEA name as ``H2O(L)``.
+        """
+        try:
+            cea_name = CEA.resolve_name(cea_name)
+        except Exception:
+            return False
+
+        if CEA.has_thermo(cea_name) and CEA.is_gas(cea_name):
+            return False
+
+        for species_name in SpeciesDatabase.species():
+            try:
+                record = SpeciesDatabase._record(species_name)
+            except Exception:
+                continue
+
+            candidates = self._cea_reference_candidates(
+                record.name,
+                record.rocketprops,
+                record.cea,
+            )
+
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+
+                try:
+                    candidate_name = CEA.resolve_name(candidate)
+                except Exception:
+                    continue
+
+                if candidate_name != cea_name:
+                    continue
+
+                self._registry_name = record.name
+                self._rocketprops_name = record.rocketprops
+
+                if record.cea is not None:
+                    self._set_cea_species_name_if_present(record.cea)
+
+                self._set_cea_reactant_name_if_present(cea_name)
+
+                return (
+                    self._rocketprops_name is not None
+                    or self._cea_species_name is not None
+                    or self._cea_reactant_name is not None
+                )
+
+        return False
+
     def _resolve_backends(self, propellant: str) -> None:
         """Resolve RocketProps and CEA names.
 
@@ -461,6 +518,9 @@ class Propellant(PropertyIntrospectionMixin):
             pass
 
         if CEA.has_species(raw):
+            if self._resolve_shared_cea_propellant(raw):
+                return
+
             self._set_exact_cea_name(raw)
             return
 
