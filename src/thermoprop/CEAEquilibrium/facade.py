@@ -15,6 +15,7 @@ import numpy as np
 from ..CEADatabase import CEA
 from ..CombustionGas import CombustionGas
 from ..Reactants import Reactants
+from ..SpeciesDatabase import SpeciesDatabase
 from .condensed import (
     CondensedOptions,
     CondensedSolveResult,
@@ -99,7 +100,7 @@ class DictReactants:
             raise ValueError("Reactant composition dictionary cannot be empty.")
 
         self.composition = {
-            CEA.resolve_name(name) if hasattr(CEA, "resolve_name") else name: float(value)
+            SpeciesDatabase._cea_input_name(name): float(value)
             for name, value in composition.items()
             if float(value) > 0.0
         }

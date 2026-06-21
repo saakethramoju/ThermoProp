@@ -59,6 +59,7 @@ from .CEAEquilibrium.properties import (
     mole_fractions as state_mole_fractions,
     gas_mole_fractions as state_gas_mole_fractions,
     mass_fractions as state_mass_fractions,
+    gas_mass_fractions as state_gas_mass_fractions,
     speed_of_sound_frozen,
     speed_of_sound_equilibrium,
     frozen_mixture_derivatives,
@@ -661,6 +662,29 @@ class Equilibrium(PropertyIntrospectionMixin):
         )
 
     @property
+    def composition(self) -> dict[str, float]:
+        """Full equilibrium mass-fraction composition with strict CEA names.
+
+        This includes gas and condensed species exactly as CEA represents them.
+        Phase-specific entries such as ``H2O`` and ``H2O(L)`` remain separate.
+        Use ``gas_composition`` or ``combustion_gas.composition`` when a
+        normalized gas-only composition is needed for gas-property chaining.
+        """
+        return self.mass_fractions
+
+    @property
+    def gas_mass_fractions(self) -> dict[str, float]:
+        return state_gas_mass_fractions(
+            self._state,
+            trace=self._combustion_gas_trace,
+        )
+
+    @property
+    def gas_composition(self) -> dict[str, float]:
+        """Gas-only mass-fraction composition with strict CEA gas names."""
+        return dict(self.combustion_gas.mass_fractions)
+
+    @property
     def normalized_mole_fractions(self) -> dict[str, float]:
         return self.combustion_gas_composition()
 
@@ -735,7 +759,7 @@ class Equilibrium(PropertyIntrospectionMixin):
     @property
     def fluid(self) -> dict[str, float]:
         """Gas-only composition dictionary for fluid-property chaining."""
-        return self.combustion_gas.composition
+        return self.gas_composition
 
     @property
     def density(self) -> float:
@@ -1083,8 +1107,11 @@ class Equilibrium(PropertyIntrospectionMixin):
             "gas_constant": self.gas_constant,
             "molecular_weight": self.molecular_weight,
             "molecular_weight_all_species": self.molecular_weight_all_species,
+            "composition": self.composition,
             "mole_fractions": state_mole_fractions(self._state, trace=trace),
             "gas_mole_fractions": state_gas_mole_fractions(self._state, trace=trace),
+            "gas_mass_fractions": state_gas_mass_fractions(self._state, trace=trace),
+            "gas_composition": self.gas_composition,
             "mass_fractions": state_mass_fractions(self._state, trace=trace),
             "species_moles": {
                 name: value

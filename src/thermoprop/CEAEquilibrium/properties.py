@@ -404,6 +404,26 @@ def mass_fractions(
     )
 
 
+def gas_mass_fractions(
+    state: EquilibriumState,
+    *,
+    trace: float = 0.0,
+) -> dict[str, float]:
+    names = [
+        name
+        for name, gas in zip(state.species.names, state.species.gas_mask)
+        if gas
+    ]
+    n = state.n[state.species.gas_mask]
+    mw = state.species.molecular_weights[state.species.gas_mask]
+    return mass_fraction_dict(
+        names,
+        n,
+        mw,
+        trace=trace,
+    )
+
+
 def condensed_mass_fraction(state: EquilibriumState) -> float:
     y = mass_fraction_dict(
         state.species.names,

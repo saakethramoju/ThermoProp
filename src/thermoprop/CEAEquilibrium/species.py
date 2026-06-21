@@ -16,6 +16,7 @@ from typing import Iterable
 import numpy as np
 
 from ..CEADatabase import CEA
+from ..SpeciesDatabase import SpeciesDatabase
 from .state import SpeciesSet
 
 
@@ -87,9 +88,7 @@ def _database_species_names() -> list[str]:
 
 
 def _resolve_name(name: str) -> str:
-    if hasattr(CEA, "resolve_name"):
-        return CEA.resolve_name(name)
-    return name
+    return SpeciesDatabase._cea_input_name(name)
 
 
 
@@ -290,14 +289,13 @@ def build_species_names(
     seen: set[str] = set()
 
     for raw_name in raw_candidates:
-        if not _has_species(raw_name):
-            continue
-
         try:
             name = _resolve_name(raw_name)
         except Exception:
             continue
 
+        if not _has_species(name):
+            continue
 
         if name in seen:
             continue

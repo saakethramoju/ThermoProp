@@ -307,6 +307,40 @@ class SpeciesDatabase:
             raise ValueError(f"{record.name!r} is not supported by CEA.")
         return record.cea
 
+
+    @classmethod
+    def _cea_input_name(cls, value: str) -> str:
+        """Resolve a user CEA input name while preserving strict CEA phases.
+
+        Exact CEA names are accepted first and returned unchanged. This is
+        important for phase-specific names such as ``H2O(L)``, ``H2O(cr)``,
+        ``C(gr)``, and ``O2(L)``. If an exact CEA name is not found, aliases
+        are applied only for non-phase-tagged names. Thus ``water`` may resolve
+        to gas-phase ``H2O``, but loose phase variants such as ``h2o(l)`` are
+        not silently converted to gas water or to a condensed card.
+        """
+        raw = str(value).strip()
+
+        if CEA is not None:
+            try:
+                return CEA.resolve_name(raw)
+            except Exception:
+                pass
+
+        if "(" in raw and ")" in raw:
+            raise ValueError(
+                f"Unknown strict CEA species or reactant: {value!r}. "
+                "Phase-specific CEA names are case-sensitive; use the exact "
+                "CEA name such as 'H2O(L)', 'H2O(cr)', 'C(gr)', or 'O2(L)'."
+            )
+
+        resolved = cls._cea_name(raw)
+
+        if CEA is not None:
+            return CEA.resolve_name(resolved)
+
+        return resolved
+
     @classmethod
     def _rocketprops_name(cls, value: str) -> str:
         record = cls._record(value)

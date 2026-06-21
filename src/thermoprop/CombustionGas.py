@@ -326,7 +326,7 @@ class CombustionGas(PropertyIntrospectionMixin):
         """
 
         fractions = self._mole_fractions if self._basis == "mole" else self._mass_fractions
-        return composition_dict(self._display_names, fractions)
+        return composition_dict(self._species_names, fractions)
 
     @property
     def fluid(self) -> dict[str, float]:
@@ -362,14 +362,14 @@ class CombustionGas(PropertyIntrospectionMixin):
         return tuple(
             sorted(
                 (name, round(float(w), 15))
-                for name, w in zip(self._display_names, self._mass_fractions)
+                for name, w in zip(self._species_names, self._mass_fractions)
             )
         )
 
     def _composition_argument(self) -> str | dict[str, float]:
         if len(self._display_names) == 1:
             return self._display_names[0]
-        return {name: float(w) for name, w in zip(self._display_names, self._mass_fractions)}
+        return {name: float(w) for name, w in zip(self._species_names, self._mass_fractions)}
 
     def _reference_cache_key(self) -> tuple:
         return (
@@ -497,18 +497,21 @@ class CombustionGas(PropertyIntrospectionMixin):
 
     @classmethod
     def _resolve_species(cls, value: str) -> tuple[str, str, int, int | None]:
-        """Resolve a user species name/alias to a CEA gas species and table indices."""
+        """Resolve a user species name/alias to a strict CEA gas species.
+
+        Aliases are accepted for gas inputs, but exact CEA names are preserved.
+        Phase-specific CEA names such as ``H2O(L)`` and ``C(gr)`` therefore
+        remain condensed names and are rejected below instead of being aliased
+        to gas species.
+        """
         raw_name = str(value).strip()
 
         try:
-            species_name = SpeciesDatabase._cea_name(raw_name)
-            display_name = SpeciesDatabase._name(raw_name)
+            species_name = SpeciesDatabase._cea_input_name(raw_name)
         except Exception:
-            try:
-                species_name = CEA.resolve_name(raw_name)
-            except Exception:
-                species_name = raw_name
-            display_name = species_name
+            species_name = raw_name
+
+        display_name = species_name
 
         if not CEA.has_species(species_name):
             raise ValueError(
