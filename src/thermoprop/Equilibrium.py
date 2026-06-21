@@ -199,7 +199,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         mode: str = "hp",
         temperature: float | None = None,
         pressure: float | None = None,
-        basis: str = "mole",
+        basis: str = "mass",
         guess_temperature: float = 3800.0,
         candidates: list[str] | None = None,
         include_condensed: bool = True,
