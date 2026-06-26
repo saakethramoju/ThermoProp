@@ -1225,7 +1225,7 @@ class CombustionGas(PropertyIntrospectionMixin):
     def _temperature_limits(self) -> tuple[float, float]:
         tmin, tmax = CEA.temperature_limits(self._species_names)
 
-        return max(50.0, tmin - 50.0), tmax
+        return tmin, tmax
 
     @staticmethod
     def _interval_index(thermo_index: int, temperature: float) -> int:
