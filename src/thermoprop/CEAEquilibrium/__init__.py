@@ -3,6 +3,7 @@ from .hp_solver import *
 from .matrix import *
 from .properties import *
 from .species import *
+from .sp_solver import *
 from .state import *
 from .thermo import *
 from .tp_solver import *

@@ -20,9 +20,11 @@ from .condensed import (
     CondensedOptions,
     CondensedSolveResult,
     solve_with_condensed_phases_hp,
+    solve_with_condensed_phases_sp,
     solve_with_condensed_phases_tp,
 )
 from .hp_solver import HPSolverOptions
+from .sp_solver import SPSolverOptions
 from .properties import (
     build_results,
     gibbs_energy as state_gibbs_energy,
@@ -49,6 +51,7 @@ class EquilibriumSolveSummary:
     removed_condensed_species: list[str]
     max_element_error: float | None = None
     enthalpy_error: float | None = None
+    entropy_error: float | None = None
     residual_norm: float | None = None
 
 
@@ -59,6 +62,7 @@ class EquilibriumConfig:
     mode: str
     pressure: float | None
     temperature_input: float | None
+    entropy_input: float | None
     basis: str
     guess_temperature: float
     candidates: list[str] | None
@@ -286,8 +290,16 @@ def validate_config(config: EquilibriumConfig, original_input: Any) -> None:
         if config.guess_temperature <= 0.0:
             raise ValueError("guess_temperature must be positive.")
 
+    elif config.mode == "sp":
+        if config.entropy_input is None:
+            raise ValueError("SP equilibrium requires entropy [J/kg-K].")
+        if not np.isfinite(config.entropy_input):
+            raise ValueError("entropy must be finite.")
+        if config.guess_temperature <= 0.0:
+            raise ValueError("guess_temperature must be positive.")
+
     else:
-        raise ValueError("mode must be 'tp' or 'hp'.")
+        raise ValueError("mode must be 'tp', 'hp', or 'sp'.")
 
 
 def _safe_reactant_internal_energy(reactants) -> float | None:
@@ -348,6 +360,12 @@ def solver_options(config: EquilibriumConfig):
         verbose=config.verbose,
     )
 
+    sp_options = SPSolverOptions(
+        max_iterations=config.max_iterations,
+        species_trace=config.combustion_gas_trace,
+        verbose=config.verbose,
+    )
+
     condensed_options = CondensedOptions(
         enabled=config.include_condensed,
         max_outer_iterations=config.max_outer_iterations,
@@ -362,7 +380,7 @@ def solver_options(config: EquilibriumConfig):
         equilibrium_derivative_temperature_step=config.equilibrium_derivative_temperature_step,
     )
 
-    return tp_options, hp_options, condensed_options, transport_options
+    return tp_options, hp_options, sp_options, condensed_options, transport_options
 
 
 def run_equilibrium_solve(
@@ -377,7 +395,7 @@ def run_equilibrium_solve(
     feed = build_feed(reactants, config, original_input=original_input)
 
     elements_for_species = [e for e in feed.elements if e != CHARGE_ELEMENT]
-    tp_options, hp_options, condensed_options, transport_options = solver_options(config)
+    tp_options, hp_options, sp_options, condensed_options, transport_options = solver_options(config)
 
     if config.mode == "tp":
         solve_result = solve_with_condensed_phases_tp(
@@ -389,7 +407,7 @@ def run_equilibrium_solve(
             tp_options=tp_options,
             condensed_options=condensed_options,
         )
-    else:
+    elif config.mode == "hp":
         if feed.enthalpy is None:
             raise ValueError("HP equilibrium requires reactant enthalpy.")
 
@@ -403,6 +421,19 @@ def run_equilibrium_solve(
             hp_options=hp_options,
             condensed_options=condensed_options,
         )
+    elif config.mode == "sp":
+        solve_result = solve_with_condensed_phases_sp(
+            elements=elements_for_species,
+            element_totals=feed.element_totals,
+            pressure=float(config.pressure),
+            target_entropy=float(config.entropy_input),
+            guess_temperature=config.guess_temperature,
+            candidates=config.candidates,
+            sp_options=sp_options,
+            condensed_options=condensed_options,
+        )
+    else:
+        raise ValueError("mode must be 'tp', 'hp', or 'sp'.")
 
     cea_extended_range_hp_warning = (
         config.mode == "hp"
@@ -449,6 +480,7 @@ def run_equilibrium_solve(
         removed_condensed_species=list(solve_result.removed_species),
         max_element_error=getattr(last, "max_element_error", None),
         enthalpy_error=getattr(last, "enthalpy_error", None),
+        entropy_error=getattr(last, "entropy_error", None),
         residual_norm=getattr(last, "residual_norm", None),
     )
 

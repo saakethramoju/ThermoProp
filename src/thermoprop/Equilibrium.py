@@ -76,6 +76,7 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     * TP (constant temperature, constant pressure)
     * HP (constant enthalpy, constant pressure)
+    * SP (constant entropy, constant pressure)
 
     The solver minimizes the total Gibbs free energy subject to elemental
     conservation constraints and returns an equilibrium composition that
@@ -199,6 +200,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         mode: str = "hp",
         temperature: float | None = None,
         pressure: float | None = None,
+        entropy: float | None = None,
         basis: str = "mass",
         guess_temperature: float = 3800.0,
         candidates: list[str] | None = None,
@@ -216,8 +218,14 @@ class Equilibrium(PropertyIntrospectionMixin):
         self._mode = mode.lower().strip()
         self._temperature_input = None if temperature is None else float(temperature)
         self._pressure = None if pressure is None else float(pressure)
+        self._entropy_input = None if entropy is None else float(entropy)
         self._basis = basis
         self._guess_temperature = float(guess_temperature)
+        if self._mode == "sp" and temperature is not None:
+            # SP does not assign static temperature; a supplied temperature is
+            # treated as the initial temperature guess for the TP entropy root.
+            self._guess_temperature = float(temperature)
+            self._temperature_input = None
         self._candidates = candidates
 
         self._include_condensed = bool(include_condensed)
@@ -257,6 +265,7 @@ class Equilibrium(PropertyIntrospectionMixin):
             mode=self._mode,
             pressure=self._pressure,
             temperature_input=self._temperature_input,
+            entropy_input=self._entropy_input,
             basis=self._basis,
             guess_temperature=self._guess_temperature,
             candidates=self._candidates,
@@ -318,6 +327,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         mode=UNSET,
         temperature=UNSET,
         pressure=UNSET,
+        entropy=UNSET,
         basis=UNSET,
         guess_temperature=UNSET,
         candidates=UNSET,
@@ -345,6 +355,8 @@ class Equilibrium(PropertyIntrospectionMixin):
 
         if is_provided(mode):
             self._mode = str(mode).lower().strip()
+            if self._mode == "sp":
+                self._temperature_input = None
 
         if is_provided(temperature):
             if self._mode == "tp":
@@ -355,6 +367,9 @@ class Equilibrium(PropertyIntrospectionMixin):
 
         if is_provided(pressure):
             self._pressure = None if pressure is None else float(pressure)
+
+        if is_provided(entropy):
+            self._entropy_input = None if entropy is None else float(entropy)
 
         if is_provided(basis):
             self._basis = basis
@@ -420,6 +435,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         *,
         temperature: float | None = None,
         pressure: float | None = None,
+        entropy: float | None = None,
     ) -> EquilibriumState:
         """
         Fast TP neighbor solve using the same active species set.
@@ -433,7 +449,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         state.pressure = P
         state.converged = False
 
-        tp_options, _, _, _ = self._solver_options()
+        tp_options, _, _, _, _ = self._solver_options()
         tp_options.verbose = False
 
         result = solve_tp(state, options=tp_options)
@@ -476,6 +492,7 @@ class Equilibrium(PropertyIntrospectionMixin):
             self._mode,
             None if self._pressure is None else round(float(self._pressure), 12),
             None if self._temperature_input is None else round(float(self._temperature_input), 12),
+            None if self._entropy_input is None else round(float(self._entropy_input), 12),
             self._basis,
             None if self._candidates is None else tuple(self._candidates),
             self._include_condensed,
@@ -497,6 +514,11 @@ class Equilibrium(PropertyIntrospectionMixin):
     @property
     def mode(self) -> str:
         return self._mode
+
+    @property
+    def assigned_entropy(self) -> float | None:
+        """Assigned entropy input for SP solves [J/kg-K], if any."""
+        return self._entropy_input
 
     @property
     def input(self):

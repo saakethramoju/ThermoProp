@@ -34,13 +34,17 @@ from .species import (
     _temperature_limits,
 )
 from .thermo import thermo_arrays_for_species_set
-from .properties import enthalpy as _state_enthalpy
+from .properties import (
+    enthalpy as _state_enthalpy,
+    entropy as _state_entropy,
+)
 from .tp_solver import TPSolverOptions, TPSolverResult, solve_tp, initial_tp_state
 from .hp_solver import HPSolverOptions, HPSolverResult, solve_hp, initial_hp_state
+from .sp_solver import SPSolverOptions, SPSolverResult
 from ..CEADatabase import CEA
 
 
-Mode = Literal["tp", "hp"]
+Mode = Literal["tp", "hp", "sp"]
 
 
 @dataclass(slots=True)
@@ -69,7 +73,7 @@ class CondensedSolveResult:
     inner_iterations: int
     inserted_species: list[str]
     removed_species: list[str]
-    last_solver_result: TPSolverResult | HPSolverResult
+    last_solver_result: TPSolverResult | HPSolverResult | SPSolverResult
 
 
 
@@ -662,6 +666,18 @@ def _tp_options_from_hp_options(options: HPSolverOptions) -> TPSolverOptions:
     )
 
 
+def _tp_options_from_sp_options(options: SPSolverOptions) -> TPSolverOptions:
+    return TPSolverOptions(
+        max_iterations=options.max_iterations,
+        trace=options.trace,
+        species_trace=options.species_trace,
+        element_tolerance=options.element_tolerance,
+        correction_tolerance=options.correction_tolerance,
+        size=options.size,
+        verbose=False,
+    )
+
+
 
 def _copy_condensed_options_quiet(options: CondensedOptions) -> CondensedOptions:
     return CondensedOptions(
@@ -1131,6 +1147,312 @@ def solve_with_condensed_phases_hp(
         inserted_species=inserted,
         removed_species=removed,
         last_solver_result=last_result,
+    )
+
+
+def _tp_sp_temperature_search_limits(options: SPSolverOptions) -> tuple[float, float]:
+    tg1, tg4 = _cea_common_gas_temperature_limits()
+    lo = max(float(options.min_temperature), 0.8 * float(tg1))
+    hi = min(float(options.max_temperature), 1.1 * float(tg4))
+    if lo >= hi:
+        lo = float(options.min_temperature)
+        hi = float(options.max_temperature)
+    return lo, hi
+
+
+def solve_with_condensed_phases_sp(
+    *,
+    elements: list[str],
+    element_totals: np.ndarray,
+    pressure: float,
+    target_entropy: float,
+    guess_temperature: float = 3800.0,
+    candidates: list[str] | None = None,
+    sp_options: SPSolverOptions | None = None,
+    condensed_options: CondensedOptions | None = None,
+) -> CondensedSolveResult:
+    """Solve SP equilibrium by a CEA-style TP temperature root.
+
+    For an assigned pressure and entropy, a stable equilibrium state can be
+    represented as the TP Gibbs minimum at the temperature whose mixture entropy
+    matches ``target_entropy``.  This implementation deliberately reuses the TP
+    solver and condensed-phase insertion/removal logic at each trial
+    temperature.  That makes SP immediately consistent with ThermoProp's current
+    TP/HP species screening and CEA-style condensed phase handling.
+    """
+    if sp_options is None:
+        sp_options = SPSolverOptions()
+
+    if condensed_options is None:
+        condensed_options = CondensedOptions()
+
+    if pressure <= 0.0:
+        raise ValueError("SP equilibrium requires positive pressure [Pa].")
+
+    if not np.isfinite(target_entropy):
+        raise ValueError("SP equilibrium requires a finite target entropy [J/kg-K].")
+
+    tp_options = _tp_options_from_sp_options(sp_options)
+    quiet_condensed = _copy_condensed_options_quiet(condensed_options)
+    Tmin, Tmax = _tp_sp_temperature_search_limits(sp_options)
+
+    cache: dict[float, CondensedSolveResult] = {}
+    evaluation_count = 0
+    inner_iterations_total = 0
+
+    def solve_tp_at(T: float) -> tuple[float, CondensedSolveResult] | None:
+        nonlocal evaluation_count, inner_iterations_total
+
+        T = float(np.clip(float(T), Tmin, Tmax))
+        key = round(T, 10)
+        result = cache.get(key)
+
+        if result is None:
+            result = solve_with_condensed_phases_tp(
+                elements=elements,
+                element_totals=element_totals,
+                temperature=T,
+                pressure=pressure,
+                candidates=candidates,
+                tp_options=tp_options,
+                condensed_options=quiet_condensed,
+            )
+            cache[key] = result
+            evaluation_count += 1
+            inner_iterations_total += int(result.inner_iterations)
+
+        if not result.success:
+            return None
+
+        return float(_state_entropy(result.state) - target_entropy), result
+
+    T0 = float(np.clip(float(guess_temperature), Tmin, Tmax))
+    initial = solve_tp_at(T0)
+
+    if initial is None:
+        # If the user's guess is poor, start from a broad grid before giving up.
+        initial = None
+        for T in np.unique(
+            np.concatenate(
+                (
+                    np.linspace(Tmin, min(1200.0, Tmax), 40),
+                    np.geomspace(max(Tmin, 1.0), Tmax, 50),
+                )
+            )
+        ):
+            initial = solve_tp_at(float(T))
+            if initial is not None:
+                T0 = float(T)
+                break
+
+    if initial is None:
+        dummy_state = next(iter(cache.values())).state if cache else None
+        if dummy_state is None:
+            raise RuntimeError("SP equilibrium could not evaluate any TP trial state.")
+        last = next(iter(cache.values())).last_solver_result
+        return CondensedSolveResult(
+            state=dummy_state,
+            success=False,
+            message="SP equilibrium could not evaluate any successful TP trial state.",
+            outer_iterations=0,
+            inner_iterations=inner_iterations_total,
+            inserted_species=[],
+            removed_species=[],
+            last_solver_result=SPSolverResult(
+                state=dummy_state,
+                success=False,
+                message="SP equilibrium could not evaluate any successful TP trial state.",
+                iterations=evaluation_count,
+                max_element_error=getattr(last, "max_element_error", np.inf),
+                entropy_error=np.inf,
+                max_correction=np.inf,
+                temperature_correction=np.inf,
+                residual_norm=getattr(last, "residual_norm", np.inf),
+                element_potentials=getattr(last, "element_potentials", None),
+            ),
+        )
+
+    f0, tp0 = initial
+    best_T = T0
+    best_f = f0
+    best_result = tp0
+
+    if abs(best_f) <= sp_options.entropy_tolerance:
+        state = best_result.state
+        element_error = state.species.A @ state.n - state.element_totals
+        max_element_error = float(np.max(np.abs(element_error))) if element_error.size else 0.0
+        last = best_result.last_solver_result
+        return CondensedSolveResult(
+            state=state,
+            success=True,
+            message="SP equilibrium converged by TP entropy root.",
+            outer_iterations=best_result.outer_iterations,
+            inner_iterations=inner_iterations_total,
+            inserted_species=list(best_result.inserted_species),
+            removed_species=list(best_result.removed_species),
+            last_solver_result=SPSolverResult(
+                state=state,
+                success=True,
+                message="SP equilibrium converged by TP entropy root.",
+                iterations=evaluation_count,
+                max_element_error=max_element_error,
+                entropy_error=float(best_f),
+                max_correction=0.0,
+                temperature_correction=0.0,
+                residual_norm=getattr(last, "residual_norm", 0.0),
+                element_potentials=getattr(last, "element_potentials", None),
+            ),
+        )
+
+    bracket: tuple[float, float, float, float] | None = None
+
+    def try_direction(direction: int) -> tuple[float, float, float, float] | None:
+        T_prev = T0
+        f_prev = f0
+
+        for _ in range(sp_options.max_bracket_iterations):
+            if direction < 0:
+                T_next = max(Tmin, T_prev * 0.88)
+            else:
+                T_next = min(Tmax, T_prev * 1.14)
+
+            if abs(T_next - T_prev) <= 1.0e-12 * max(1.0, abs(T_prev)):
+                return None
+
+            out = solve_tp_at(T_next)
+            if out is None:
+                T_prev = T_next
+                continue
+
+            f_next, result_next = out
+            if abs(f_next) < abs(best_f):
+                nonlocal_best[0] = T_next
+                nonlocal_best[1] = f_next
+                nonlocal_best[2] = result_next
+
+            if f_prev == 0.0 or f_prev * f_next <= 0.0:
+                return (T_prev, T_next, f_prev, f_next)
+
+            T_prev = T_next
+            f_prev = f_next
+
+        return None
+
+    # Mutable holder used because Python does not allow nonlocal assignment to
+    # variables after using them directly in this nested function in older code
+    # style checks.
+    nonlocal_best = [best_T, best_f, best_result]
+
+    # Entropy usually increases with T at fixed P, so if f0 is high the root is
+    # usually colder; if f0 is low the root is usually hotter.  Try that first.
+    bracket = try_direction(-1 if f0 > 0.0 else 1)
+    best_T, best_f, best_result = nonlocal_best
+
+    if bracket is None:
+        nonlocal_best = [best_T, best_f, best_result]
+        bracket = try_direction(1 if f0 > 0.0 else -1)
+        best_T, best_f, best_result = nonlocal_best
+
+    if bracket is None:
+        grid = np.unique(
+            np.concatenate(
+                (
+                    np.linspace(Tmin, min(1200.0, Tmax), 100),
+                    np.geomspace(max(Tmin, 1.0), Tmax, 120),
+                    np.array([T0], dtype=float),
+                )
+            )
+        )
+
+        last_T = None
+        last_f = None
+
+        for T in grid:
+            out = solve_tp_at(float(T))
+            if out is None:
+                continue
+
+            f, result = out
+            if abs(f) < abs(best_f):
+                best_T = float(T)
+                best_f = float(f)
+                best_result = result
+
+            if last_f is not None and last_f * f <= 0.0:
+                bracket = (float(last_T), float(T), float(last_f), float(f))
+                break
+
+            last_T = float(T)
+            last_f = float(f)
+
+    if bracket is not None:
+        Ta, Tb, fa, fb = bracket
+
+        # Bisection is robust across condensed-phase switches and avoids adding
+        # a dependency at this layer.
+        for _ in range(sp_options.max_iterations):
+            Tm = 0.5 * (Ta + Tb)
+            out = solve_tp_at(Tm)
+
+            if out is None:
+                break
+
+            fm, rm = out
+
+            if abs(fm) < abs(best_f):
+                best_T = Tm
+                best_f = fm
+                best_result = rm
+
+            if abs(fm) <= sp_options.entropy_tolerance:
+                break
+
+            if fa * fm <= 0.0:
+                Tb = Tm
+                fb = fm
+            else:
+                Ta = Tm
+                fa = fm
+
+            if abs(Tb - Ta) <= sp_options.temperature_correction_tolerance * max(1.0, abs(Tm)):
+                break
+
+    state = best_result.state
+    element_error = state.species.A @ state.n - state.element_totals
+    max_element_error = float(np.max(np.abs(element_error))) if element_error.size else 0.0
+    last = best_result.last_solver_result
+    success = abs(float(best_f)) <= max(
+        sp_options.entropy_tolerance,
+        1.0e-10 * max(1.0, abs(float(target_entropy))),
+    )
+
+    if success:
+        message = "SP equilibrium converged by TP entropy root."
+    elif bracket is None:
+        message = "SP equilibrium could not bracket the target entropy within the temperature limits."
+    else:
+        message = "SP equilibrium did not meet entropy tolerance within max_iterations."
+
+    return CondensedSolveResult(
+        state=state,
+        success=success,
+        message=message,
+        outer_iterations=best_result.outer_iterations,
+        inner_iterations=inner_iterations_total,
+        inserted_species=list(best_result.inserted_species),
+        removed_species=list(best_result.removed_species),
+        last_solver_result=SPSolverResult(
+            state=state,
+            success=success,
+            message=message,
+            iterations=evaluation_count,
+            max_element_error=max_element_error,
+            entropy_error=float(best_f),
+            max_correction=0.0,
+            temperature_correction=0.0 if bracket is None else abs(float(best_T - T0)) / max(1.0, abs(float(T0))),
+            residual_norm=getattr(last, "residual_norm", 0.0),
+            element_potentials=getattr(last, "element_potentials", None),
+        ),
     )
 
 def valid_condensed_phase_for_temperature(name: str, T: float) -> str | None:

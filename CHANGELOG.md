@@ -4,6 +4,7 @@
 
 ### Added
 
+* Added `mode="sp"` to `Equilibrium` for assigned entropy/pressure equilibrium states.  The initial implementation solves SP states by a CEA-style TP temperature root, reusing the existing TP Gibbs solver and condensed-phase insertion/removal logic.
 * Added batched `update()` methods across the public wrapper API: `Fluid`, `IdealGas`, `Propellant`, `CombustionGas`, `Material`, `Reactants`, and `Equilibrium`.
 * Added explicit `Equilibrium.solve()` and `Equilibrium.is_stale` for iterative solvers that want to batch changes before solving.
 * Added shared state-update helpers so wrapper APIs can distinguish omitted arguments from intentionally supplied `None` values.
