@@ -4,7 +4,7 @@
 
 ### Added
 
-* Added `mode="sp"` to `Equilibrium` for assigned entropy/pressure equilibrium states.  The initial implementation solves SP states by a CEA-style TP temperature root, reusing the existing TP Gibbs solver and condensed-phase insertion/removal logic.
+* Added native `mode="sp"` to `Equilibrium` for assigned entropy/pressure equilibrium states. SP now solves temperature and equilibrium composition together in a CEA-style reduced Gibbs matrix, shares the TP/HP condensed-phase active-set logic, and keeps the older TP entropy-root implementation as an internal fallback for difficult phase-boundary cases.
 * Added batched `update()` methods across the public wrapper API: `Fluid`, `IdealGas`, `Propellant`, `CombustionGas`, `Material`, `Reactants`, and `Equilibrium`.
 * Added explicit `Equilibrium.solve()` and `Equilibrium.is_stale` for iterative solvers that want to batch changes before solving.
 * Added shared state-update helpers so wrapper APIs can distinguish omitted arguments from intentionally supplied `None` values.
@@ -18,7 +18,7 @@
 
 ### Notes
 
-* This is a state-management/API refactor only. It does not change TP/HP solver equations, convergence criteria, condensed-phase rules, transport formulas, CEA polynomial evaluation, or warm-start behavior.
+* TP and HP public behavior are intended to remain unchanged. SP is now a native constant-pressure thermal solve rather than a public TP-root wrapper.
 
 ## 1.0.1
 

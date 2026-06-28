@@ -223,7 +223,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         self._guess_temperature = float(guess_temperature)
         if self._mode == "sp" and temperature is not None:
             # SP does not assign static temperature; a supplied temperature is
-            # treated as the initial temperature guess for the TP entropy root.
+            # treated as the initial temperature guess for the native SP solve.
             self._guess_temperature = float(temperature)
             self._temperature_input = None
         self._candidates = candidates

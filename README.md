@@ -944,6 +944,7 @@ Equilibrium(
     mode="hp",
     temperature=None,
     pressure=None,
+    entropy=None,
     guess_temperature=3500.0,
     candidates=None,
     include_all_valid_gases=True,
@@ -991,6 +992,36 @@ eq = Equilibrium(
 
 print(eq.mole_fractions)
 ```
+
+
+### SP equilibrium
+
+SP equilibrium uses specified entropy and pressure. It is useful for ideal
+nozzle expansion from a chamber state because the chamber entropy can be held
+fixed while static pressure changes.
+
+```python
+chamber = Equilibrium(
+    reactants,
+    mode="hp",
+    pressure=2.0e6,
+)
+
+station = Equilibrium(
+    reactants,
+    mode="sp",
+    pressure=1.0e6,
+    entropy=chamber.entropy,
+    guess_temperature=chamber.temperature,
+)
+
+print(station.temperature)
+print(station.entropy)
+```
+
+ThermoProp solves SP natively: temperature and equilibrium composition are
+corrected together in the CEA-style constant-pressure matrix. Condensed species
+use the same active-set insertion/removal loop as TP and HP.
 
 ### Equilibrium from an existing combustion gas
 

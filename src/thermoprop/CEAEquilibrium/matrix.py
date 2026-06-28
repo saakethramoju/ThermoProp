@@ -342,6 +342,171 @@ def unpack_hp_solution(
     )
 
 
+def build_sp_matrix(
+    *,
+    species: SpeciesSet,
+    n: np.ndarray,
+    element_totals: np.ndarray,
+    thermo: ThermoArrays,
+    pressure: float,
+    target_entropy: float,
+    trace: float = 1e-300,
+) -> MatrixSystem:
+    """
+    Build the CEA/RP-1311 SP reduced iteration matrix.
+
+    Unknown order:
+        [pi_i..., dn_condensed_j..., dln_n_gas, dln_T]
+
+    This is the constant-pressure / constant-entropy sibling of
+    :func:`build_hp_matrix`.  It follows the SP branch in CEA's MATRIX
+    routine: the temperature is solved simultaneously with the equilibrium
+    composition, and the final thermal constraint is an entropy residual
+    instead of an enthalpy residual.
+
+    Public ThermoProp entropy is J/kg-K.  Internally the row is written on
+    the same kmol/kg, gas-constant-normalized basis used by CEA:
+
+        S_target/Ru [kmol/kg] = target_entropy [J/kg-K] / Ru [J/kmol-K]
+
+    Species amounts ``n`` are kmol/kg, so sums such as
+    ``sum(n_j * s_j/Ru)`` are also kmol/kg.
+    """
+    n = np.asarray(n, dtype=float)
+    b = np.asarray(element_totals, dtype=float)
+
+    A = species.A
+    gas_idx = np.nonzero(species.gas_mask)[0]
+    condensed_idx = np.nonzero(species.condensed_mask)[0]
+
+    ne = A.shape[0]
+    nc = len(condensed_idx)
+    size = ne + nc + 2
+
+    xg, total_gas = _safe_gas_mole_fractions(n, species, trace=trace)
+
+    mu = chemical_potentials_over_RT(
+        thermo,
+        xg,
+        pressure,
+        gas_mask=species.gas_mask,
+        condensed_mask=species.condensed_mask,
+        trace=trace,
+    )
+
+    ng = np.maximum(n[gas_idx], trace)
+    Ag = A[:, gas_idx]
+
+    H0 = thermo.h0_over_RT
+    S0 = thermo.s0_over_R
+    Cp0 = thermo.cp_over_R
+
+    element_current = A @ n
+    gas_element_current = Ag @ ng
+
+    H0_g = H0[gas_idx]
+    mu_g = mu[gas_idx]
+
+    # Per-gas entropy contribution on the S/Ru basis, including ideal-mixing
+    # and pressure terms.  Since mu = H0 - s/Ru for an ideal gas at its
+    # mixture state, this is exactly CEA's ``ss = h - f`` divided by n_j.
+    S_mix_g = H0_g - mu_g
+
+    gas_entropy_over_R = float(np.sum(ng * S_mix_g))
+    total_entropy_over_R = gas_entropy_over_R
+
+    if nc:
+        total_entropy_over_R += float(np.sum(n[condensed_idx] * S0[condensed_idx]))
+
+    target_S_over_R = float(target_entropy) / RU_KMOL
+
+    gas_H0 = float(np.sum(ng * H0_g))
+
+    matrix = np.zeros((size, size), dtype=float)
+    rhs = np.zeros(size, dtype=float)
+
+    # Element-balance rows.  These are shared with HP: composition and
+    # temperature corrections must preserve assigned element totals.
+    matrix[:ne, :ne] = Ag @ (ng[:, None] * Ag.T)
+
+    if nc:
+        Ac = A[:, condensed_idx]
+        matrix[:ne, ne:ne + nc] = Ac
+        matrix[ne:ne + nc, :ne] = Ac.T
+
+    matrix[:ne, ne + nc] = gas_element_current
+    matrix[:ne, ne + nc + 1] = Ag @ (ng * H0_g)
+
+    rhs[:ne] = (
+        b
+        - element_current
+        + Ag @ (ng * mu_g)
+    )
+
+    # Condensed-species equilibrium rows.  Pure condensed species have
+    # chemical potential g0/RT = H0 - S0 and temperature derivative H0.
+    if nc:
+        matrix[ne:ne + nc, ne + nc + 1] = H0[condensed_idx]
+        rhs[ne:ne + nc] = mu[condensed_idx]
+
+    # Total gas mole row.
+    row_n = ne + nc
+    matrix[row_n, :ne] = gas_element_current
+    matrix[row_n, ne + nc] = 0.0
+    matrix[row_n, ne + nc + 1] = gas_H0
+    rhs[row_n] = float(np.sum(ng * mu_g))
+
+    # SP entropy row.  This is the CEA SP energy/entropy row, with the HP
+    # enthalpy residual replaced by an entropy residual.
+    row_s = ne + nc + 1
+
+    matrix[row_s, :ne] = Ag @ (ng * S_mix_g)
+
+    if nc:
+        matrix[row_s, ne:ne + nc] = S0[condensed_idx]
+
+    matrix[row_s, ne + nc] = gas_entropy_over_R
+    matrix[row_s, ne + nc + 1] = float(
+        np.sum(n * Cp0)
+        + np.sum(ng * H0_g * S_mix_g)
+    )
+
+    rhs[row_s] = (
+        target_S_over_R
+        - total_entropy_over_R
+        + float(np.sum(ng * mu_g * S_mix_g))
+    )
+
+    return MatrixSystem(
+        matrix=matrix,
+        rhs=rhs,
+        mu_over_RT=mu,
+        element_current=element_current,
+        total_gas_moles=total_gas,
+    )
+
+
+def unpack_sp_solution(
+    raw: np.ndarray,
+    *,
+    species: SpeciesSet,
+    thermo: ThermoArrays,
+    mu_over_RT: np.ndarray,
+) -> MatrixSolution:
+    """Unpack native SP Newton corrections.
+
+    The unknown ordering matches :func:`build_sp_matrix` and is the same as
+    HP: element potentials, condensed mole corrections, total gas mole
+    correction, and temperature correction.
+    """
+    return unpack_hp_solution(
+        raw,
+        species=species,
+        thermo=thermo,
+        mu_over_RT=mu_over_RT,
+    )
+
+
 def apply_correction(
     *,
     species: SpeciesSet,

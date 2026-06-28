@@ -40,7 +40,7 @@ from .properties import (
 )
 from .tp_solver import TPSolverOptions, TPSolverResult, solve_tp, initial_tp_state
 from .hp_solver import HPSolverOptions, HPSolverResult, solve_hp, initial_hp_state
-from .sp_solver import SPSolverOptions, SPSolverResult
+from .sp_solver import SPSolverOptions, SPSolverResult, solve_sp, initial_sp_state
 from ..CEADatabase import CEA
 
 
@@ -1161,6 +1161,226 @@ def _tp_sp_temperature_search_limits(options: SPSolverOptions) -> tuple[float, f
 
 
 def solve_with_condensed_phases_sp(
+    *,
+    elements: list[str],
+    element_totals: np.ndarray,
+    pressure: float,
+    target_entropy: float,
+    guess_temperature: float = 3800.0,
+    candidates: list[str] | None = None,
+    sp_options: SPSolverOptions | None = None,
+    condensed_options: CondensedOptions | None = None,
+) -> CondensedSolveResult:
+    """Solve native SP equilibrium with CEA-style condensed phases.
+
+    This is the native SP path: composition and temperature are corrected
+    simultaneously by the fixed-species SP matrix in :mod:`sp_solver`, while
+    this wrapper performs the same condensed-phase insertion/removal loop used
+    by TP and HP.
+
+    If the native matrix fails for a difficult phase-boundary case, the slower
+    TP entropy-root implementation remains available internally as
+    ``solve_with_condensed_phases_sp_root`` and is used as a conservative
+    fallback so existing ThermoProp capabilities are preserved.
+    """
+    if sp_options is None:
+        sp_options = SPSolverOptions()
+
+    if condensed_options is None:
+        condensed_options = CondensedOptions()
+
+    if pressure <= 0.0:
+        raise ValueError("SP equilibrium requires positive pressure [Pa].")
+
+    if not np.isfinite(target_entropy):
+        raise ValueError("SP equilibrium requires a finite target entropy [J/kg-K].")
+
+    active_species = _gas_only_species_set(
+        elements=elements,
+        temperature=guess_temperature,
+        candidates=candidates,
+        include_ions=condensed_options.include_ions,
+        include_electron=condensed_options.include_electron,
+    )
+
+    dormant_condensed = _all_condensed_species_set(
+        elements=elements,
+        temperature=None,
+        candidates=candidates,
+        include_ions=condensed_options.include_ions,
+        include_electron=condensed_options.include_electron,
+    )
+
+    state = initial_sp_state(
+        species=active_species,
+        element_totals=element_totals,
+        pressure=pressure,
+        guess_temperature=guess_temperature,
+        trace=sp_options.trace,
+    )
+
+    inserted: list[str] = []
+    removed: list[str] = []
+    inner_iterations = 0
+    last_result: SPSolverResult | None = None
+
+    for outer in range(1, condensed_options.max_outer_iterations + 1):
+        last_result = solve_sp(
+            state,
+            target_entropy=target_entropy,
+            options=sp_options,
+        )
+        inner_iterations += last_result.iterations
+        state = last_result.state
+
+        state, phase_changed = reconcile_condensed_phases(
+            state,
+            initial_new_moles=condensed_options.initial_condensed_moles,
+        )
+
+        if phase_changed:
+            continue
+
+        remove_now = condensed_species_to_remove(
+            state,
+            tolerance=condensed_options.removal_tolerance,
+        )
+
+        if remove_now:
+            active_species = remove_species_from_set(state.species, remove_now)
+            state = _transfer_state_to_species_set(state, active_species)
+            removed.extend(remove_now)
+
+            if condensed_options.verbose:
+                print(f"Removed condensed species: {remove_now}")
+
+            continue
+
+        remove_invalid = invalid_trace_species_to_remove(state)
+
+        if remove_invalid:
+            active_species = remove_species_from_set(state.species, remove_invalid)
+            state = _transfer_state_to_species_set(state, active_species)
+            removed.extend(remove_invalid)
+
+            if condensed_options.verbose:
+                print(f"Removed invalid trace species: {remove_invalid}")
+
+            continue
+
+        if condensed_options.enabled:
+            dormant_names = [
+                name
+                for name in dormant_condensed.names
+                if name not in state.species.name_to_index
+            ]
+
+            if dormant_names:
+                from .species import subset_species_set
+
+                keep = [
+                    i
+                    for i, name in enumerate(dormant_condensed.names)
+                    if name in dormant_names
+                ]
+
+                dormant_subset = subset_species_set(dormant_condensed, keep)
+
+                tests = condensed_gibbs_test_values(
+                    active_state=state,
+                    dormant_condensed_species=dormant_subset,
+                    element_potentials=getattr(last_result, "element_potentials", None),
+                )
+
+                chosen = choose_condensed_species_to_insert(
+                    tests,
+                    tolerance=condensed_options.insertion_tolerance,
+                )
+
+                if chosen is not None:
+                    active_species = add_species_to_set(
+                        state.species,
+                        [chosen.species_name],
+                    )
+
+                    state = _transfer_state_to_species_set(
+                        state,
+                        active_species,
+                        initial_new_moles=condensed_options.initial_condensed_moles,
+                    )
+
+                    inserted.append(chosen.species_name)
+
+                    if condensed_options.verbose:
+                        print(
+                            f"Inserted condensed species {chosen.species_name} "
+                            f"Gtest={chosen.gibbs_test_value:.6e}"
+                        )
+
+                    continue
+
+        if last_result.success:
+            return CondensedSolveResult(
+                state=state,
+                success=True,
+                message="SP equilibrium converged with stable condensed-phase set.",
+                outer_iterations=outer,
+                inner_iterations=inner_iterations,
+                inserted_species=inserted,
+                removed_species=removed,
+                last_solver_result=last_result,
+            )
+
+        # Preserve existing capability for difficult SP states by falling back to
+        # the old TP entropy-root path.  Normal nozzle-map states should use the
+        # native path above and never reach this branch.
+        fallback = solve_with_condensed_phases_sp_root(
+            elements=elements,
+            element_totals=element_totals,
+            pressure=pressure,
+            target_entropy=target_entropy,
+            guess_temperature=state.temperature,
+            candidates=candidates,
+            sp_options=sp_options,
+            condensed_options=condensed_options,
+        )
+
+        if fallback.success:
+            return CondensedSolveResult(
+                state=fallback.state,
+                success=True,
+                message="SP native matrix failed; converged by TP entropy-root fallback.",
+                outer_iterations=outer + fallback.outer_iterations,
+                inner_iterations=inner_iterations + fallback.inner_iterations,
+                inserted_species=list(dict.fromkeys(inserted + fallback.inserted_species)),
+                removed_species=list(dict.fromkeys(removed + fallback.removed_species)),
+                last_solver_result=fallback.last_solver_result,
+            )
+
+        return CondensedSolveResult(
+            state=state,
+            success=False,
+            message=last_result.message,
+            outer_iterations=outer,
+            inner_iterations=inner_iterations,
+            inserted_species=inserted,
+            removed_species=removed,
+            last_solver_result=last_result,
+        )
+
+    return CondensedSolveResult(
+        state=state,
+        success=False,
+        message="Condensed-phase SP outer loop exceeded max iterations.",
+        outer_iterations=condensed_options.max_outer_iterations,
+        inner_iterations=inner_iterations,
+        inserted_species=inserted,
+        removed_species=removed,
+        last_solver_result=last_result,
+    )
+
+
+def solve_with_condensed_phases_sp_root(
     *,
     elements: list[str],
     element_totals: np.ndarray,
