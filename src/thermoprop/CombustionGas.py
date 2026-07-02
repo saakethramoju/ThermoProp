@@ -651,14 +651,14 @@ class CombustionGas(PropertyIntrospectionMixin):
         if density is not None:
             pressure_from_density = float(density) * self.gas_constant * self._temperature
 
-            if self._pressure is None:
+            if pressure is None:
                 self._pressure = pressure_from_density
             else:
-                if not np.isclose(self._pressure, pressure_from_density, rtol=1e-5, atol=1e-6):
+                if not np.isclose(float(pressure), pressure_from_density, rtol=1e-5, atol=1e-6):
                     raise ValueError(
                         "Provided pressure and density are inconsistent with the "
                         "ideal-gas equation of state at the solved temperature. "
-                        f"pressure={self._pressure:.6g}, "
+                        f"pressure={float(pressure):.6g}, "
                         f"density*R*temperature={pressure_from_density:.6g}"
                     )
 
