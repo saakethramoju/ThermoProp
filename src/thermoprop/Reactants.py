@@ -10,6 +10,7 @@ from .CEADatabase import CEA
 from .Propellant import Propellant
 from .CombustionGas import CombustionGas
 from ._state_api import UNSET, is_provided, provided_items
+from .Exceptions import PropertyUnavailableError, ThermoPropConfigurationError
 
 
 ThermoReactant = Propellant | CombustionGas
@@ -960,7 +961,7 @@ class Reactants:
             h = entry.enthalpy
 
             if h is None:
-                raise ValueError(f"{entry.name!r} does not have enthalpy data.")
+                raise PropertyUnavailableError(f"{entry.name!r} does not have enthalpy data.")
 
             total += entry.mass * h
 
@@ -974,7 +975,7 @@ class Reactants:
             u = entry.internal_energy
 
             if u is None:
-                raise ValueError(f"{entry.name!r} does not have internal energy data.")
+                raise PropertyUnavailableError(f"{entry.name!r} does not have internal energy data.")
 
             total += entry.mass * u
 

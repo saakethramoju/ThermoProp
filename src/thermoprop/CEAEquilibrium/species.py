@@ -18,6 +18,7 @@ import numpy as np
 from ..CEADatabase import CEA
 from ..SpeciesDatabase import SpeciesDatabase
 from .state import SpeciesSet
+from ..Exceptions import EquilibriumSetupError, EquilibriumConvergenceError, PropertyUnavailableError
 
 
 CHARGE_ELEMENT = "E"
@@ -337,7 +338,7 @@ def build_species_names(
         seen.add(name)
 
     if not names:
-        raise RuntimeError("No compatible CEA species were found.")
+        raise EquilibriumSetupError("No compatible CEA species were found.")
 
     names.sort(key=_species_sort_key)
     return names
@@ -450,7 +451,7 @@ def build_species_set(
     )
 
     if options.include_gases and not np.any(gas_mask):
-        raise RuntimeError("Species set must contain at least one gas species.")
+        raise EquilibriumSetupError("Species set must contain at least one gas species.")
     
     return SpeciesSet(
         names=names,

@@ -14,6 +14,7 @@ from ._formatting import format_optional, rounded_dict, format_rows
 from ._validation import validate_fraction_vector
 from ._state_api import UNSET, is_provided, provided_items
 from ._composition import composition_dict
+from .Exceptions import ThermoPropFlashError, ThermoPropStateError, SpeciesLookupError, ThermoPropConfigurationError
 
 class IdealGas(PropertyIntrospectionMixin):
     """
@@ -149,6 +150,9 @@ class IdealGas(PropertyIntrospectionMixin):
 
         self._reference_target = self._normalize_reference_target(set_reference)
         self._reference_offsets: tuple[float, float, float] | None = None
+        basis = str(basis).lower().strip()
+        if basis not in ("mass", "mole"):
+            raise ThermoPropConfigurationError("basis must be 'mass' or 'mole'.")
         self._basis = basis
 
         self._species_ids: List[str] = []
@@ -163,9 +167,6 @@ class IdealGas(PropertyIntrospectionMixin):
             self._mixture = False
 
         elif isinstance(fluid, dict):
-            if basis not in ("mass", "mole"):
-                raise ValueError("basis must be 'mass' or 'mole'")
-
             tmp: Dict[str, Tuple[float, List[str]]] = {}
 
             for user_name, frac in fluid.items():
@@ -336,8 +337,18 @@ class IdealGas(PropertyIntrospectionMixin):
         structural = any(is_provided(v) for v in (fluid, basis, set_reference))
 
         if structural:
-            new_fluid = self._composition_argument() if not is_provided(fluid) else fluid
-            new_basis = self._basis if not is_provided(basis) else basis
+            new_basis = self._basis if not is_provided(basis) else str(basis).lower().strip()
+            if new_basis not in ("mass", "mole"):
+                raise ThermoPropConfigurationError("basis must be 'mass' or 'mole'.")
+
+            if is_provided(fluid):
+                new_fluid = fluid
+            elif len(self._display_names) == 1:
+                new_fluid = self._display_names[0]
+            else:
+                fractions = self._mole_fractions if new_basis == "mole" else self._mass_fractions
+                new_fluid = {name: float(value) for name, value in zip(self._display_names, fractions)}
+
             new_reference = self._reference_target if not is_provided(set_reference) else set_reference
 
             if len(state_updates) >= 2:
@@ -677,7 +688,7 @@ class IdealGas(PropertyIntrospectionMixin):
             entropy = self._to_raw_basis("entropy", entropy)
 
         if provided not in self._FLASH_INPUTS:
-            raise LookupError(
+            raise ThermoPropFlashError(
                 "Unsupported ideal-gas state input combination. "
                 f"Supported inputs are: {self.available_flash_inputs()}."
             )
@@ -734,14 +745,14 @@ class IdealGas(PropertyIntrospectionMixin):
         if density is not None:
             pressure_from_density = float(density) * self.gas_constant * self._temperature
 
-            if self._pressure is None:
+            if pressure is None:
                 self._pressure = pressure_from_density
             else:
-                if not np.isclose(self._pressure, pressure_from_density, rtol=1e-5, atol=1e-6):
-                    raise ValueError(
+                if not np.isclose(float(pressure), pressure_from_density, rtol=1e-5, atol=1e-6):
+                    raise ThermoPropStateError(
                         "Provided pressure and density are inconsistent with the "
                         "ideal-gas equation of state at the solved temperature. "
-                        f"pressure={self._pressure:.6g}, "
+                        f"pressure={float(pressure):.6g}, "
                         f"density*R*temperature={pressure_from_density:.6g}"
                     )
 
@@ -749,7 +760,7 @@ class IdealGas(PropertyIntrospectionMixin):
 
     def _require_pressure(self, property_name: str = "This property"):
         if self._pressure is None:
-            raise ValueError(f"{property_name} requires pressure. Set gas.pressure first.")
+            raise ThermoPropStateError(f"{property_name} requires pressure. Set gas.pressure first.")
 
     def _cache_get(self, property_name: str):
         return self._property_cache.get(property_name, None)
@@ -1661,7 +1672,7 @@ class IdealGas(PropertyIntrospectionMixin):
         if species is not None and str(user_name) in species():
             return str(user_name)
 
-        raise ValueError(f"Unknown ThermoProp species name or alias: {user_name!r}")
+        raise SpeciesLookupError(f"Unknown ThermoProp species name or alias: {user_name!r}")
 
     @classmethod
     def _database_pyromat_name(cls, user_name: str, *, include_prefix: bool = False) -> str:
@@ -1677,7 +1688,7 @@ class IdealGas(PropertyIntrospectionMixin):
                         return f"ig.{name}"
                     return name
 
-        raise ValueError(f"{user_name!r} is not supported by IdealGas/PYroMat.")
+        raise SpeciesLookupError(f"{user_name!r} is not supported by IdealGas/PYroMat.")
 
     @classmethod
     def _database_cea_name(cls, user_name: str) -> str:
@@ -1687,7 +1698,7 @@ class IdealGas(PropertyIntrospectionMixin):
             if method is not None:
                 return method(user_name)
 
-        raise ValueError(f"{user_name!r} is not supported by CEA.")
+        raise SpeciesLookupError(f"{user_name!r} is not supported by CEA.")
 
     @classmethod
     def _database_supported_ideal_gas_species(cls) -> list[str]:
@@ -1719,7 +1730,7 @@ class IdealGas(PropertyIntrospectionMixin):
         try:
             pm.get(sid)
         except Exception:
-            raise ValueError(
+            raise SpeciesLookupError(
                 f"Invalid ideal gas '{user_name}'. "
                 f"Use IdealGas.show_available_gases() to check valid names."
             )

@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from .Exceptions import ThermoPropStateError, EquilibriumConvergenceError, EquilibriumSetupError
 
 from .Reactants import Reactants
 from .CombustionGas import CombustionGas
@@ -219,7 +220,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         self._temperature_input = None if temperature is None else float(temperature)
         self._pressure = None if pressure is None else float(pressure)
         self._entropy_input = None if entropy is None else float(entropy)
-        self._basis = basis
+        self._basis = str(basis).lower().strip()
         self._guess_temperature = float(guess_temperature)
         if self._mode == "sp" and temperature is not None:
             # SP does not assign static temperature; a supplied temperature is
@@ -243,7 +244,7 @@ class Equilibrium(PropertyIntrospectionMixin):
 
         self._reactants = resolve_reactants(
             reactants,
-            basis=basis,
+            basis=self._basis,
             temperature=temperature,
             pressure=pressure,
         )
@@ -361,9 +362,10 @@ class Equilibrium(PropertyIntrospectionMixin):
         if is_provided(temperature):
             if self._mode == "tp":
                 self._temperature_input = None if temperature is None else float(temperature)
-            else:
-                if temperature is not None:
-                    self._guess_temperature = float(temperature)
+            elif temperature is not None:
+                raise ThermoPropStateError(
+                    "temperature is a solved output in HP/SP mode. Use pressure_temperature or TP to switch to TP, or use guess_temperature for the solver guess."
+                )
 
         if is_provided(pressure):
             self._pressure = None if pressure is None else float(pressure)
@@ -372,7 +374,7 @@ class Equilibrium(PropertyIntrospectionMixin):
             self._entropy_input = None if entropy is None else float(entropy)
 
         if is_provided(basis):
-            self._basis = basis
+            self._basis = str(basis).lower().strip()
 
         if is_provided(guess_temperature):
             self._guess_temperature = float(guess_temperature)
@@ -455,7 +457,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         result = solve_tp(state, options=tp_options)
 
         if not result.success:
-            raise RuntimeError(f"Neighbor TP solve failed: {result.message}")
+            raise EquilibriumConvergenceError(f"Neighbor TP solve failed: {result.message}")
 
         return result.state
 
@@ -582,6 +584,10 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @temperature.setter
     def temperature(self, value: float) -> None:
+        if self._mode != "tp":
+            raise ThermoPropStateError(
+                "temperature is a solved output in HP/SP mode. Use pressure_temperature or TP to switch to TP, or use guess_temperature for the solver guess."
+            )
         self.update(temperature=value, solve=True)
 
     @property
@@ -606,7 +612,7 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @HP.setter
     def HP(self, values: tuple[float, float]) -> None:
-        raise ValueError(
+        raise ThermoPropStateError(
             "HP equilibrium enthalpy is fixed by the reactants. "
             "Change reactants or pressure instead."
         )

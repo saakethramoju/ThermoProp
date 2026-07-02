@@ -12,6 +12,7 @@ from importlib import resources
 import json
 from types import MappingProxyType
 from typing import Any
+from .Exceptions import MaterialLookupError, ThermoPropConfigurationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,12 +116,12 @@ class MaterialDatabase:
         alias_key = _normalize_key(alias)
 
         if not alias_key:
-            raise ValueError("Alias cannot be empty.")
+            raise ThermoPropConfigurationError("Alias cannot be empty.")
 
         canonical = cls._name(material_name)
 
         if alias_key in {_normalize_key(name) for name in MATERIAL_DATABASE}:
-            raise ValueError(
+            raise ThermoPropConfigurationError(
                 f"Alias {alias!r} conflicts with an existing material name."
             )
 
@@ -130,7 +131,7 @@ class MaterialDatabase:
             if existing == canonical:
                 return
 
-            raise ValueError(
+            raise ThermoPropConfigurationError(
                 f"Alias {alias!r} already maps to {existing!r} and cannot be modified."
             )
 
@@ -155,7 +156,7 @@ class MaterialDatabase:
         try:
             return _NORMALIZED_PROPERTY_ALIASES[key]
         except KeyError:
-            raise ValueError(
+            raise MaterialLookupError(
                 f"Unknown material property: {value!r}. "
                 f"Supported properties: {sorted(set(PROPERTY_ALIASES.values()))}"
             ) from None
@@ -167,7 +168,7 @@ class MaterialDatabase:
         try:
             return _NAME_LOOKUP[key]
         except KeyError:
-            raise ValueError(
+            raise MaterialLookupError(
                 f"Unknown material name: {value!r}. "
                 f"Available materials: {cls.materials()}"
             ) from None
@@ -185,7 +186,7 @@ class MaterialDatabase:
         try:
             cls._name(value)
             return True
-        except ValueError:
+        except MaterialLookupError:
             return False
 
     @classmethod
@@ -195,7 +196,7 @@ class MaterialDatabase:
         try:
             return MATERIAL_DATA[name]
         except KeyError:
-            raise ValueError(
+            raise MaterialLookupError(
                 f"Material {name!r} exists in MaterialDatabase, "
                 "but has no data block in MATERIAL_DATA."
             ) from None

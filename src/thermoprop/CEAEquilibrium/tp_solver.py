@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..Exceptions import EquilibriumSetupError
 from .state import EquilibriumState, SpeciesSet
 from .thermo import thermo_arrays_for_species_set
 from .matrix import (
@@ -132,7 +133,7 @@ def solve_tp(
     gas_idx = np.nonzero(species.gas_mask)[0]
 
     if len(gas_idx) == 0:
-        raise RuntimeError("TP solver requires at least one gas species.")
+        raise EquilibriumSetupError("TP solver requires at least one gas species.")
 
     n = np.maximum(current.n.astype(float), 0.0)
     n[gas_idx] = np.maximum(n[gas_idx], options.trace)

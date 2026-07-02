@@ -13,6 +13,7 @@ from importlib import resources
 import json
 from types import MappingProxyType
 from typing import Any
+from .Exceptions import SpeciesLookupError, ThermoPropConfigurationError
 
 try:
     from .CEADatabase import CEA
@@ -198,13 +199,13 @@ class SpeciesDatabase:
 
         alias = str(alias).strip()
         if not alias:
-            raise ValueError("Alias cannot be empty.")
+            raise ThermoPropConfigurationError("Alias cannot be empty.")
 
         canonical = cls._name(thermoprop_name)
         key = _normalize_key(alias)
 
         if key in _ALIAS_LOOKUP:
-            raise ValueError(
+            raise ThermoPropConfigurationError(
                 f"Alias {alias!r} already resolves to {_ALIAS_LOOKUP[key]!r}."
             )
 
@@ -239,7 +240,7 @@ class SpeciesDatabase:
         try:
             return cls._WRAPPER_ALIASES[key]
         except KeyError:
-            raise ValueError(
+            raise ThermoPropConfigurationError(
                 f"Unknown wrapper: {wrapper!r}. Expected one of "
                 "'Fluid', 'IdealGas', 'Propellant', or 'CombustionGas'."
             ) from None
@@ -262,7 +263,7 @@ class SpeciesDatabase:
             if _normalize_key(name) == key:
                 return name
 
-        raise ValueError(f"Unknown ThermoProp species name or alias: {value!r}")
+        raise SpeciesLookupError(f"Unknown ThermoProp species name or alias: {value!r}")
 
     @classmethod
     def _record(cls, value: str) -> SpeciesRecord:
@@ -284,27 +285,27 @@ class SpeciesDatabase:
         if backend_key in {"propellant", "rocketprops", "rocket-props"}:
             return cls._rocketprops_name(value)
 
-        raise ValueError(f"Unknown backend: {backend!r}")
+        raise ThermoPropConfigurationError(f"Unknown backend: {backend!r}")
 
     @classmethod
     def _coolprop_name(cls, value: str) -> str:
         record = cls._record(value)
         if record.coolprop is None:
-            raise ValueError(f"{record.name!r} is not supported by Fluid/CoolProp.")
+            raise SpeciesLookupError(f"{record.name!r} is not supported by Fluid/CoolProp.")
         return record.coolprop
 
     @classmethod
     def _pyromat_name(cls, value: str, *, include_prefix: bool = False) -> str:
         record = cls._record(value)
         if record.pyromat is None:
-            raise ValueError(f"{record.name!r} is not supported by IdealGas/PYroMat.")
+            raise SpeciesLookupError(f"{record.name!r} is not supported by IdealGas/PYroMat.")
         return f"ig.{record.pyromat}" if include_prefix else record.pyromat
 
     @classmethod
     def _cea_name(cls, value: str) -> str:
         record = cls._record(value)
         if record.cea is None:
-            raise ValueError(f"{record.name!r} is not supported by CEA.")
+            raise SpeciesLookupError(f"{record.name!r} is not supported by CEA.")
         return record.cea
 
 
@@ -328,7 +329,7 @@ class SpeciesDatabase:
                 pass
 
         if "(" in raw and ")" in raw:
-            raise ValueError(
+            raise SpeciesLookupError(
                 f"Unknown strict CEA species or reactant: {value!r}. "
                 "Phase-specific CEA names are case-sensitive; use the exact "
                 "CEA name such as 'H2O(L)', 'H2O(cr)', 'C(gr)', or 'O2(L)'."
@@ -345,7 +346,7 @@ class SpeciesDatabase:
     def _rocketprops_name(cls, value: str) -> str:
         record = cls._record(value)
         if record.rocketprops is None:
-            raise ValueError(f"{record.name!r} is not supported by RocketProps.")
+            raise SpeciesLookupError(f"{record.name!r} is not supported by RocketProps.")
         return record.rocketprops
 
     @classmethod

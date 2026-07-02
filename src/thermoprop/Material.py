@@ -11,6 +11,7 @@ from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
 from ._state_api import UNSET, is_provided, provided_items
 from ._composition import normalize_single_component
+from .Exceptions import MaterialLookupError, PropertyUnavailableError, ThermoPropRangeError, ThermoPropStateError
 
 
 class Material(PropertyIntrospectionMixin):
@@ -109,7 +110,7 @@ class Material(PropertyIntrospectionMixin):
         try:
             self._data = MaterialDatabase._data(self._material_name)
         except KeyError:
-            raise ValueError(
+            raise MaterialLookupError(
                 f"Material {self._material_name!r} exists in MaterialDatabase, "
                 "but has no data block in MATERIAL_DATA."
             )
@@ -199,7 +200,7 @@ class Material(PropertyIntrospectionMixin):
 
     @pressure.setter
     def pressure(self, value):
-        raise ValueError("Material properties are only temperature-dependent.")
+        raise ThermoPropStateError("Material properties are only temperature-dependent.")
 
     @property
     def pressure_temperature(self) -> Tuple[None, float]:
@@ -213,7 +214,7 @@ class Material(PropertyIntrospectionMixin):
         pressure, temperature = values
 
         if pressure is not None:
-            raise ValueError("Material properties are pressure-independent. Use pressure=None.")
+            raise ThermoPropStateError("Material properties are pressure-independent. Use pressure=None.")
 
         self.temperature = temperature
 
@@ -234,7 +235,7 @@ class Material(PropertyIntrospectionMixin):
         """
 
         if is_provided(pressure) and pressure is not None:
-            raise ValueError("Material properties are only temperature-dependent.")
+            raise ThermoPropStateError("Material properties are only temperature-dependent.")
 
         if is_provided(material):
             new_temperature = self.temperature if not is_provided(temperature) else temperature
@@ -275,7 +276,7 @@ class Material(PropertyIntrospectionMixin):
     def has_property(self, property_name: str) -> bool:
         try:
             prop_name = MaterialDatabase._normalize_property(property_name)
-        except ValueError:
+        except MaterialLookupError:
             return False
 
         return prop_name in self._data.get("properties", {})
@@ -283,13 +284,13 @@ class Material(PropertyIntrospectionMixin):
     def _get_property_data(self, property_name: str) -> tuple[str, dict]:
         try:
             prop_name = MaterialDatabase._normalize_property(property_name)
-        except ValueError as exc:
-            raise AttributeError(str(exc)) from None
+        except MaterialLookupError as exc:
+            raise PropertyUnavailableError(str(exc)) from None
 
         properties = self._data.get("properties", {})
 
         if prop_name not in properties:
-            raise AttributeError(
+            raise PropertyUnavailableError(
                 f"Material {self.material!r} has no property {prop_name!r}. "
                 f"Available properties: {self.available_properties}"
             )
@@ -359,7 +360,7 @@ class Material(PropertyIntrospectionMixin):
         Tmax = float(temperatures[-1])
 
         if not allow and (T < Tmin or T > Tmax):
-            raise ValueError(
+            raise ThermoPropRangeError(
                 f"{prop_name!r} for {self.material!r} is only available from "
                 f"{Tmin:.6g} K to {Tmax:.6g} K. Got {T:.6g} K. "
                 "Pass allow_extrapolation=True to clamp to the nearest endpoint."
@@ -510,7 +511,7 @@ class Material(PropertyIntrospectionMixin):
 
     @quality.setter
     def quality(self, value):
-        raise ValueError("Material does not support vapor quality.")
+        raise PropertyUnavailableError("Material does not support vapor quality.")
 
     @property
     def dynamic_viscosity(self):

@@ -16,6 +16,7 @@ from ..CEADatabase import CEA
 from ..CombustionGas import CombustionGas
 from ..Reactants import Reactants
 from ..SpeciesDatabase import SpeciesDatabase
+from ..Exceptions import ThermoPropConfigurationError, EquilibriumSetupError, EquilibriumConvergenceError
 from .condensed import (
     CondensedOptions,
     CondensedSolveResult,
@@ -101,7 +102,7 @@ class DictReactants:
         pressure: float | None = None,
     ):
         if not composition:
-            raise ValueError("Reactant composition dictionary cannot be empty.")
+            raise ThermoPropConfigurationError("Reactant composition dictionary cannot be empty.")
 
         self.composition = {
             SpeciesDatabase._cea_input_name(name): float(value)
@@ -110,14 +111,14 @@ class DictReactants:
         }
 
         if not self.composition:
-            raise ValueError("Reactant composition dictionary must contain positive amounts.")
+            raise ThermoPropConfigurationError("Reactant composition dictionary must contain positive amounts.")
 
-        self.basis = basis.lower()
+        self.basis = str(basis).lower().strip()
         self.temperature = temperature
         self.pressure = pressure
 
         if self.basis not in {"mole", "mass"}:
-            raise ValueError("dict reactant basis must be 'mole' or 'mass'.")
+            raise ThermoPropConfigurationError("dict reactant basis must be 'mole' or 'mass'.")
 
         total = sum(self.composition.values())
         raw = {name: value / total for name, value in self.composition.items()}
@@ -155,7 +156,7 @@ class DictReactants:
     @property
     def reactant_enthalpy(self) -> float:
         if self.temperature is None:
-            raise ValueError("HP equilibrium with dict reactants requires temperature.")
+            raise EquilibriumSetupError("HP equilibrium with dict reactants requires temperature.")
 
         names = list(self.mole_fractions)
         x = np.fromiter((self.mole_fractions[name] for name in names), dtype=float)
@@ -188,12 +189,12 @@ class CombustionGasReactants:
         mole_fractions = dict(gas.mole_fractions)
 
         if not mole_fractions:
-            raise ValueError("CombustionGas composition cannot be empty.")
+            raise EquilibriumSetupError("CombustionGas composition cannot be empty.")
 
         total_x = sum(float(x) for x in mole_fractions.values())
 
         if total_x <= 0.0:
-            raise ValueError("CombustionGas mole fractions must sum to a positive value.")
+            raise EquilibriumSetupError("CombustionGas mole fractions must sum to a positive value.")
 
         self.mole_fractions = {
             name: float(x) / total_x
@@ -270,36 +271,36 @@ def resolve_reactants(
     if reactants.__class__.__name__ == "CombustionGas":
         return CombustionGasReactants(reactants)
 
-    raise TypeError("reactants must be Reactants, CombustionGas, or dict.")
+    raise EquilibriumSetupError("reactants must be Reactants, CombustionGas, or dict.")
 
 
 def validate_config(config: EquilibriumConfig, original_input: Any) -> None:
     """Validate public Equilibrium inputs before solving."""
     if config.pressure is None or config.pressure <= 0.0:
-        raise ValueError("Equilibrium requires positive pressure [Pa].")
+        raise EquilibriumSetupError("Equilibrium requires positive pressure [Pa].")
 
     if config.mode == "tp":
         if config.temperature_input is None:
-            raise ValueError("TP equilibrium requires temperature [K].")
+            raise EquilibriumSetupError("TP equilibrium requires temperature [K].")
         if config.temperature_input <= 0.0:
-            raise ValueError("temperature must be positive.")
+            raise EquilibriumSetupError("temperature must be positive.")
 
     elif config.mode == "hp":
         if isinstance(original_input, dict) and config.temperature_input is None:
-            raise ValueError("HP equilibrium with dict reactants requires temperature.")
+            raise EquilibriumSetupError("HP equilibrium with dict reactants requires temperature.")
         if config.guess_temperature <= 0.0:
-            raise ValueError("guess_temperature must be positive.")
+            raise EquilibriumSetupError("guess_temperature must be positive.")
 
     elif config.mode == "sp":
         if config.entropy_input is None:
-            raise ValueError("SP equilibrium requires entropy [J/kg-K].")
+            raise EquilibriumSetupError("SP equilibrium requires entropy [J/kg-K].")
         if not np.isfinite(config.entropy_input):
-            raise ValueError("entropy must be finite.")
+            raise EquilibriumSetupError("entropy must be finite.")
         if config.guess_temperature <= 0.0:
-            raise ValueError("guess_temperature must be positive.")
+            raise EquilibriumSetupError("guess_temperature must be positive.")
 
     else:
-        raise ValueError("mode must be 'tp', 'hp', or 'sp'.")
+        raise EquilibriumSetupError("mode must be 'tp', 'hp', or 'sp'.")
 
 
 def _safe_reactant_internal_energy(reactants) -> float | None:
@@ -409,7 +410,7 @@ def run_equilibrium_solve(
         )
     elif config.mode == "hp":
         if feed.enthalpy is None:
-            raise ValueError("HP equilibrium requires reactant enthalpy.")
+            raise EquilibriumSetupError("HP equilibrium requires reactant enthalpy.")
 
         solve_result = solve_with_condensed_phases_hp(
             elements=elements_for_species,
@@ -433,7 +434,7 @@ def run_equilibrium_solve(
             condensed_options=condensed_options,
         )
     else:
-        raise ValueError("mode must be 'tp', 'hp', or 'sp'.")
+        raise EquilibriumSetupError("mode must be 'tp', 'hp', or 'sp'.")
 
     cea_extended_range_hp_warning = (
         config.mode == "hp"
@@ -448,7 +449,7 @@ def run_equilibrium_solve(
     )
 
     if not solve_result.success and not hp_out_of_range_result:
-        raise RuntimeError(f"Equilibrium solve failed: {solve_result.message}")
+        raise EquilibriumConvergenceError(f"Equilibrium solve failed: {solve_result.message}")
 
     state = solve_result.state
 

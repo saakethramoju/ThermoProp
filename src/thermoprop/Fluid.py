@@ -14,6 +14,7 @@ from ._formatting import format_optional, rounded_dict, format_rows
 from ._validation import validate_fraction_vector
 from ._state_api import UNSET, is_provided, provided_items
 from ._composition import composition_dict
+from .Exceptions import ThermoPropFlashError, SpeciesLookupError, ThermoPropConfigurationError
 
 class Fluid(PropertyIntrospectionMixin):
     """
@@ -168,6 +169,9 @@ class Fluid(PropertyIntrospectionMixin):
         """
         self._reference_target = self._normalize_reference_target(set_reference)
         self._reference_offsets: tuple[float, float, float] | None = None
+        basis = str(basis).lower().strip()
+        if basis not in ("mass", "mole"):
+            raise ThermoPropConfigurationError("basis must be 'mass' or 'mole'.")
         self._basis = basis
 
         valid_fluids = Fluid.get_available_fluids()
@@ -178,7 +182,7 @@ class Fluid(PropertyIntrospectionMixin):
         if isinstance(fluid, str):
             backend, display = Fluid._normalize_name(fluid)
             if backend not in valid_fluids:
-                raise ValueError(
+                raise SpeciesLookupError(
                     f"Invalid fluid '{fluid}'. "
                     f"Use Fluid.show_available_fluids() to check valid names."
                 )
@@ -204,7 +208,7 @@ class Fluid(PropertyIntrospectionMixin):
 
                 backend, display = Fluid._normalize_name(f)
                 if backend not in valid_fluids:
-                    raise ValueError(
+                    raise SpeciesLookupError(
                         f"Invalid fluid '{f}'. "
                         f"Use Fluid.show_available_fluids() to check valid names."
                     )
@@ -219,7 +223,7 @@ class Fluid(PropertyIntrospectionMixin):
                 for user_name, frac in fluid.items():
                     backend, display = Fluid._normalize_name(user_name)
                     if backend not in valid_fluids:
-                        raise ValueError(
+                        raise SpeciesLookupError(
                             f"Invalid fluid '{user_name}' (backend '{backend}' not found). "
                             f"Use Fluid.show_available_fluids() to check valid names."
                         )
@@ -239,7 +243,7 @@ class Fluid(PropertyIntrospectionMixin):
                     self._mass_fractions = fractions
                     self._mole_fractions = Fluid.mass_to_mole(self._fluids, fractions)
                 else:
-                    raise ValueError("basis must be 'mole' or 'mass'")
+                    raise ThermoPropConfigurationError("basis must be 'mole' or 'mass'.")
 
                 self._mixture = len(self._fluids) > 1
 
@@ -271,10 +275,10 @@ class Fluid(PropertyIntrospectionMixin):
         }
 
         if len(provided) != 2:
-            raise LookupError(
+            raise ThermoPropFlashError(
                 "Please provide exactly two thermodynamic properties. "
                 "Supported names are pressure, temperature, enthalpy, "
-                "quality, density, and internal_energy."
+                "quality, density, internal_energy, and entropy."
             )
 
         self._set_state_from_named_pair(provided)
@@ -324,8 +328,18 @@ class Fluid(PropertyIntrospectionMixin):
         structural = any(is_provided(v) for v in (fluid, basis, set_reference))
 
         if structural:
-            new_fluid = self._composition_argument() if not is_provided(fluid) else fluid
-            new_basis = self._basis if not is_provided(basis) else basis
+            new_basis = self._basis if not is_provided(basis) else str(basis).lower().strip()
+            if new_basis not in ("mass", "mole"):
+                raise ThermoPropConfigurationError("basis must be 'mass' or 'mole'.")
+
+            if is_provided(fluid):
+                new_fluid = fluid
+            elif len(self._display_names) == 1:
+                new_fluid = self._display_names[0]
+            else:
+                fractions = self._mole_fractions if new_basis == "mole" else self._mass_fractions
+                new_fluid = {name: float(value) for name, value in zip(self._display_names, fractions)}
+
             new_reference = self._reference_target if not is_provided(set_reference) else set_reference
 
             if len(state_updates) >= 2:
@@ -577,7 +591,7 @@ class Fluid(PropertyIntrospectionMixin):
             raw_values["entropy"] = self._to_raw_basis("entropy", raw_values["entropy"])
 
         if keys not in Fluid._FLASH_PAIRS:
-            raise ValueError(
+            raise ThermoPropFlashError(
                 f"Unsupported flash pair: {sorted(keys)}. "
                 f"Supported pairs are: {self.available_flash_pairs()}."
             )
@@ -610,7 +624,7 @@ class Fluid(PropertyIntrospectionMixin):
         input_pair_name, order = Fluid._FLASH_PAIRS[keys]
 
         if not hasattr(CP, input_pair_name):
-            raise ValueError(
+            raise ThermoPropFlashError(
                 f"CoolProp does not expose {input_pair_name} in this installation."
             )
 
@@ -696,7 +710,7 @@ class Fluid(PropertyIntrospectionMixin):
             self._sync_from_backend()
             return
 
-        raise ValueError(
+        raise ThermoPropFlashError(
             "Could not solve Fluid state from internal_energy and entropy."
         ) from last_error
 

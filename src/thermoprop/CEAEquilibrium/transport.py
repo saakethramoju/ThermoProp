@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..Exceptions import EquilibriumSetupError
 from ..CEADatabase import CEA
 from ..CombustionGas import CombustionGas
 from .state import EquilibriumState
@@ -120,7 +121,7 @@ def make_combustion_gas_for_transport(
     )
 
     if not composition:
-        raise RuntimeError("Cannot build transport gas; no gas species are present.")
+        raise EquilibriumSetupError("Cannot build transport gas; no gas species are present.")
 
     return CombustionGas(
         composition,

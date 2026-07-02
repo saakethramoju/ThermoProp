@@ -13,6 +13,7 @@ from ._formatting import format_optional, rounded_dict, format_rows
 from ._validation import validate_fraction_vector
 from ._state_api import UNSET, is_provided, provided_items
 from ._composition import composition_dict
+from .Exceptions import ThermoPropFlashError, ThermoPropStateError, ThermoPropRangeError, SpeciesLookupError, TransportDataError, ThermoPropConfigurationError
 
 class CombustionGas(PropertyIntrospectionMixin):
     """
@@ -139,10 +140,10 @@ class CombustionGas(PropertyIntrospectionMixin):
 
         self._reference_target = self._normalize_reference_target(set_reference)
         self._reference_offsets: tuple[float, float, float] | None = None
+        basis = str(basis).lower().strip()
+        if basis not in ("mass", "mole"):
+            raise ThermoPropConfigurationError("basis must be 'mass' or 'mole'.")
         self._basis = basis
-
-        if basis not in ("mole", "mass"):
-            raise ValueError("basis must be 'mole' or 'mass'.")
 
         self._species_names: List[str] = []
         self._display_names: List[str] = []
@@ -268,8 +269,18 @@ class CombustionGas(PropertyIntrospectionMixin):
         structural = any(is_provided(v) for v in (fluid, basis, set_reference))
 
         if structural:
-            new_fluid = self._composition_argument() if not is_provided(fluid) else fluid
-            new_basis = self._basis if not is_provided(basis) else basis
+            new_basis = self._basis if not is_provided(basis) else str(basis).lower().strip()
+            if new_basis not in ("mass", "mole"):
+                raise ThermoPropConfigurationError("basis must be 'mass' or 'mole'.")
+
+            if is_provided(fluid):
+                new_fluid = fluid
+            elif len(self._display_names) == 1:
+                new_fluid = self._display_names[0]
+            else:
+                fractions = self._mole_fractions if new_basis == "mole" else self._mass_fractions
+                new_fluid = {name: float(value) for name, value in zip(self._species_names, fractions)}
+
             new_reference = self._reference_target if not is_provided(set_reference) else set_reference
 
             if len(state_updates) >= 2:
@@ -514,7 +525,7 @@ class CombustionGas(PropertyIntrospectionMixin):
         display_name = species_name
 
         if not CEA.has_species(species_name):
-            raise ValueError(
+            raise SpeciesLookupError(
                 f"{value!r} could not be resolved to a CEA thermo species. "
                 "Use a supported SpeciesDatabase alias or a direct CEA product "
                 "species name."
@@ -525,7 +536,7 @@ class CombustionGas(PropertyIntrospectionMixin):
 
         if not CEA.has_thermo(species_name):
             elements = CEA.elemental_composition(species_name)
-            raise ValueError(
+            raise SpeciesLookupError(
                 f"{species_name!r} is present in the CEA data, but it has no NASA-9 "
                 "polynomial intervals. It is a CEA reactant/reference definition "
                 "rather than a gas-phase thermodynamic species. "
@@ -534,7 +545,7 @@ class CombustionGas(PropertyIntrospectionMixin):
             )
 
         if not CEA.is_gas(species_name):
-            raise ValueError(
+            raise SpeciesLookupError(
                 f"{species_name!r} is a CEA condensed/reference entry, not a gas species. "
                 "CombustionGas only accepts gas-phase CEA product species."
             )
@@ -585,7 +596,7 @@ class CombustionGas(PropertyIntrospectionMixin):
             entropy = self._to_raw_basis("entropy", entropy)
 
         if provided not in self._FLASH_INPUTS:
-            raise LookupError(
+            raise ThermoPropFlashError(
                 "Unsupported combustion-gas state input combination. "
                 f"Supported inputs are: {self.available_flash_inputs()}."
             )
@@ -655,7 +666,7 @@ class CombustionGas(PropertyIntrospectionMixin):
                 self._pressure = pressure_from_density
             else:
                 if not np.isclose(float(pressure), pressure_from_density, rtol=1e-5, atol=1e-6):
-                    raise ValueError(
+                    raise ThermoPropStateError(
                         "Provided pressure and density are inconsistent with the "
                         "ideal-gas equation of state at the solved temperature. "
                         f"pressure={float(pressure):.6g}, "
@@ -664,7 +675,7 @@ class CombustionGas(PropertyIntrospectionMixin):
 
     def _require_pressure(self, property_name: str = "This property"):
         if self._pressure is None:
-            raise ValueError(f"{property_name} requires pressure. Set gas.pressure first.")
+            raise ThermoPropStateError(f"{property_name} requires pressure. Set gas.pressure first.")
 
     def _cache_get(self, property_name: str):
         return self._property_cache.get(property_name, None)
@@ -769,7 +780,7 @@ class CombustionGas(PropertyIntrospectionMixin):
                 )
                 return float(sol.root)
 
-        raise ValueError(
+        raise ThermoPropFlashError(
             f"Could not solve combustion-gas temperature from "
             f"{variable_name}={target_value:.6g} J/kg "
             f"over temperature=[{minimum_temperature:.3f}, {maximum_temperature:.3f}] K."
@@ -1216,7 +1227,7 @@ class CombustionGas(PropertyIntrospectionMixin):
             return
 
         if self.temperature < self.minimum_temperature or self.temperature > self.maximum_temperature:
-            raise ValueError(
+            raise ThermoPropRangeError(
                 f"Temperature {self.temperature:.6g} K is outside the common valid "
                 f"CEA polynomial range [{self.minimum_temperature:.6g}, "
                 f"{self.maximum_temperature:.6g}] K for this composition."
@@ -1290,7 +1301,7 @@ class CombustionGas(PropertyIntrospectionMixin):
 
         if transport_index is None:
             name = self._species_names[species_index]
-            raise NotImplementedError(
+            raise TransportDataError(
                 f"CEA {kind} transport data are not available for {name!r}."
             )
 

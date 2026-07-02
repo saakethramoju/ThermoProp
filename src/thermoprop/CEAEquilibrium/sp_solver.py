@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..Exceptions import EquilibriumSetupError
 from .state import EquilibriumState, SpeciesSet
 from .thermo import (
     thermo_arrays_for_species_set,
@@ -148,7 +149,7 @@ def solve_sp(
         options = SPSolverOptions()
 
     if not np.isfinite(target_entropy):
-        raise ValueError("SP solver requires a finite target entropy [J/kg-K].")
+        raise EquilibriumSetupError("SP solver requires a finite target entropy [J/kg-K].")
 
     current = state.copy()
     species = current.species
@@ -156,7 +157,7 @@ def solve_sp(
     gas_idx = np.nonzero(species.gas_mask)[0]
 
     if len(gas_idx) == 0:
-        raise RuntimeError("SP solver requires at least one gas species.")
+        raise EquilibriumSetupError("SP solver requires at least one gas species.")
 
     n = np.maximum(current.n.astype(float), 0.0)
     n[gas_idx] = np.maximum(n[gas_idx], options.trace)

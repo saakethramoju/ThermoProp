@@ -25,6 +25,23 @@ from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
 from .MaterialDatabase import MaterialDatabase
 
+from .Exceptions import (
+    ThermoPropError,
+    ThermoPropConfigurationError,
+    ThermoPropStateError,
+    ThermoPropFlashError,
+    ThermoPropRangeError,
+    PropertyUnavailableError,
+    SpeciesLookupError,
+    MaterialLookupError,
+    ThermoPropDatabaseError,
+    ThermoDataError,
+    TransportDataError,
+    EquilibriumError,
+    EquilibriumSetupError,
+    EquilibriumConvergenceError,
+)
+
 
 def list_species() -> list[str]:
     """Return all ThermoProp-supported fluid/gas/propellant species."""
@@ -109,6 +126,20 @@ __all__ = [
     "CEA",
     "SpeciesDatabase",
     "MaterialDatabase",
+    "EquilibriumConvergenceError",
+    "EquilibriumSetupError",
+    "EquilibriumError",
+    "TransportDataError",
+    "ThermoDataError",
+    "ThermoPropDatabaseError",
+    "MaterialLookupError",
+    "SpeciesLookupError",
+    "PropertyUnavailableError",
+    "ThermoPropRangeError",
+    "ThermoPropFlashError",
+    "ThermoPropStateError",
+    "ThermoPropConfigurationError",
+    "ThermoPropError",
     "list_species",
     "species",
     "supported_species",

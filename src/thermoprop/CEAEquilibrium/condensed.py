@@ -24,6 +24,7 @@ from typing import Callable, Literal
 
 import numpy as np
 
+from ..Exceptions import EquilibriumSetupError, EquilibriumConvergenceError
 from .state import EquilibriumState, SpeciesSet, CondensedPhaseCandidate
 from .species import (
     SpeciesBuildOptions,
@@ -1468,7 +1469,7 @@ def solve_with_condensed_phases_sp_root(
     if initial is None:
         dummy_state = next(iter(cache.values())).state if cache else None
         if dummy_state is None:
-            raise RuntimeError("SP equilibrium could not evaluate any TP trial state.")
+            raise EquilibriumConvergenceError("SP equilibrium could not evaluate any TP trial state.")
         last = next(iter(cache.values())).last_solver_result
         return CondensedSolveResult(
             state=dummy_state,

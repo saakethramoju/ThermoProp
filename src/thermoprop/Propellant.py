@@ -15,6 +15,7 @@ from ._api import PropertyIntrospectionMixin
 from ._formatting import format_optional, rounded_dict, format_rows
 from ._state_api import UNSET, is_provided, provided_items
 from ._composition import normalize_single_component
+from .Exceptions import SpeciesLookupError, ThermoPropStateError, PropertyUnavailableError
 
 class Propellant(PropertyIntrospectionMixin):
     """
@@ -181,7 +182,7 @@ class Propellant(PropertyIntrospectionMixin):
             and self._cea_species_name is None
             and self._cea_reactant_name is None
         ):
-            raise ValueError(
+            raise SpeciesLookupError(
                 f"Unknown propellant or CEA species: {propellant!r}. "
                 "Use Propellant.show_available_propellants(), "
                 "Propellant.show_available_cea_species(), or "
@@ -738,7 +739,7 @@ class Propellant(PropertyIntrospectionMixin):
         backend = get_prop(propellant)
 
         if backend is None:
-            raise ValueError(f"Unknown RocketProps propellant: {propellant!r}")
+            raise SpeciesLookupError(f"Unknown RocketProps propellant: {propellant!r}")
 
         return backend
 
@@ -932,7 +933,7 @@ class Propellant(PropertyIntrospectionMixin):
             return
 
         if self.pressure < pvap and self._cea_species_name is None:
-            raise ValueError(
+            raise ThermoPropStateError(
                 f"{self._rocketprops_name}: pressure={self.pressure:.6g} Pa is "
                 f"below vapor pressure={pvap:.6g} Pa at "
                 f"temperature={self.temperature:.6g} K, and no CEA gas species "
@@ -940,7 +941,7 @@ class Propellant(PropertyIntrospectionMixin):
             )
 
     def _unsupported(self, property_name: str):
-        raise NotImplementedError(
+        raise PropertyUnavailableError(
             f"Propellant.{property_name} is not supported by RocketProps or CEA "
             "for this wrapper."
         )

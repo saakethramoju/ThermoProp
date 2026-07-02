@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 import numpy as np
+from .Exceptions import SpeciesLookupError, ThermoPropDatabaseError, ThermoDataError, TransportDataError, ThermoPropRangeError, ThermoPropConfigurationError
 
 
 _ROOT = Path(__file__).resolve().parent
@@ -114,7 +115,7 @@ class CEADatabase:
     @staticmethod
     def _load_npz_required(path: Path) -> dict[str, np.ndarray]:
         if not path.exists():
-            raise FileNotFoundError(f"CEA database file not found: {path}")
+            raise ThermoPropDatabaseError(f"CEA database file not found: {path}")
 
         npz = np.load(path, allow_pickle=False)
         data = {key: npz[key] for key in npz.files}
@@ -124,7 +125,7 @@ class CEADatabase:
     @staticmethod
     def _load_json_required(path: Path) -> dict[str, int]:
         if not path.exists():
-            raise FileNotFoundError(f"CEA index file not found: {path}")
+            raise ThermoPropDatabaseError(f"CEA index file not found: {path}")
 
         with open(path, "r") as f:
             return {str(k): int(v) for k, v in json.load(f).items()}
@@ -141,7 +142,7 @@ class CEADatabase:
         if raw in self._thermo_index:
             return raw
 
-        raise ValueError(
+        raise SpeciesLookupError(
             f"Unknown CEA species or reactant: {name!r}. "
             "CEA names are strict. Use CEA.show_species(), CEA.names, "
             "or CEA.find_species(...) to inspect available names."
@@ -272,7 +273,7 @@ class CEADatabase:
         try:
             return int(self._transport_index[name])
         except KeyError:
-            raise ValueError(f"CEA transport data are not available for {name!r}")
+            raise TransportDataError(f"CEA transport data are not available for {name!r}")
 
     def raw(self, key: str, name: str) -> Any:
         return self._thermo[key][self.index(name)]
@@ -435,7 +436,10 @@ class CEADatabase:
             if np.isfinite(tmin) and np.isfinite(tmax)
         ]
 
-    def temperature_limits(self, names: list[str]) -> tuple[float, float]:
+    def temperature_limits(self, names: str | list[str] | tuple[str, ...]) -> tuple[float, float]:
+        if isinstance(names, str):
+            names = [names]
+
         mins = []
         maxs = []
 
@@ -443,7 +447,7 @@ class CEADatabase:
             ranges = self.temperature_ranges(name)
 
             if not ranges:
-                raise ValueError(f"{name!r} has no valid NASA polynomial ranges.")
+                raise ThermoDataError(f"{name!r} has no valid NASA polynomial ranges.")
 
             mins.append(min(r[0] for r in ranges))
             maxs.append(max(r[1] for r in ranges))
@@ -463,7 +467,7 @@ class CEADatabase:
         T = float(temperature)
 
         if n <= 0:
-            raise ValueError(f"{name!r} has no valid NASA polynomial ranges.")
+            raise ThermoDataError(f"{name!r} has no valid NASA polynomial ranges.")
 
         ranges = self._thermo["t_ranges"][idx, :n]
 
@@ -491,7 +495,7 @@ class CEADatabase:
         if T > last_Tmax:
             return int(n - 1)
 
-        raise ValueError(
+        raise ThermoPropRangeError(
             f"No CEA polynomial interval for {name!r} at T={T:.6g} K."
         )
 
@@ -501,7 +505,7 @@ class CEADatabase:
         name = self.resolve_name(name)
 
         if not self.has_thermo(name):
-            raise ValueError(
+            raise ThermoDataError(
                 f"{name!r} has no NASA-9 thermo polynomial data. "
                 "It is probably a CEA reactant definition."
             )
@@ -519,7 +523,7 @@ class CEADatabase:
         elif len(coeffs) == 9:
             a0, a1, a2, a3, a4, a5, a6, b1, b2 = coeffs
         else:
-            raise ValueError(
+            raise ThermoDataError(
                 f"{name!r} has {len(coeffs)} thermo coefficients; expected 9 or 10."
             )
 
@@ -588,7 +592,7 @@ class CEADatabase:
 
     def _require_transport_loaded(self) -> None:
         if self._transport is None:
-            raise FileNotFoundError(
+            raise ThermoPropDatabaseError(
                 "CEA transport files were not found. Expected "
                 f"{self.transport_path} and {self.transport_index_path}."
             )
@@ -607,7 +611,7 @@ class CEADatabase:
         if key21 in self._transport_index:
             return key21
 
-        raise ValueError(
+        raise TransportDataError(
             f"CEA binary transport data are not available for "
             f"{name1!r} and {name2!r}."
         )
@@ -666,7 +670,7 @@ class CEADatabase:
             n = int(self._transport["n_c"][tidx])
             ranges = self._transport["c_ranges"][tidx, :n]
         else:
-            raise ValueError("kind must be 'viscosity' or 'conductivity'.")
+            raise ThermoPropConfigurationError("kind must be 'viscosity' or 'conductivity'.")
 
         return [
             (float(tmin), float(tmax))
@@ -701,7 +705,7 @@ class CEADatabase:
         if last_Tmax < T <= last_Tmax + extrapolation_margin:
             return len(ranges) - 1
 
-        raise ValueError(
+        raise ThermoPropRangeError(
             f"No CEA {kind} transport interval for {raw!r} at T={T:.6g} K."
         )
     
@@ -719,7 +723,7 @@ class CEADatabase:
         elif kind in {"conductivity", "thermal_conductivity", "k"}:
             A, B, C, D = self._transport["c_coeffs"][tidx, j]
         else:
-            raise ValueError("kind must be 'viscosity' or 'conductivity'.")
+            raise ThermoPropConfigurationError("kind must be 'viscosity' or 'conductivity'.")
 
         return float(np.exp(A * np.log(T) + B / T + C / T**2 + D))
 
@@ -731,16 +735,30 @@ class CEADatabase:
         k_micro_w_cm_k = self.transport_fit(name, temperature, "conductivity")
         return k_micro_w_cm_k * 1e-4
 
+    def _validate_fraction_vector(self, fractions: list[float] | np.ndarray, label: str) -> np.ndarray:
+        values = np.asarray(fractions, dtype=float)
+
+        if values.size == 0:
+            raise ThermoPropConfigurationError(f"{label} cannot be empty.")
+
+        if not np.all(np.isfinite(values)):
+            raise ThermoPropConfigurationError(f"{label} must contain only finite values.")
+
+        if np.any(values < 0.0):
+            raise ThermoPropConfigurationError(f"{label} must be nonnegative.")
+
+        if not np.isclose(np.sum(values), 1.0, atol=1e-6):
+            raise ThermoPropConfigurationError(f"{label} must sum to 1.0.")
+
+        return values
+
     def mole_to_mass(
         self,
         species_names: list[str],
         mole_fractions: list[float] | np.ndarray,
     ) -> np.ndarray:
         species_names = [self.resolve_name(name) for name in species_names]
-        x = np.asarray(mole_fractions, dtype=float)
-
-        if not np.isclose(np.sum(x), 1.0, atol=1e-6):
-            raise ValueError("Mole fractions must sum to 1.0.")
+        x = self._validate_fraction_vector(mole_fractions, "Mole fractions")
 
         mw = np.asarray(
             [self.molecular_weight(name) for name in species_names],
@@ -755,10 +773,7 @@ class CEADatabase:
         mass_fractions: list[float] | np.ndarray,
     ) -> np.ndarray:
         species_names = [self.resolve_name(name) for name in species_names]
-        w = np.asarray(mass_fractions, dtype=float)
-
-        if not np.isclose(np.sum(w), 1.0, atol=1e-6):
-            raise ValueError("Mass fractions must sum to 1.0.")
+        w = self._validate_fraction_vector(mass_fractions, "Mass fractions")
 
         mw = np.asarray(
             [self.molecular_weight(name) for name in species_names],
@@ -774,10 +789,7 @@ class CEADatabase:
         mole_fractions: list[float] | np.ndarray,
     ) -> float:
         species_names = [self.resolve_name(name) for name in species_names]
-        x = np.asarray(mole_fractions, dtype=float)
-
-        if not np.isclose(np.sum(x), 1.0, atol=1e-6):
-            raise ValueError("Mole fractions must sum to 1.0.")
+        x = self._validate_fraction_vector(mole_fractions, "Mole fractions")
 
         mw_kg_per_kmol = np.asarray(
             [self.molecular_weight(name) for name in species_names],
@@ -976,7 +988,7 @@ class CEADatabase:
             counts = np.asarray(self._transport["n_c"][indices], dtype=np.int64)
             ranges = np.asarray(self._transport["c_ranges"][indices], dtype=float)
         else:
-            raise ValueError("kind must be 'viscosity' or 'conductivity'.")
+            raise ThermoPropConfigurationError("kind must be 'viscosity' or 'conductivity'.")
 
         valid_slots = np.arange(ranges.shape[1])[None, :] < counts[:, None]
         in_interval = valid_slots & (ranges[:, :, 0] <= T) & (T <= ranges[:, :, 1])
@@ -1042,7 +1054,7 @@ class CEADatabase:
         elif kind in {"conductivity", "thermal_conductivity", "k"}:
             coeffs = np.asarray(self._transport["c_coeffs"][indices, interval_indices], dtype=float)
         else:
-            raise ValueError("kind must be 'viscosity' or 'conductivity'.")
+            raise ThermoPropConfigurationError("kind must be 'viscosity' or 'conductivity'.")
 
         A = coeffs[:, 0]
         B = coeffs[:, 1]
