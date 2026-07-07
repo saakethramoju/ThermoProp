@@ -18,7 +18,15 @@ from .thermo import ThermoArrays, chemical_potentials_over_RT, RU_KMOL
 
 @dataclass(slots=True)
 class MatrixSystem:
-    """Linear system and diagnostics for one Newton correction."""
+    """Represent the public ThermoProp ``MatrixSystem`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     matrix: np.ndarray
     rhs: np.ndarray
     mu_over_RT: np.ndarray
@@ -28,7 +36,15 @@ class MatrixSystem:
 
 @dataclass(slots=True)
 class MatrixSolution:
-    """Solved Newton corrections unpacked by physical meaning."""
+    """Represent the public ThermoProp ``MatrixSolution`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     element_potentials: np.ndarray
     condensed_corrections: np.ndarray
     dln_total_gas_moles: float
@@ -140,6 +156,12 @@ def build_tp_matrix(
 
 
 def solve_matrix_system(system: MatrixSystem) -> np.ndarray:
+    """Execute the public ``solve_matrix_system`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     try:
         return np.linalg.solve(system.matrix, system.rhs)
     except np.linalg.LinAlgError:
@@ -159,6 +181,12 @@ def unpack_tp_solution(
     species: SpeciesSet,
     mu_over_RT: np.ndarray,
 ) -> MatrixSolution:
+    """Execute the public ``unpack_tp_solution`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     ne = species.nelements
     condensed_idx = np.nonzero(species.condensed_mask)[0]
     gas_idx = np.nonzero(species.gas_mask)[0]
@@ -315,6 +343,12 @@ def unpack_hp_solution(
     thermo: ThermoArrays,
     mu_over_RT: np.ndarray,
 ) -> MatrixSolution:
+    """Execute the public ``unpack_hp_solution`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     ne = species.nelements
     condensed_idx = np.nonzero(species.condensed_mask)[0]
     gas_idx = np.nonzero(species.gas_mask)[0]
@@ -515,6 +549,12 @@ def apply_correction(
     damping: float,
     trace: float = 1e-300,
 ) -> np.ndarray:
+    """Execute the public ``apply_correction`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     n_new = np.array(n, dtype=float, copy=True)
 
     gas_idx = np.nonzero(species.gas_mask)[0]
@@ -594,11 +634,23 @@ def cea_damping_factor(
 
 
 def residual_norm(system: MatrixSystem, solution: np.ndarray) -> float:
+    """Execute the public ``residual_norm`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     residual = system.matrix @ solution - system.rhs
     return float(np.linalg.norm(residual, ord=np.inf))
 
 
 def max_species_correction(species: SpeciesSet, correction: MatrixSolution) -> float:
+    """Execute the public ``max_species_correction`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     values = []
 
     if correction.dln_gas_moles.size:

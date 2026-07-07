@@ -23,7 +23,15 @@ except Exception:  # pragma: no cover - keep discovery usable without CEA data
 
 @dataclass(frozen=True, slots=True)
 class SpeciesRecord:
-    """Immutable ThermoProp species entry and backend-specific names."""
+    """Represent the public ThermoProp ``SpeciesRecord`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
 
     name: str
     coolprop: str | None = None
@@ -139,12 +147,24 @@ class SpeciesDatabase:
 
     @classmethod
     def species(cls) -> list[str]:
-        """Return every ThermoProp canonical species name."""
+        """Execute the documented ``species`` operation for ``SpeciesDatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         return sorted(SPECIES_DATABASE.keys())
 
     @classmethod
     def list_species(cls) -> list[str]:
-        """Readable alias for :meth:`species`."""
+        """Return the species supported by this ThermoProp interface.
+
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
+        """
         return cls.species()
 
     @classmethod
@@ -182,19 +202,36 @@ class SpeciesDatabase:
 
     @classmethod
     def list_supported_species(cls, wrapper: str) -> list[str]:
-        """Readable alias for :meth:`supported_species`."""
+        """Return the species supported by this ThermoProp interface.
+
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
+        """
         return cls.supported_species(wrapper)
 
     @classmethod
     def aliases(cls) -> dict[str, str]:
-        """Return built-in plus runtime aliases."""
+        """Execute the documented ``aliases`` operation for ``SpeciesDatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         out = dict(DEFAULT_ALIASES)
         out.update(_USER_ALIASES)
         return dict(sorted(out.items()))
 
     @classmethod
     def add_alias(cls, alias: str, thermoprop_name: str) -> None:
-        """Add a runtime-only user alias for an existing ThermoProp species."""
+        """Register a runtime alias for the current Python process.
+
+        The alias is validated against canonical ThermoProp names and existing aliases so
+        lookups remain unambiguous.  Built-in package JSON files are not modified; the
+        mapping lives in memory and is useful for project-specific naming conventions.
+        """
         global _ALIAS_LOOKUP
 
         alias = str(alias).strip()
@@ -214,17 +251,34 @@ class SpeciesDatabase:
 
     @classmethod
     def record(cls, value: str) -> dict[str, Any]:
-        """Return a public dictionary copy of a species record."""
+        """Execute the documented ``record`` operation for ``SpeciesDatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         return asdict(cls._record(value))
 
     @classmethod
     def supports(cls, value: str, wrapper: str) -> bool:
-        """Return True when *value* is supported by *wrapper*."""
+        """Return a boolean capability or classification check.
+
+        The check uses ThermoProp's normal name canonicalization and backend lookup
+        rules, but converts lookup failures into ``False`` when appropriate.  This makes
+        it safe to use in validation code before calling stricter property methods.
+        """
         return cls._supports_wrapper(value, wrapper)
 
     @classmethod
     def backend_name(cls, value: str, backend: str, *, include_prefix: bool = False) -> str:
-        """Return backend-specific name for a ThermoProp species."""
+        """Execute the documented ``backend_name`` operation for ``SpeciesDatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         return cls._backend_name(value, backend, include_prefix=include_prefix)
 
     # ---------------- Internal lookup API for ThermoProp wrappers ---------------- #

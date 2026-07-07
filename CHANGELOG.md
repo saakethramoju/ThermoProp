@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.0.0
+
+### Added
+
+* Added detailed docstrings across the public API so users can rely on `help()`, IDE tooltips, and future generated API documentation before a separate documentation site exists.
+* Added detailed documentation for package-level helpers, wrapper properties, flash-input discovery methods, CEA database accessors, material database helpers, equilibrium result accessors, and public exception classes.
+* Added a README section explaining the 2.0.0 documentation-first publishing status and how the README, changelog, third-party license file, publishing checklist, and docstrings fit together as the initial documentation set.
+* Added `PUBLISHING.md` with release validation, wheel-inspection, and upload commands for 2.0.0.
+
+### Changed
+
+* Bumped the package version to `2.0.0` in `pyproject.toml` and `thermoprop.__version__`.
+* Updated the package description to emphasize that ThermoProp is now prepared as a documented public package.
+* Expanded short property and helper docstrings into multi-paragraph descriptions with units, state-update behavior, backend limitations, and error behavior where applicable.
+
+### Packaging
+
+* Reviewed the publish-facing metadata in `pyproject.toml`, including name, version, description, Python requirement, dependencies, classifiers, URLs, package data inclusion, build backend, and third-party credit metadata.
+* Added `license-files = ["LICENSE"]` so built wheels include the GPL license file under the dist-info license directory.
+* Expanded the `uv_build` source distribution include list so `CHANGELOG.md`, `LICENSE`, `THIRD_PARTY_LICENSES.md`, `PUBLISHING.md`, examples, and packaged CEA/material data are included in the source archive.
+
+### Notes
+
+* No equilibrium solver equations, CEA thermodynamic-data evaluation, CEA transport equations, CoolProp/PYroMat/RocketProps backend behavior, or material interpolation behavior were intentionally changed for this release.
+* ThermoProp still has no separate official documentation site generated from the repository, so the README and docstrings are intentionally verbose.
+
 ## 1.0.2
 
 ### Added

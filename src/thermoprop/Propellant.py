@@ -132,6 +132,12 @@ class Propellant(PropertyIntrospectionMixin):
         quality: float | None = None,
         set_reference: str | None = None,
     ):
+        """Initialize a rocket propellant or CEA reactant state.
+
+        ``propellant`` may be a canonical ThermoProp propellant name, supported alias, or a single-component dictionary.  Temperature and pressure use SI units.  Most propellant states are initialized from temperature, while pressure is used where the active RocketProps or CEA backend can evaluate pressure-dependent behavior.  A pressure-quality state is accepted for the limited saturation workflows implemented by the wrapper.
+
+        The constructor resolves the propellant through ``SpeciesDatabase``, selects the available RocketProps and/or NASA CEA data sources, validates the thermodynamic state, and prepares backend source tracking so ``data_sources`` and ``property_source()`` can explain where each property came from.
+        """
         self._reference_target = self._normalize_reference_target(set_reference)
         self._reference_offsets: tuple[float, float, float] | None = None
         propellant, self._composition = normalize_single_component(propellant, self.__class__.__name__)
@@ -234,10 +240,20 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def has_quality_enthalpy_correction(self) -> bool:
+        """Return the public ``has_quality_enthalpy_correction`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._quality_override is not None and self._quality_override > 0.0
 
     @property
     def enthalpy_correction(self) -> float | None:
+        """Return the public ``enthalpy_correction`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         cached = self._cache_get("enthalpy_correction")
         if cached is not self._CACHE_MISS:
             return cached
@@ -283,10 +299,24 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def reference(self) -> str:
+        """Return the active thermodynamic reference-state alignment target for this ``Propellant`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._reference_target or self.__class__.__name__
 
     @property
     def set_reference(self) -> str:
+        """Return the reference-state alignment target setter for this ``Propellant`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self.reference
 
     @property
@@ -302,7 +332,14 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def fluid(self) -> dict[str, float]:
-        """Alias for ``composition`` used for FullFlow lookup chaining."""
+        """Return the fluid identifier or composition supplied to the wrapper for this ``Propellant`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.composition
 
     @property
@@ -316,12 +353,26 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def basis(self) -> str:
-        """Composition basis used by ``composition``."""
+        """Return the composition basis for this ``Propellant`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return "mass"
 
     @property
     def composition_basis(self) -> str:
-        """Readable alias for ``basis``."""
+        """Return the composition basis alias for this ``Propellant`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return "mass"
 
     def _composition_cache_key(self) -> tuple:
@@ -341,7 +392,13 @@ class Propellant(PropertyIntrospectionMixin):
 
 
     def cache_key(self) -> tuple:
-        """Stable state fingerprint for FullFlow ``Lookup`` caching."""
+        """Execute the documented ``cache_key`` operation for ``Propellant``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
 
         return (
             "Propellant",
@@ -765,11 +822,24 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def data_sources(self) -> dict[str, str]:
-        """Return the source used by each property that has been evaluated."""
+        """Return the mapping of properties to data backends for this ``Propellant`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return dict(self._data_sources)
 
     def property_source(self, property_name: str) -> str | None:
-        """Return the backend source used for one property, if evaluated."""
+        """Execute the documented ``property_source`` operation for ``Propellant``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         return self._data_sources.get(property_name)
 
     def _source(self, property_name: str, value: Any, source: str):
@@ -1000,30 +1070,70 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def pressure(self) -> float | None:
+        """Return the thermodynamic pressure for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._pressure
 
     @pressure.setter
     def pressure(self, value: float | None):
+        """Set the thermodynamic pressure for this ``Propellant`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (Pa) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._pressure = None if value is None else float(value)
         self._clear_property_cache()
         self._validate_liquid_state()
 
     @property
     def temperature(self) -> float:
+        """Return the thermodynamic temperature for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._temperature
 
     @temperature.setter
     def temperature(self, value: float):
+        """Set the thermodynamic temperature for this ``Propellant`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (K) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._temperature = float(value)
         self._clear_property_cache()
         self._validate_liquid_state()
 
     @property
     def pressure_temperature(self) -> Tuple[float | None, float]:
+        """Return the public ``pressure_temperature`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.pressure, self.temperature
 
     @pressure_temperature.setter
     def pressure_temperature(self, values: Tuple[float | None, float]):
+        """Set the pressure temperature for this ``Propellant`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("pressure_temperature must be set with (pressure, temperature)")
 
@@ -1036,10 +1146,24 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def name(self) -> str:
+        """Return the canonical ThermoProp display name for this ``Propellant`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self.propellant
 
     @property
     def backend(self) -> str:
+        """Return the backend used by this wrapper for this ``Propellant`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         if self._rocketprops_name is not None and self._cea_name is not None:
             return "RocketProps + CEA"
         if self._rocketprops_name is not None:
@@ -1048,6 +1172,11 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def propellant(self) -> str:
+        """Return the public ``propellant`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         if self._registry_name is not None:
             return self._registry_name
         if self._cea_name is not None:
@@ -1056,63 +1185,141 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def input_name(self) -> str:
+        """Return the public ``input_name`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._input_name
 
     @property
     def registry_name(self) -> str | None:
+        """Return the public ``registry_name`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._registry_name
 
     @property
     def rocketprops_name(self) -> str | None:
+        """Return the public ``rocketprops_name`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._rocketprops_name
 
     @property
     def cea_name(self) -> str | None:
-        """Active CEA name for the current state/phase."""
+        """Return the cea name for this ``Propellant`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self._cea_name
 
     @property
     def cea_species(self) -> str | None:
-        """CEA gas/product species name, when available."""
+        """Return the cea species for this ``Propellant`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self._cea_species_name
 
     @property
     def cea_reactant(self) -> str | None:
-        """CEA condensed/reference reactant name, when available."""
+        """Return the cea reactant for this ``Propellant`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self._cea_reactant_name
 
     @property
     def species(self) -> list[str]:
+        """Return the canonical species name or names for this ``Propellant`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return [self.propellant]
 
     @property
     def has_rocketprops(self) -> bool:
+        """Return the public ``has_rocketprops`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._rocketprops_name is not None
 
     @property
     def has_cea(self) -> bool:
+        """Return the public ``has_cea`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._cea_name is not None
 
     @property
     def has_cea_reference_data(self) -> bool:
+        """Return the public ``has_cea_reference_data`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._cea_name is not None
 
     @property
     def has_cea_species_thermo(self) -> bool:
+        """Return the public ``has_cea_species_thermo`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._cea_species_name is not None and CEA.has_thermo(self._cea_species_name)
 
     @property
     def has_cea_reactant_thermo(self) -> bool:
+        """Return the public ``has_cea_reactant_thermo`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._cea_reactant_name is not None and CEA.has_thermo(self._cea_reactant_name)
 
     @property
     def has_cea_thermo(self) -> bool:
+        """Return the public ``has_cea_thermo`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         if self._cea_name is None:
             return False
         return CEA.has_thermo(self._cea_name)
 
     @property
     def has_cea_transport(self) -> bool:
+        """Return the public ``has_cea_transport`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         if self._cea_name is None:
             return False
         try:
@@ -1122,6 +1329,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def phase(self) -> str:
+        """Return the human-readable phase label for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are string.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         if self._quality_override is not None:
             return "Liquid reactant (quality enthalpy correction)"
 
@@ -1138,6 +1352,11 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def phase_model(self) -> str:
+        """Return the public ``phase_model`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         if self._quality_override is not None:
             return "RocketProps liquid + CEA reference + CoolProp Δh"
 
@@ -1163,6 +1382,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def quality(self) -> float | None:
+        """Return the vapor quality when the backend defines a two-phase state for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless mass fraction.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         if self._quality_override is not None:
             return self._quality_override
         if self._backend is not None and self._active_is_liquid_model:
@@ -1173,6 +1399,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @quality.setter
     def quality(self, value: float):
+        """Set the vapor quality when the backend defines a two-phase state for this ``Propellant`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (dimensionless mass fraction) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._quality_override = self._validate_quality(value)
 
         if self._quality_override is not None and self.pressure is None:
@@ -1189,26 +1422,68 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def thermal_expansion_coefficient(self):
+        """Return the isobaric thermal expansion coefficient for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are 1/K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._unsupported("thermal_expansion_coefficient")
 
     @property
     def isothermal_compressibility(self):
+        """Return the isothermal compressibility for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are 1/Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._unsupported("isothermal_compressibility")
 
     @property
     def joule_thomson_coefficient(self):
+        """Return the Joule-Thomson coefficient for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K/Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._unsupported("joule_thomson_coefficient")
 
     @property
     def universal_gas_constant(self):
+        """Return the universal molar gas constant for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(mol*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._RU
 
     @property
     def prandtl(self):
+        """Return the Prandtl number for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._unsupported("prandtl")
 
     @property
     def specific_heat_cv(self) -> float | None:
+        """Return the constant-volume specific heat for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("specific_heat_cv")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1236,6 +1511,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def specific_heat_ratio(self) -> float | None:
+        """Return the specific heat ratio cp/cv for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("specific_heat_ratio")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1250,11 +1532,25 @@ class Propellant(PropertyIntrospectionMixin):
     
     @property
     def gamma(self) -> float | None:
+        """Return the specific heat ratio alias for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.specific_heat_ratio
 
 
     @property
     def speed_of_sound(self) -> float | None:
+        """Return the speed of sound for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m/s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("speed_of_sound")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1282,6 +1578,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def gibbs_energy(self):
+        """Return the mass-specific Gibbs free energy for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         h = self.enthalpy
         s = self.entropy
 
@@ -1293,6 +1596,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def helmholtz_energy(self):
+        """Return the mass-specific Helmholtz free energy for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         u = self.internal_energy
         s = self.entropy
 
@@ -1304,6 +1614,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def free_energy(self):
+        """Return the mass-specific Helmholtz free energy alias for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.helmholtz_energy
 
     @property
@@ -1339,6 +1656,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def molecular_weight(self) -> float | None:
+        """Return the molecular weight for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/kmol, numerically equal to g/mol.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         mw = self.molar_mass
         if mw is None:
             return None
@@ -1365,7 +1689,14 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def cea_molar_mass(self) -> float | None:
-        """Backward-compatible alias for ``cea_formula_molar_mass``."""
+        """Return the cea molar mass for this ``Propellant`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         value = self.cea_formula_molar_mass
         if value is not None:
             self._data_sources["cea_molar_mass"] = self.property_source("cea_formula_molar_mass") or "CEA"
@@ -1373,6 +1704,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def gas_constant(self) -> float | None:
+        """Return the mass-specific gas constant for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("gas_constant")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1398,16 +1736,37 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def elemental_composition(self) -> dict[str, float] | None:
+        """Return the elemental composition dictionary for this ``Propellant`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         value = self._cea_call("elemental_composition", default=None)
         return self._source("elemental_composition", value, "CEA")
 
     @property
     def heat_of_formation_molar(self) -> float | None:
+        """Return the molar standard heat of formation for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/mol.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         value = self._cea_call("heat_of_formation_molar", default=None)
         return self._source("heat_of_formation_molar", value, "CEA")
 
     @property
     def heat_of_formation(self) -> float | None:
+        """Return the standard heat of formation for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg or J/mol depending on accessor.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("heat_of_formation")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1422,10 +1781,22 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def enthalpy_of_formation(self) -> float | None:
+        """Return the public ``enthalpy_of_formation`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.heat_of_formation
 
     @property
     def specific_heat_cp(self) -> float | None:
+        """Return the constant-pressure specific heat for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("specific_heat_cp")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1449,6 +1820,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def specific_heat(self) -> float | None:
+        """Return the default specific heat alias, usually constant-pressure specific heat for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.specific_heat_cp
 
     @property
@@ -1536,6 +1914,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def internal_energy(self) -> float | None:
+        """Return the mass-specific internal energy for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("internal_energy")
         if cached is not self._CACHE_MISS:
             return self._from_raw_basis("internal_energy", cached)
@@ -1596,7 +1981,13 @@ class Propellant(PropertyIntrospectionMixin):
             self._pressure = P_old
 
     def vapor_pressure_at_temperature(self, temperature: float) -> float | None:
-        """RocketProps vapor pressure in Pa at a temporary temperature."""
+        """Execute the documented ``vapor_pressure_at_temperature`` operation for ``Propellant``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         T_old = self._temperature
 
         try:
@@ -1661,6 +2052,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def standard_entropy(self) -> float | None:
+        """Return the standard-state entropy for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("standard_entropy")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1670,6 +2068,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def entropy(self) -> float | None:
+        """Return the mass-specific entropy for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("entropy")
         if cached is not self._CACHE_MISS:
             return self._from_raw_basis("entropy", cached)
@@ -1697,6 +2102,11 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def reference_temperature(self) -> float | None:
+        """Return the public ``reference_temperature`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         cached = self._cache_get("reference_temperature")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1717,6 +2127,11 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def cea_polynomial_temperature_range(self) -> tuple[float, float] | None:
+        """Return the public ``cea_polynomial_temperature_range`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         cached = self._cache_get("cea_polynomial_temperature_range")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1737,6 +2152,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def minimum_temperature(self) -> float | None:
+        """Return the minimum backend-supported temperature for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         data_range = getattr(self._backend, "T_data_range", None) if self._backend is not None else None
 
         if data_range is not None:
@@ -1758,6 +2180,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def maximum_temperature(self) -> float | None:
+        """Return the maximum backend-supported temperature for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         data_range = getattr(self._backend, "T_data_range", None) if self._backend is not None else None
 
         if data_range is not None:
@@ -1781,6 +2210,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def density(self) -> float | None:
+        """Return the mass density for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/m^3.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("density")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1809,6 +2245,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def specific_volume(self) -> float | None:
+        """Return the specific volume for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m^3/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("specific_volume")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1822,6 +2265,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def dynamic_viscosity(self) -> float | None:
+        """Return the dynamic viscosity for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa*s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("dynamic_viscosity")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1841,6 +2291,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def kinematic_viscosity(self) -> float | None:
+        """Return the kinematic viscosity for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m^2/s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("kinematic_viscosity")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1862,6 +2319,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def conductivity(self) -> float | None:
+        """Return the thermal conductivity alias for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("conductivity")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1885,10 +2349,24 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def thermal_conductivity(self) -> float | None:
+        """Return the thermal conductivity for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.conductivity
 
     @property
     def vapor_pressure(self) -> float | None:
+        """Return the vapor pressure for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("vapor_pressure")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1898,10 +2376,24 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def saturation_pressure(self) -> float | None:
+        """Return the saturation pressure at the current temperature for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.vapor_pressure
 
     @property
     def saturation_temperature(self) -> float | None:
+        """Return the saturation temperature at the current pressure for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("saturation_temperature")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1931,6 +2423,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def heat_of_vaporization(self) -> float | None:
+        """Return the heat of vaporization for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("heat_of_vaporization")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1955,6 +2454,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def surface_tension(self) -> float | None:
+        """Return the surface tension for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are N/m.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("surface_tension")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1972,6 +2478,11 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def saturated_liquid_compressibility_factor(self) -> float | None:
+        """Return the public ``saturated_liquid_compressibility_factor`` value for this ``Propellant`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         cached = self._cache_get("saturated_liquid_compressibility_factor")
         if cached is not self._CACHE_MISS:
             return cached
@@ -1987,12 +2498,26 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def compressibility(self) -> float | None:
+        """Return the compressibility factor Z for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.saturated_liquid_compressibility_factor
 
     # ---------------- Static RocketProps properties ---------------- #
 
     @property
     def critical_pressure(self) -> float | None:
+        """Return the critical pressure for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         value = self._real_or_none(self._call("Pc", "Pcrit", "P_crit", default=None))
 
         if value is None:
@@ -2002,6 +2527,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def critical_temperature(self) -> float | None:
+        """Return the critical temperature for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         value = self._real_or_none(self._call("Tc", "Tcrit", "T_crit", default=None))
 
         if value is None:
@@ -2011,6 +2543,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def critical_density(self) -> float | None:
+        """Return the critical density for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/m^3.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         value = self._real_or_none(self._call("SGc", "rhoc", "rho_crit", default=None))
 
         if value is None:
@@ -2020,6 +2559,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def freezing_temperature(self) -> float | None:
+        """Return the freezing temperature for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         value = self._real_or_none(self._call("Tfreeze", "Tfrz", "T_freeze", default=None))
 
         if value is None:
@@ -2029,6 +2575,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def boiling_temperature(self) -> float | None:
+        """Return the boiling temperature for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         value = self._real_or_none(self._call("Tnbp", "Tboil", "T_boil", default=None))
 
         if value is None:
@@ -2038,6 +2591,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def minimum_pressure(self) -> float:
+        """Return the minimum backend-supported pressure for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         data_range = getattr(self._backend, "P_data_range", None) if self._backend is not None else None
 
         if data_range is None:
@@ -2052,6 +2612,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def maximum_pressure(self) -> float:
+        """Return the maximum backend-supported pressure for this ``Propellant`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         data_range = getattr(self._backend, "P_data_range", None) if self._backend is not None else None
 
         if data_range is None:
@@ -2066,6 +2633,13 @@ class Propellant(PropertyIntrospectionMixin):
 
     @property
     def is_mixture(self) -> bool:
+        """Return the whether the object represents a mixture for this ``Propellant`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         if self._rocketprops_name is None:
             return False
         name = self._rocketprops_name.upper()
@@ -2211,6 +2785,12 @@ class Propellant(PropertyIntrospectionMixin):
 
     @staticmethod
     def get_available_propellants() -> list[str]:
+        """Return the propellants supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         names = set(SpeciesDatabase.supported_species("Propellant"))
         names.update(CEA.reactant_names)
         names.update(CEA.names)
@@ -2218,6 +2798,11 @@ class Propellant(PropertyIntrospectionMixin):
 
     @staticmethod
     def show_available_propellants() -> list[str]:
+        """Print and return the available available propellants.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         names = Propellant.get_available_propellants()
         for name in names:
             print(name)
@@ -2225,22 +2810,50 @@ class Propellant(PropertyIntrospectionMixin):
 
     @staticmethod
     def get_available_cea_species() -> list[str]:
+        """Return the cea species supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return CEA.names
 
     @staticmethod
     def show_available_cea_species() -> list[str]:
+        """Print and return the available available cea species.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         return CEA.show_species()
 
     @staticmethod
     def get_available_cea_reactants() -> list[str]:
+        """Return the cea reactants supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return CEA.reactant_names
 
     @staticmethod
     def show_available_cea_reactants() -> list[str]:
+        """Print and return the available available cea reactants.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         return CEA.show_reactants()
 
     @staticmethod
     def get_available_rocketprops() -> list[str]:
+        """Return the rocketprops supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return sorted(
             name
             for name in SpeciesDatabase.species()
@@ -2249,6 +2862,11 @@ class Propellant(PropertyIntrospectionMixin):
 
     @staticmethod
     def show_available_rocketprops() -> list[str]:
+        """Print and return the available available rocketprops.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         names = Propellant.get_available_rocketprops()
         for name in names:
             print(name)
@@ -2256,26 +2874,60 @@ class Propellant(PropertyIntrospectionMixin):
 
     @staticmethod
     def get_available_fluids() -> list[str]:
+        """Return the fluids supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return Propellant.get_available_propellants()
 
     @staticmethod
     def show_available_fluids() -> list[str]:
+        """Print and return the available available fluids.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         return Propellant.show_available_propellants()
 
     @classmethod
     def show_aliases(cls) -> dict[str, str]:
+        """Print and return the available aliases.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         return {}
 
     @classmethod
     def available_flash_inputs(cls) -> list[str]:
+        """Return the flash inputs supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return sorted("-".join(sorted(inputs)) for inputs in cls._FLASH_INPUTS)
 
     @classmethod
     def supported_flash_inputs(cls) -> list[str]:
+        """Return the flash inputs supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return cls.available_flash_inputs()
 
     @classmethod
     def available_flash_pairs(cls) -> list[str]:
+        """Return the flash pairs supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return sorted(
             "-".join(sorted(inputs))
             for inputs in cls._FLASH_INPUTS
@@ -2284,4 +2936,10 @@ class Propellant(PropertyIntrospectionMixin):
 
     @classmethod
     def supported_flash_pairs(cls) -> list[str]:
+        """Return the flash pairs supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return cls.available_flash_pairs()

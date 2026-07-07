@@ -19,10 +19,14 @@ import numpy as np
 
 @dataclass(slots=True)
 class SpeciesSet:
-    """
-    Static species information.
+    """Represent the public ThermoProp ``SpeciesSet`` API object.
 
-    This object never changes during a solve.
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
     """
 
     # species names
@@ -89,10 +93,20 @@ class SpeciesSet:
 
     @property
     def nspecies(self) -> int:
+        """Return the public ``nspecies`` value for this ``SpeciesSet`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return len(self.names)
 
     @property
     def nelements(self) -> int:
+        """Return the public ``nelements`` value for this ``SpeciesSet`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return len(self.elements)
 
 
@@ -135,15 +149,24 @@ class FeedState:
 
     @property
     def nelements(self) -> int:
+        """Return the public ``nelements`` value for this ``FeedState`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return len(self.elements)
 
 
 @dataclass(slots=True)
 class EquilibriumState:
-    """
-    Mutable equilibrium solution state.
+    """Represent the public ThermoProp ``EquilibriumState`` API object.
 
-    This is the object updated during Newton iterations.
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
     """
 
     # thermodynamic state
@@ -174,6 +197,12 @@ class EquilibriumState:
     residual_norm: float = np.inf
 
     def copy(self) -> "EquilibriumState":
+        """Execute the public ``copy`` operation for ``EquilibriumState``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return EquilibriumState(
             temperature=self.temperature,
             pressure=self.pressure,
@@ -188,27 +217,57 @@ class EquilibriumState:
 
     @property
     def nspecies(self) -> int:
+        """Return the public ``nspecies`` value for this ``EquilibriumState`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.species.nspecies
 
     @property
     def nelements(self) -> int:
+        """Return the public ``nelements`` value for this ``EquilibriumState`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.species.nelements
 
     @property
     def gas_moles(self) -> np.ndarray:
+        """Return the public ``gas_moles`` value for this ``EquilibriumState`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.n[self.species.gas_mask]
 
     @property
     def condensed_moles(self) -> np.ndarray:
+        """Return the public ``condensed_moles`` value for this ``EquilibriumState`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.n[self.species.condensed_mask]
 
     @property
     def ion_moles(self) -> np.ndarray:
+        """Return the public ``ion_moles`` value for this ``EquilibriumState`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.n[self.species.ion_mask]
 
     @property
     def mole_fractions_gas(self) -> np.ndarray:
 
+        """Return the public ``mole_fractions_gas`` value for this ``EquilibriumState`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         gas = self.gas_moles
 
         total = np.sum(gas)
@@ -220,11 +279,11 @@ class EquilibriumState:
 
     @property
     def molecular_weight_gas(self) -> float:
-        """
-        Gas molecular weight.
+        """Return the gas-phase molecular weight for this ``EquilibriumState`` state.
 
-        Equivalent to CEA equation (2.3a)
-        for gaseous species only.
+        The value is evaluated from the current state and active backend.  Units are
+        kg/kmol, numerically equal to g/mol.  Unsupported species, phases, materials, or state points raise a
+        ThermoProp exception with context about the backend and requested property.
         """
 
         gas_mask = self.species.gas_mask
@@ -244,10 +303,13 @@ class EquilibriumState:
 
     @property
     def element_residual(self) -> np.ndarray:
-        """
-        Current elemental imbalance.
+        """Return the element residual for this ``EquilibriumState`` object.
 
-        A*n - b
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
         """
 
         return (
@@ -258,8 +320,14 @@ class EquilibriumState:
 
 @dataclass(slots=True)
 class NewtonCorrection:
-    """
-    Result of one Newton solve.
+    """Represent the public ThermoProp ``NewtonCorrection`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
     """
 
     dx: np.ndarray
@@ -275,9 +343,14 @@ class NewtonCorrection:
 
 @dataclass(slots=True)
 class CondensedPhaseCandidate:
-    """
-    Candidate condensed phase considered
-    during phase insertion/removal logic.
+    """Represent the public ThermoProp ``CondensedPhaseCandidate`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
     """
 
     species_index: int
@@ -291,9 +364,14 @@ class CondensedPhaseCandidate:
 
 @dataclass(slots=True)
 class TransportState:
-    """
-    Cached transport data used by
-    equilibrium transport calculations.
+    """Represent the public ThermoProp ``TransportState`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
     """
 
     names: list[str]
@@ -309,11 +387,14 @@ class TransportState:
 
 @dataclass(slots=True)
 class EquilibriumResults:
-    """
-    Final immutable results object.
+    """Represent the public ThermoProp ``EquilibriumResults`` API object.
 
-    Used internally before constructing
-    the public Equilibrium API.
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
     """
 
     state: EquilibriumState

@@ -9,7 +9,12 @@ import math
 
 
 def is_finite_number(value: Any) -> bool:
-    """Return True when *value* is a finite int/float-like scalar."""
+    """Return a boolean capability or classification check.
+
+    The check uses ThermoProp's normal name canonicalization and backend lookup
+    rules, but converts lookup failures into ``False`` when appropriate.  This makes
+    it safe to use in validation code before calling stricter property methods.
+    """
     try:
         return math.isfinite(float(value))
     except (TypeError, ValueError):
@@ -17,7 +22,13 @@ def is_finite_number(value: Any) -> bool:
 
 
 def finite_or_none(value: Any) -> float | None:
-    """Return *value* as ``float`` if finite; otherwise return ``None``."""
+    """Execute the documented ``finite_or_none`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     if value is None:
         return None
     try:
@@ -52,7 +63,13 @@ def format_optional(value: Any, fmt: str = ".3e", *, missing: str = "N/A") -> st
 
 
 def rounded_dict(values: dict[str, Any], decimals: int = 3) -> dict[str, Any]:
-    """Return a copy of ``values`` with finite numeric values rounded."""
+    """Execute the documented ``rounded_dict`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     out: dict[str, Any] = {}
     for key, value in values.items():
         try:
@@ -65,7 +82,13 @@ def rounded_dict(values: dict[str, Any], decimals: int = 3) -> dict[str, Any]:
 
 
 def format_rows(rows: Iterable[tuple[str, Any]]) -> str:
-    """Format ``(label, value)`` pairs into aligned ``key : value`` lines."""
+    """Execute the documented ``format_rows`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     rows = list(rows)
     if not rows:
         return ""

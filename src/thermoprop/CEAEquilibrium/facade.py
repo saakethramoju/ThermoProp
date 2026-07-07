@@ -41,7 +41,15 @@ from .species import CHARGE_ELEMENT
 
 @dataclass(slots=True)
 class EquilibriumSolveSummary:
-    """User-facing convergence and condensed-phase summary."""
+    """Represent the public ThermoProp ``EquilibriumSolveSummary`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
 
     success: bool
     message: str
@@ -58,7 +66,15 @@ class EquilibriumSolveSummary:
 
 @dataclass(slots=True)
 class EquilibriumConfig:
-    """Immutable options needed to run an Equilibrium solve."""
+    """Represent the public ThermoProp ``EquilibriumConfig`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
 
     mode: str
     pressure: float | None
@@ -80,7 +96,15 @@ class EquilibriumConfig:
 
 @dataclass(slots=True)
 class EquilibriumRun:
-    """Complete internal result bundle from a public Equilibrium solve."""
+    """Represent the public ThermoProp ``EquilibriumRun`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
 
     feed: FeedState
     solve_result: CondensedSolveResult
@@ -91,7 +115,15 @@ class EquilibriumRun:
 
 
 class DictReactants:
-    """Adapter that makes a raw composition dictionary behave like Reactants."""
+    """Represent the public ThermoProp ``DictReactants`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
 
     def __init__(
         self,
@@ -101,6 +133,10 @@ class DictReactants:
         temperature: float | None = None,
         pressure: float | None = None,
     ):
+        """Create an internal equilibrium feed object from a composition dictionary.
+
+        The composition may be supplied on a mole or mass basis and is normalized after CEA name resolution.  Temperature and pressure are optional SI-state metadata used to evaluate reactant enthalpy and entropy when possible.  This class supports the public ``Equilibrium`` constructor path that accepts a plain dictionary instead of an explicit ``Reactants`` object.
+        """
         if not composition:
             raise ThermoPropConfigurationError("Reactant composition dictionary cannot be empty.")
 
@@ -143,6 +179,13 @@ class DictReactants:
 
     @property
     def element_moles_per_kg(self) -> dict[str, float]:
+        """Return the element mole totals per kilogram for this ``DictReactants`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         totals: dict[str, float] = {}
 
         for name, x in self.mole_fractions.items():
@@ -155,6 +198,13 @@ class DictReactants:
 
     @property
     def reactant_enthalpy(self) -> float:
+        """Return the mass-specific reactant enthalpy of the complete mixture for this ``DictReactants`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         if self.temperature is None:
             raise EquilibriumSetupError("HP equilibrium with dict reactants requires temperature.")
 
@@ -165,9 +215,22 @@ class DictReactants:
 
     @property
     def reactant_internal_energy(self) -> float:
+        """Return the mass-specific reactant internal energy of the complete mixture for this ``DictReactants`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.reactant_enthalpy - self.total_kmoles * RU_KMOL * float(self.temperature)
 
     def element_vector(self, elements: list[str] | None = None) -> tuple[list[str], np.ndarray]:
+        """Execute the public ``element_vector`` operation for ``DictReactants``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         if elements is None:
             elements = sorted(self.element_moles_per_kg)
 
@@ -180,9 +243,21 @@ class DictReactants:
 
 
 class CombustionGasReactants:
-    """Adapter that exposes CombustionGas as an equilibrium feed."""
+    """Represent the public ThermoProp ``CombustionGasReactants`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
 
     def __init__(self, gas: CombustionGas):
+        """Create an internal equilibrium feed object from a ``CombustionGas`` state.
+
+        The gas composition is converted into a normalized one-kilogram feed while preserving the gas state's temperature, pressure, enthalpy, internal energy, entropy, and elemental composition.  This allows ``Equilibrium`` to re-equilibrate a fixed combustion-gas composition in TP, HP, or SP workflows.
+        """
         self.gas = gas
         self.total_mass = 1.0
 
@@ -213,6 +288,13 @@ class CombustionGasReactants:
 
     @property
     def element_moles_per_kg(self) -> dict[str, float]:
+        """Return the element mole totals per kilogram for this ``CombustionGasReactants`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         totals: dict[str, float] = {}
 
         for name, x in self.mole_fractions.items():
@@ -225,13 +307,33 @@ class CombustionGasReactants:
 
     @property
     def reactant_enthalpy(self) -> float:
+        """Return the mass-specific reactant enthalpy of the complete mixture for this ``CombustionGasReactants`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return float(self.gas.enthalpy)
 
     @property
     def reactant_internal_energy(self) -> float:
+        """Return the mass-specific reactant internal energy of the complete mixture for this ``CombustionGasReactants`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return float(self.gas.internal_energy)
 
     def element_vector(self, elements: list[str] | None = None) -> tuple[list[str], np.ndarray]:
+        """Execute the public ``element_vector`` operation for ``CombustionGasReactants``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         if elements is None:
             elements = sorted(self.element_moles_per_kg)
 
@@ -250,7 +352,13 @@ def resolve_reactants(
     temperature: float | None,
     pressure: float | None,
 ):
-    """Normalize supported Equilibrium reactant inputs."""
+    """Execute the documented ``resolve_reactants`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     if isinstance(reactants, Reactants):
         return reactants
 
@@ -275,7 +383,13 @@ def resolve_reactants(
 
 
 def validate_config(config: EquilibriumConfig, original_input: Any) -> None:
-    """Validate public Equilibrium inputs before solving."""
+    """Execute the documented ``validate_config`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     if config.pressure is None or config.pressure <= 0.0:
         raise EquilibriumSetupError("Equilibrium requires positive pressure [Pa].")
 
@@ -316,7 +430,13 @@ def build_feed(
     *,
     original_input: Any,
 ) -> FeedState:
-    """Build the solver feed state from normalized reactants."""
+    """Execute the documented ``build_feed`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     element_moles = dict(reactants.element_moles_per_kg)
     elements = sorted(e for e in element_moles if e != CHARGE_ELEMENT)
 
@@ -348,7 +468,13 @@ def build_feed(
 
 
 def solver_options(config: EquilibriumConfig):
-    """Build solver option dataclasses from public Equilibrium options."""
+    """Execute the documented ``solver_options`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     tp_options = TPSolverOptions(
         max_iterations=config.max_iterations,
         species_trace=config.combustion_gas_trace,
@@ -391,7 +517,13 @@ def run_equilibrium_solve(
     reactants,
     tp_neighbor_solver,
 ) -> EquilibriumRun:
-    """Run TP/HP equilibrium and assemble cached public results."""
+    """Execute the documented ``run_equilibrium_solve`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     validate_config(config, original_input)
     feed = build_feed(reactants, config, original_input=original_input)
 

@@ -143,6 +143,12 @@ class IdealGas(PropertyIntrospectionMixin):
         quality: float | None = None,
         set_reference: str | None = None,
     ):
+        """Initialize a PYroMat-backed ideal-gas state.
+
+        ``fluid`` may be a single ideal-gas species or a composition dictionary.  Temperature, enthalpy, internal energy, entropy, density, and pressure inputs are interpreted as mass-specific SI values.  IdealGas accepts the supported ideal-gas state pairs documented by ``supported_flash_inputs()`` and then derives all dependent properties from the ideal-gas equation of state and PYroMat thermodynamic functions.
+
+        Use ``basis="mole"`` or ``basis="mass"`` for mixture dictionaries.  ``quality`` is rejected because vapor quality is not meaningful for the ideal-gas model.  ``set_reference`` can be used to align absolute thermodynamic reference values with another ThermoProp wrapper for multi-backend calculations.
+        """
         self._configure_units()
 
         if quality is not None:
@@ -229,6 +235,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def name(self) -> str:
+        """Return the canonical ThermoProp display name for this ``IdealGas`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return ", ".join(self._display_names)
 
     @property
@@ -246,37 +259,86 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def fluid(self) -> dict[str, float]:
-        """Alias for ``composition`` used for FullFlow lookup chaining."""
+        """Return the fluid identifier or composition supplied to the wrapper for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.composition
 
     @property
     def gas(self) -> dict[str, float]:
-        """Gas-composition alias for ``composition``."""
+        """Return the gas identifier or composition supplied to the wrapper for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.composition
 
     @property
     def idealgas(self) -> dict[str, float]:
-        """Class-specific alias for ``composition``."""
+        """Return the ideal-gas identifier or composition supplied to the wrapper for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.composition
 
     @property
     def ideal_gas(self) -> dict[str, float]:
-        """Readable alias for ``idealgas``."""
+        """Return the ideal-gas identifier or composition supplied to the wrapper for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.composition
 
     @property
     def basis(self) -> str:
-        """Composition basis used by ``composition``."""
+        """Return the composition basis for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self._basis
 
     @property
     def composition_basis(self) -> str:
-        """Readable alias for ``basis``."""
+        """Return the composition basis alias for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self._basis
     
     @property
     def backend(self) -> str:
-        """Name of the thermodynamic property backend."""
+        """Return the backend used by this wrapper for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self._BACKEND_NAME
 
     @staticmethod
@@ -390,12 +452,26 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def reference(self) -> str:
-        """Thermodynamic reference target used by this object."""
+        """Return the active thermodynamic reference-state alignment target for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self._reference_target or "IdealGas"
 
     @property
     def set_reference(self) -> str:
-        """Backward-readable alias for the active reference target."""
+        """Return the reference-state alignment target setter for this ``IdealGas`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.reference
 
     def _composition_cache_key(self) -> tuple:
@@ -898,6 +974,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def mole_fractions(self) -> dict:
+        """Return the mole-fraction composition dictionary for this ``IdealGas`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return {
             name: float(x)
             for name, x in zip(self._display_names, self._mole_fractions)
@@ -905,6 +988,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @mole_fractions.setter
     def mole_fractions(self, value: List[float]):
+        """Set the mole-fraction composition dictionary for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if len(self._species_ids) == 1:
             raise ValueError("Cannot change mole fractions for a pure gas")
 
@@ -918,6 +1008,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def mass_fractions(self) -> dict:
+        """Return the mass-fraction composition dictionary for this ``IdealGas`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return {
             name: float(x)
             for name, x in zip(self._display_names, self._mass_fractions)
@@ -925,6 +1022,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @mass_fractions.setter
     def mass_fractions(self, value: List[float]):
+        """Set the mass-fraction composition dictionary for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if len(self._species_ids) == 1:
             raise ValueError("Cannot change mass fractions for a pure gas")
 
@@ -941,25 +1045,60 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def pressure(self) -> float | None:
+        """Return the thermodynamic pressure for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._pressure
 
     @pressure.setter
     def pressure(self, value: float):
+        """Set the thermodynamic pressure for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (Pa) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._pressure = float(value)
         self._clear_property_cache()
 
     @property
     def enthalpy(self) -> float:
+        """Return the mass-specific enthalpy for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._from_raw_basis("enthalpy", self._enthalpy)
 
     @enthalpy.setter
     def enthalpy(self, value: float):
+        """Set the mass-specific enthalpy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (J/kg) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._clear_property_cache()
         self._enthalpy = self._to_raw_basis("enthalpy", value)
         self._temperature = self._temperature_from_enthalpy(self._enthalpy)
 
     @property
     def internal_energy(self) -> float:
+        """Return the mass-specific internal energy for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("internal_energy")
         if cached is not None:
             return cached
@@ -974,6 +1113,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @internal_energy.setter
     def internal_energy(self, value: float):
+        """Set the mass-specific internal energy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (J/kg) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._clear_property_cache()
         raw_value = self._to_raw_basis("internal_energy", value)
         self._temperature = self._temperature_from_internal_energy(raw_value)
@@ -981,16 +1127,37 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def temperature(self) -> float:
+        """Return the thermodynamic temperature for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._temperature
 
     @temperature.setter
     def temperature(self, value: float):
+        """Set the thermodynamic temperature for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (K) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._clear_property_cache()
         self._temperature = float(value)
         self._enthalpy = self._enthalpy_from_temperature(self._temperature)
 
     @property
     def density(self) -> float:
+        """Return the mass density for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/m^3.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("density")
         if cached is not None:
             return cached
@@ -1003,6 +1170,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @density.setter
     def density(self, value: float):
+        """Set the mass density for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (kg/m^3) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if self._temperature is None:
             raise ValueError("Cannot set density without temperature.")
         self._pressure = float(value) * self.gas_constant * self._temperature
@@ -1010,70 +1184,154 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def pressure_temperature(self) -> Tuple[float | None, float]:
+        """Return the public ``pressure_temperature`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._pressure, self._temperature
 
     @pressure_temperature.setter
     def pressure_temperature(self, values: Tuple[float | None, float]):
+        """Set the pressure temperature for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("pressure_temperature must be set with (pressure, temperature)")
         self._set_state(pressure=values[0], temperature=values[1])
 
     @property
     def pressure_enthalpy(self) -> Tuple[float | None, float]:
+        """Return the public ``pressure_enthalpy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._pressure, self.enthalpy
 
     @pressure_enthalpy.setter
     def pressure_enthalpy(self, values: Tuple[float | None, float]):
+        """Set the pressure enthalpy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("pressure_enthalpy must be set with (pressure, enthalpy)")
         self._set_state(pressure=values[0], enthalpy=values[1])
 
     @property
     def pressure_internal_energy(self) -> Tuple[float | None, float]:
+        """Return the public ``pressure_internal_energy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._pressure, self.internal_energy
 
     @pressure_internal_energy.setter
     def pressure_internal_energy(self, values: Tuple[float | None, float]):
+        """Set the pressure internal energy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("pressure_internal_energy must be set with (pressure, internal_energy)")
         self._set_state(pressure=values[0], internal_energy=values[1])
 
     @property
     def density_temperature(self) -> Tuple[float, float]:
+        """Return the public ``density_temperature`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.density, self._temperature
 
     @density_temperature.setter
     def density_temperature(self, values: Tuple[float, float]):
+        """Set the density temperature for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("density_temperature must be set with (density, temperature)")
         self._set_state(density=values[0], temperature=values[1])
 
     @property
     def density_enthalpy(self) -> Tuple[float, float]:
+        """Return the public ``density_enthalpy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.density, self.enthalpy
 
     @density_enthalpy.setter
     def density_enthalpy(self, values: Tuple[float, float]):
+        """Set the density enthalpy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("density_enthalpy must be set with (density, enthalpy)")
         self._set_state(density=values[0], enthalpy=values[1])
 
     @property
     def density_internal_energy(self) -> Tuple[float, float]:
+        """Return the public ``density_internal_energy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.density, self.internal_energy
 
     @density_internal_energy.setter
     def density_internal_energy(self, values: Tuple[float, float]):
+        """Set the density internal energy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("density_internal_energy must be set with (density, internal_energy)")
         self._set_state(density=values[0], internal_energy=values[1])
 
     @property
     def pressure_density(self) -> Tuple[float, float]:
+        """Return the public ``pressure_density`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._pressure, self.density
 
     @pressure_density.setter
     def pressure_density(self, values: Tuple[float, float]):
+        """Set the pressure density for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("pressure_density must be set with (pressure, density)")
         self._set_state(pressure=values[0], density=values[1])
@@ -1081,20 +1339,44 @@ class IdealGas(PropertyIntrospectionMixin):
     # Backward-compatible aliases
     @property
     def HP(self) -> Tuple[float, float | None]:
+        """Return the public ``HP`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.enthalpy, self._pressure
 
     @HP.setter
     def HP(self, values: Tuple[float, float]):
+        """Set the HP for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("HP must be set with (enthalpy, pressure)")
         self._set_state(enthalpy=values[0], pressure=values[1])
 
     @property
     def TP(self) -> Tuple[float, float | None]:
+        """Return the public ``TP`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._temperature, self._pressure
 
     @TP.setter
     def TP(self, values: Tuple[float, float]):
+        """Set the TP for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("TP must be set with (temperature, pressure)")
         self._set_state(temperature=values[0], pressure=values[1])
@@ -1109,18 +1391,46 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def species(self) -> List[str]:
+        """Return the canonical species name or names for this ``IdealGas`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._display_names
 
     @property
     def phase(self) -> str:
+        """Return the human-readable phase label for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are string.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return "Ideal Gas"
 
     @property
     def compressibility(self) -> float:
+        """Return the compressibility factor Z for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return 1.0
 
     @property
     def specific_volume(self) -> float:
+        """Return the specific volume for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m^3/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("specific_volume")
         if cached is not None:
             return cached
@@ -1129,22 +1439,44 @@ class IdealGas(PropertyIntrospectionMixin):
             
     @property
     def thermal_expansion_coefficient(self) -> float:
-        """Volumetric thermal expansion coefficient beta [1/K]."""
+        """Return the isobaric thermal expansion coefficient for this ``IdealGas`` state.
+
+        The value is evaluated from the current state and active backend.  Units are
+        1/K.  Unsupported species, phases, materials, or state points raise a
+        ThermoProp exception with context about the backend and requested property.
+        """
         return 1.0 / self.temperature
 
     @property
     def isothermal_compressibility(self) -> float:
-        """Isothermal compressibility [1/Pa]."""
+        """Return the isothermal compressibility for this ``IdealGas`` state.
+
+        The value is evaluated from the current state and active backend.  Units are
+        1/Pa.  Unsupported species, phases, materials, or state points raise a
+        ThermoProp exception with context about the backend and requested property.
+        """
         self._require_pressure("Isothermal compressibility")
         return 1.0 / self.pressure
 
     @property
     def helmholtz_energy(self) -> float:
-        """Mass-specific Helmholtz free energy [J/kg]."""
+        """Return the mass-specific Helmholtz free energy for this ``IdealGas`` state.
+
+        The value is evaluated from the current state and active backend.  Units are
+        J/kg.  Unsupported species, phases, materials, or state points raise a
+        ThermoProp exception with context about the backend and requested property.
+        """
         return self.free_energy
 
     @property
     def molar_mass(self) -> float:
+        """Return the molar mass for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/mol.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("molar_mass")
         if cached is not None:
             return cached
@@ -1156,6 +1488,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def gas_constant(self) -> float:
+        """Return the mass-specific gas constant for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("gas_constant")
         if cached is not None:
             return cached
@@ -1164,6 +1503,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def specific_heat_cp(self) -> float:
+        """Return the constant-pressure specific heat for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("specific_heat_cp")
         if cached is not None:
             return cached
@@ -1175,6 +1521,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def specific_heat_cv(self) -> float:
+        """Return the constant-volume specific heat for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("specific_heat_cv")
         if cached is not None:
             return cached
@@ -1186,10 +1539,24 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def specific_heat(self) -> float:
+        """Return the default specific heat alias, usually constant-pressure specific heat for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.specific_heat_cp
 
     @property
     def specific_heat_ratio(self) -> float:
+        """Return the specific heat ratio cp/cv for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("specific_heat_ratio")
         if cached is not None:
             return cached
@@ -1201,10 +1568,24 @@ class IdealGas(PropertyIntrospectionMixin):
     
     @property
     def gamma(self) -> float:
+        """Return the specific heat ratio alias for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.specific_heat_ratio
 
     @property
     def free_energy(self) -> float:
+        """Return the mass-specific Helmholtz free energy alias for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("free_energy")
         if cached is not None:
             return cached
@@ -1218,6 +1599,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def gibbs_energy(self) -> float:
+        """Return the mass-specific Gibbs free energy for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("gibbs_energy")
         if cached is not None:
             return cached
@@ -1231,6 +1619,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def entropy(self) -> float:
+        """Return the mass-specific entropy for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("entropy")
         if cached is not None:
             return cached
@@ -1246,6 +1641,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @entropy.setter
     def entropy(self, value: float):
+        """Set the mass-specific entropy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (J/(kg*K)) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._require_pressure("Entropy")
         self._clear_property_cache()
         raw_value = self._to_raw_basis("entropy", value)
@@ -1254,64 +1656,145 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def pressure_entropy(self) -> Tuple[float | None, float]:
+        """Return the public ``pressure_entropy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._pressure, self.entropy
 
     @pressure_entropy.setter
     def pressure_entropy(self, values: Tuple[float, float]):
+        """Set the pressure entropy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("pressure_entropy must be set with (pressure, entropy)")
         self._set_state(pressure=values[0], entropy=values[1])
 
     @property
     def temperature_entropy(self) -> Tuple[float, float]:
+        """Return the public ``temperature_entropy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._temperature, self.entropy
 
     @temperature_entropy.setter
     def temperature_entropy(self, values: Tuple[float, float]):
+        """Set the temperature entropy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("temperature_entropy must be set with (temperature, entropy)")
         self._set_state(temperature=values[0], entropy=values[1])
 
     @property
     def enthalpy_entropy(self) -> Tuple[float, float]:
+        """Return the public ``enthalpy_entropy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.enthalpy, self.entropy
 
     @enthalpy_entropy.setter
     def enthalpy_entropy(self, values: Tuple[float, float]):
+        """Set the enthalpy entropy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("enthalpy_entropy must be set with (enthalpy, entropy)")
         self._set_state(enthalpy=values[0], entropy=values[1])
 
     @property
     def internal_energy_entropy(self) -> Tuple[float, float]:
+        """Return the public ``internal_energy_entropy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.internal_energy, self.entropy
 
     @internal_energy_entropy.setter
     def internal_energy_entropy(self, values: Tuple[float, float]):
+        """Set the internal energy entropy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("internal_energy_entropy must be set with (internal_energy, entropy)")
         self._set_state(internal_energy=values[0], entropy=values[1])
 
     @property
     def density_entropy(self) -> Tuple[float, float]:
+        """Return the public ``density_entropy`` value for this ``IdealGas`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.density, self.entropy
 
     @density_entropy.setter
     def density_entropy(self, values: Tuple[float, float]):
+        """Set the density entropy for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if not isinstance(values, (tuple, list)) or len(values) != 2:
             raise ValueError("density_entropy must be set with (density, entropy)")
         self._set_state(density=values[0], entropy=values[1])
 
     @property
     def quality(self) -> float:
+        """Return the vapor quality when the backend defines a two-phase state for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless mass fraction.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return 1.0
 
     @quality.setter
     def quality(self, value: float):
+        """Set the vapor quality when the backend defines a two-phase state for this ``IdealGas`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (dimensionless mass fraction) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         raise ValueError("IdealGas does not support vapor quality.")
 
     @property
     def speed_of_sound(self) -> float:
+        """Return the speed of sound for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m/s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         cached = self._cache_get("speed_of_sound")
         if cached is not None:
             return cached
@@ -1453,7 +1936,12 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def kinematic_viscosity(self) -> float:
-        """Kinematic viscosity [m^2/s]."""
+        """Return the kinematic viscosity for this ``IdealGas`` state.
+
+        The value is evaluated from the current state and active backend.  Units are
+        m^2/s.  Unsupported species, phases, materials, or state points raise a
+        ThermoProp exception with context about the backend and requested property.
+        """
         cached = self._cache_get("kinematic_viscosity")
         if cached is not None:
             return cached
@@ -1510,36 +1998,77 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def thermal_conductivity(self) -> float:
-        """Alias for conductivity."""
+        """Return the thermal conductivity for this ``IdealGas`` state.
+
+        The value is evaluated from the current state and active backend.  Units are
+        W/(m*K).  Unsupported species, phases, materials, or state points raise a
+        ThermoProp exception with context about the backend and requested property.
+        """
         return self.conductivity
 
     @property
     def minimum_pressure(self) -> float:
+        """Return the minimum backend-supported pressure for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return 1e-9
 
     @property
     def maximum_pressure(self) -> float:
+        """Return the maximum backend-supported pressure for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return np.inf
 
     @property
     def minimum_temperature(self) -> float:
+        """Return the minimum backend-supported temperature for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._minimum_temperature
 
     @property
     def maximum_temperature(self) -> float:
+        """Return the maximum backend-supported temperature for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._maximum_temperature
 
     @property
     def is_mixture(self) -> bool:
+        """Return the whether the object represents a mixture for this ``IdealGas`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._mixture
     
 
     def partial_derivative(self, of: str, with_respect_to: str, constant: str) -> float:
-        """
-        Return selected ideal-gas first partial derivatives.
+        """Execute the documented ``partial_derivative`` operation for ``IdealGas``.
 
-        Supported variables:
-            T, P, Dmass, Hmass, Umass
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
         """
         of = of.lower()
         wrt = with_respect_to.lower()
@@ -1580,31 +2109,73 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @property
     def dhdT_const_p(self) -> float:
+        """Return the partial derivative of enthalpy with respect to temperature at constant pressure for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("Hmass", "T", "P")
 
 
     @property
     def dhdp_const_T(self) -> float:
+        """Return the partial derivative of enthalpy with respect to pressure at constant temperature for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*Pa).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("Hmass", "P", "T")
 
 
     @property
     def drhodT_const_p(self) -> float:
+        """Return the partial derivative of density with respect to temperature at constant pressure for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/(m^3*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("Dmass", "T", "P")
 
 
     @property
     def drhodp_const_T(self) -> float:
+        """Return the partial derivative of density with respect to pressure at constant temperature for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/(m^3*Pa).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("Dmass", "P", "T")
 
 
     @property
     def dTdp_const_h(self) -> float:
+        """Return the Joule-Thomson style dT/dp derivative at constant enthalpy for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K/Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("T", "P", "Hmass")
 
 
     @property
     def joule_thomson_coefficient(self) -> float:
+        """Return the Joule-Thomson coefficient for this ``IdealGas`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K/Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.dTdp_const_h
 
     # ---------------- String output ---------------- #
@@ -1739,12 +2310,24 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @staticmethod
     def get_available_gases() -> List[str]:
-        """Return available PYroMat ideal-gas names."""
+        """Return the gases supported by this ThermoProp interface.
+
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
+        """
         return IdealGas._database_supported_ideal_gas_species()
 
     @staticmethod
     def show_available_gases() -> List[str]:
-        """Print and return available PYroMat ideal-gas names."""
+        """Print and return the available available gases.
+
+        The printed table is intended for interactive discovery.  The return value
+        contains the same information in normal Python data structures so scripts,
+        examples, tests, and documentation generators can reuse it without parsing
+        stdout.
+        """
         gases = IdealGas.get_available_gases()
 
         for gas in gases:
@@ -1754,23 +2337,35 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @staticmethod
     def get_available_fluids() -> List[str]:
-        """Return available PYroMat ideal-gas names.
+        """Return the fluids supported by this ThermoProp interface.
 
-        Fluid-style alias for API consistency with Fluid.
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
         """
         return IdealGas.get_available_gases()
 
     @staticmethod
     def show_available_fluids() -> List[str]:
-        """Print and return available PYroMat ideal-gas names.
+        """Print and return the available available fluids.
 
-        Fluid-style alias for API consistency with Fluid.
+        The printed table is intended for interactive discovery.  The return value
+        contains the same information in normal Python data structures so scripts,
+        examples, tests, and documentation generators can reuse it without parsing
+        stdout.
         """
         return IdealGas.show_available_gases()
 
     @classmethod
     def available_flash_inputs(cls) -> list[str]:
-        """Return supported ideal-gas state input combinations."""
+        """Return the flash inputs supported by this ThermoProp interface.
+
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
+        """
         return sorted(
             "-".join(sorted(inputs))
             for inputs in cls._FLASH_INPUTS
@@ -1778,12 +2373,24 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @classmethod
     def supported_flash_inputs(cls) -> list[str]:
-        """Return supported ideal-gas state input combinations."""
+        """Return the flash inputs supported by this ThermoProp interface.
+
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
+        """
         return cls.available_flash_inputs()
 
     @classmethod
     def available_flash_pairs(cls) -> list[str]:
-        """Return supported two-property ideal-gas flash combinations."""
+        """Return the flash pairs supported by this ThermoProp interface.
+
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
+        """
         return sorted(
             "-".join(sorted(inputs))
             for inputs in cls._FLASH_INPUTS
@@ -1792,7 +2399,13 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @classmethod
     def supported_flash_pairs(cls) -> list[str]:
-        """Return supported two-property ideal-gas flash combinations."""
+        """Return the flash pairs supported by this ThermoProp interface.
+
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
+        """
         return cls.available_flash_pairs()
 
     @staticmethod
@@ -1824,12 +2437,22 @@ class IdealGas(PropertyIntrospectionMixin):
 
     @staticmethod
     def mole_to_mass(species_ids: List[str], mole_fractions: List[float]):
+        """Convert composition fractions between mole and mass bases.
+
+        The input fractions must be finite and nonnegative.  ThermoProp normalizes the
+        result to sum to one and uses backend molecular weights for the supplied species
+        or fluids.  The returned list preserves the input species order."""
         x = IdealGas._validate_fractions(mole_fractions, "Mole fractions")
         M = np.array([IdealGas._molar_mass_of(sid) for sid in species_ids])
         return x * M / np.dot(x, M)
 
     @staticmethod
     def mass_to_mole(species_ids: List[str], mass_fractions: List[float]):
+        """Convert composition fractions between mole and mass bases.
+
+        The input fractions must be finite and nonnegative.  ThermoProp normalizes the
+        result to sum to one and uses backend molecular weights for the supplied species
+        or fluids.  The returned list preserves the input species order."""
         w = IdealGas._validate_fractions(mass_fractions, "Mass fractions")
         M = np.array([IdealGas._molar_mass_of(sid) for sid in species_ids])
         inv = w / M

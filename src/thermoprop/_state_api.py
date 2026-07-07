@@ -23,12 +23,23 @@ UNSET = _UnsetType()
 
 
 def is_provided(value: Any) -> bool:
-    """Return ``True`` when an update argument was explicitly provided."""
+    """Return a boolean capability or classification check.
+
+    The check uses ThermoProp's normal name canonicalization and backend lookup
+    rules, but converts lookup failures into ``False`` when appropriate.  This makes
+    it safe to use in validation code before calling stricter property methods.
+    """
 
     return value is not UNSET
 
 
 def provided_items(values: Mapping[str, Any]) -> dict[str, Any]:
-    """Return only entries whose value is not :data:`UNSET`."""
+    """Execute the documented ``provided_items`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
 
     return {key: value for key, value in values.items() if is_provided(value)}

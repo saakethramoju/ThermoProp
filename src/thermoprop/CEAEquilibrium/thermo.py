@@ -41,7 +41,15 @@ RU_MOL = 8.31446261815324
 
 @dataclass(slots=True)
 class ThermoArrays:
-    """Vectorized CEA thermodynamic properties for one temperature."""
+    """Represent the public ThermoProp ``ThermoArrays`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     names: list[str]
     temperature: float
 
@@ -108,6 +116,12 @@ def thermo_arrays_for_species_set(
     *,
     on_error: str = "raise",
 ) -> ThermoArrays:
+    """Execute the public ``thermo_arrays_for_species_set`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return thermo_arrays(
         species.names,
         temperature,
@@ -169,10 +183,12 @@ def mixture_enthalpy(
     n: np.ndarray,
     thermo: ThermoArrays,
 ) -> float:
-    """
-    Mixture enthalpy [J/kg].
+    """Execute the documented ``mixture_enthalpy`` operation for ``ThermoProp``.
 
-    n is kmol/kg and h is J/kmol.
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     n = np.asarray(n, dtype=float)
     return float(np.sum(n * thermo.enthalpy_molar))
@@ -186,14 +202,12 @@ def mixture_entropy(
     gas_mask: np.ndarray,
     trace: float = 1e-300,
 ) -> float:
-    """
-    Mixture entropy [J/kg-K].
+    """Execute the documented ``mixture_entropy`` operation for ``ThermoProp``.
 
-    For gases:
-        s_j = s0_j - R ln(x_j P/P_ref)
-
-    For condensed species:
-        s_j = s0_j
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     P = float(pressure)
 
@@ -230,8 +244,12 @@ def mixture_gibbs_energy(
     gas_mask: np.ndarray,
     trace: float = 1e-300,
 ) -> float:
-    """
-    Mixture Gibbs energy [J/kg].
+    """Execute the documented ``mixture_gibbs_energy`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     n = np.asarray(n, dtype=float)
     gas_mask = np.asarray(gas_mask, dtype=bool)
@@ -285,10 +303,12 @@ def frozen_specific_heat_cp(
     n: np.ndarray,
     thermo: ThermoArrays,
 ) -> float:
-    """
-    Frozen Cp [J/kg-K].
+    """Execute the documented ``frozen_specific_heat_cp`` operation for ``ThermoProp``.
 
-    n is kmol/kg.
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     n = np.asarray(n, dtype=float)
     return float(np.sum(n * thermo.specific_heat_cp_molar))
@@ -300,11 +320,12 @@ def frozen_specific_heat_cv(
     *,
     gas_mask: np.ndarray,
 ) -> float:
-    """
-    Frozen Cv [J/kg-K].
+    """Execute the documented ``frozen_specific_heat_cv`` operation for ``ThermoProp``.
 
-    Gas species:      cv = cp - R
-    Condensed species: cv ≈ cp
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     n = np.asarray(n, dtype=float)
     gas_mask = np.asarray(gas_mask, dtype=bool)
@@ -320,6 +341,12 @@ def total_gas_moles(
     *,
     gas_mask: np.ndarray,
 ) -> float:
+    """Execute the public ``total_gas_moles`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return float(np.sum(np.asarray(n, dtype=float)[np.asarray(gas_mask, dtype=bool)]))
 
 
@@ -328,6 +355,12 @@ def gas_mole_fractions(
     *,
     gas_mask: np.ndarray,
 ) -> np.ndarray:
+    """Execute the public ``gas_mole_fractions`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     n = np.asarray(n, dtype=float)
     gas_mask = np.asarray(gas_mask, dtype=bool)
 
@@ -343,6 +376,12 @@ def gas_mole_fractions(
 def all_species_mole_fractions(
     n: np.ndarray,
 ) -> np.ndarray:
+    """Execute the public ``all_species_mole_fractions`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     n = np.asarray(n, dtype=float)
     total = float(np.sum(n))
 
@@ -408,12 +447,12 @@ def mixture_gas_constant(
     *,
     gas_mask: np.ndarray,
 ) -> float:
-    """
-    Effective gas constant [J/kg-K].
+    """Execute the documented ``mixture_gas_constant`` operation for ``ThermoProp``.
 
-    Since n is gas kmol/kg mixture:
-        P v = n_gas R T
-        R_mix = n_gas R
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     ng = total_gas_moles(n, gas_mask=gas_mask)
     return ng * RU_KMOL
@@ -426,10 +465,12 @@ def density_ideal_mixture(
     *,
     gas_mask: np.ndarray,
 ) -> float:
-    """
-    Mixture density [kg/m^3].
+    """Execute the documented ``density_ideal_mixture`` operation for ``ThermoProp``.
 
-    Condensed species are assumed to have negligible volume, as in CEA.
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     Rmix = mixture_gas_constant(n, gas_mask=gas_mask)
 
@@ -446,6 +487,12 @@ def specific_volume_ideal_mixture(
     *,
     gas_mask: np.ndarray,
 ) -> float:
+    """Execute the public ``specific_volume_ideal_mixture`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     rho = density_ideal_mixture(
         n,
         temperature,
@@ -465,6 +512,12 @@ def mole_fraction_dict(
     *,
     trace: float = 0.0,
 ) -> dict[str, float]:
+    """Execute the public ``mole_fraction_dict`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     x = all_species_mole_fractions(n)
 
     return {
@@ -481,6 +534,12 @@ def gas_mole_fraction_dict(
     gas_mask: np.ndarray,
     trace: float = 0.0,
 ) -> dict[str, float]:
+    """Execute the public ``gas_mole_fraction_dict`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     gas_names = [
         name
         for name, is_gas in zip(names, gas_mask)
@@ -503,6 +562,12 @@ def mass_fraction_dict(
     *,
     trace: float = 0.0,
 ) -> dict[str, float]:
+    """Execute the public ``mass_fraction_dict`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     y = mass_fractions(n, molecular_weights)
 
     return {

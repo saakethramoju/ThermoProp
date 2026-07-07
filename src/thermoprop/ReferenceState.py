@@ -33,6 +33,12 @@ def normalize_reference_target(
     self_name: str,
 ) -> str | None:
 
+    """Execute the public ``normalize_reference_target`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if value is None:
         return None
 

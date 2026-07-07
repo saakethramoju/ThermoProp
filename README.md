@@ -36,9 +36,43 @@ pip install thermoprop
 
 ThermoProp requires Python 3.11 or newer.
 
+Because ThermoProp combines compiled and scientific Python dependencies, install it into a clean virtual environment when possible:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install thermoprop
+```
+
+## Repository status for 2.0.0
+
+ThermoProp 2.0.0 is prepared as a documentation-first public release. The package does not yet have a separate formal documentation site generated from the source tree, so the repository documents are intentionally detailed:
+
+* `README.md` is the primary user guide. It covers installation, wrapper selection, quick starts, detailed wrapper examples, units, reference states, limitations, data provenance, and discovery helpers.
+* `CHANGELOG.md` records release-level behavior changes and explicitly calls out documentation, packaging, and solver notes.
+* `THIRD_PARTY_LICENSES.md` explains dependency and included-data provenance.
+* `PUBLISHING.md` records the 2.0.0 build, inspection, smoke-test, and upload checklist.
+* Public classes, methods, properties, and helper functions include docstrings so `help(thermoprop.Fluid)`, IDE inspection, and generated API documentation are useful immediately.
+
+## 2.0.0 release focus
+
+ThermoProp 2.0.0 formalizes the public package surface for publishing. It keeps the main wrapper model simple while making the README and in-code API documentation detailed enough to serve as the first public documentation set. The major user-facing classes are:
+
+* `Fluid` for CoolProp-backed real fluids and CoolProp mixtures.
+* `IdealGas` for PYroMat-backed ideal gases with ThermoProp transport support.
+* `Propellant` for RocketProps and CEA-backed propellant states.
+* `CombustionGas` for fixed-composition CEA gas mixtures.
+* `Reactants` for CEA-style fuel/oxidizer mixtures.
+* `Equilibrium` for TP, HP, and SP chemical-equilibrium solves.
+* `Material` for temperature-dependent isotropic engineering material properties.
+* `CEA`, `SpeciesDatabase`, and `MaterialDatabase` for direct data discovery and advanced workflows.
+
+The 2.0.0 release does not intentionally change the equilibrium solver equations, CEA thermodynamic data evaluation, CEA transport formulas, CoolProp/PYroMat/RocketProps backend behavior, or material interpolation behavior relative to the current package implementation.
+
 ## 1.0.2 release focus
 
-ThermoProp 1.0.2 adds a consistent mutable-state API for iterative solvers such as transient and steady-state network models. Public wrappers now support batched `update()` calls while preserving the existing simple property setters.
+ThermoProp 1.0.2 added a consistent mutable-state API for iterative solvers such as transient and steady-state network models. Public wrappers support batched `update()` calls while preserving the existing simple property setters.
 
 Example:
 

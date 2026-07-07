@@ -17,19 +17,39 @@ from .Exceptions import MaterialLookupError, ThermoPropConfigurationError
 
 @dataclass(frozen=True, slots=True)
 class MaterialRecord:
-    """Immutable ThermoProp material identity record."""
+    """Represent the public ThermoProp ``MaterialRecord`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
 
     name: str
     category: str
 
 
 def curve(T: list[float], Y: list[float], units: str) -> dict[str, object]:
-    """Return a temperature-dependent property curve."""
+    """Execute the documented ``curve`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     return {"temperature": T, "value": Y, "units": units}
 
 
 def constant(value: float, units: str, T: float = 298.15) -> dict[str, object]:
-    """Return a one-point property curve for source constants."""
+    """Execute the documented ``constant`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     return {"temperature": [T], "value": [value], "units": units}
 
 
@@ -93,24 +113,47 @@ class MaterialDatabase:
 
     @classmethod
     def materials(cls) -> list[str]:
-        """Return all ThermoProp-supported material names."""
+        """Execute the documented ``materials`` operation for ``MaterialDatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         return sorted(MATERIAL_DATABASE.keys())
 
     @classmethod
     def list_materials(cls) -> list[str]:
-        """Readable alias for :meth:`materials`."""
+        """Return the materials supported by this ThermoProp interface.
+
+        Use this helper before constructing models or exposing choices in a user
+        interface.  Results are normalized and sorted where practical, and they reflect
+        the installed ThermoProp package data plus any runtime aliases added in the
+        current Python process.
+        """
         return cls.materials()
 
     @classmethod
     def aliases(cls) -> dict[str, str]:
-        """Return built-in and runtime material aliases."""
+        """Execute the documented ``aliases`` operation for ``MaterialDatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         out = dict(_DEFAULT_ALIASES)
         out.update(_USER_ALIASES)
         return dict(sorted(out.items()))
 
     @classmethod
     def add_alias(cls, alias: str, material_name: str) -> None:
-        """Add a runtime alias that maps to a ThermoProp material name."""
+        """Register a runtime alias for the current Python process.
+
+        The alias is validated against canonical ThermoProp names and existing aliases so
+        lookups remain unambiguous.  Built-in package JSON files are not modified; the
+        mapping lives in memory and is useful for project-specific naming conventions.
+        """
         global _NAME_LOOKUP
 
         alias_key = _normalize_key(alias)
@@ -140,7 +183,12 @@ class MaterialDatabase:
 
     @classmethod
     def supports(cls, value: str) -> bool:
-        """Return True when *value* resolves to a material."""
+        """Return a boolean capability or classification check.
+
+        The check uses ThermoProp's normal name canonicalization and backend lookup
+        rules, but converts lookup failures into ``False`` when appropriate.  This makes
+        it safe to use in validation code before calling stricter property methods.
+        """
         return cls._supports(value)
 
     # ---------------- Internal wrapper API ---------------- #

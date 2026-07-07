@@ -14,7 +14,15 @@ _ROOT = Path(__file__).resolve().parent
 
 @dataclass(frozen=True)
 class CEASpecies:
-    """Immutable metadata summary for one strict CEA species."""
+    """Represent the public ThermoProp ``CEASpecies`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     name: str
     index: int
     molar_mass: float
@@ -84,6 +92,12 @@ class CEADatabase:
     _RU_KMOL = 8314.46261815324
 
     def __init__(self, data_dir: str | Path | None = None):
+        """Load the packaged NASA CEA/CEAM thermodynamic and transport database.
+
+        ``data_dir`` may point at an alternate directory containing ThermoProp-compatible ``thermo_ceam.npz``, ``thermo_name_index.json``, ``trans_ceam.npz``, and ``trans_name_index.json`` files.  When omitted, the packaged database under ``thermoprop/cea_data`` is used.  The constructor validates that required thermodynamic data exist and loads optional transport data when present.
+
+        Most users access the package-level ``thermoprop.CEA`` instance.  Constructing a separate database is useful for tests, custom packaged datasets, or advanced tools that need isolated data directories.
+        """
         if data_dir is None:
             data_dir = _ROOT / "cea_data"
 
@@ -150,7 +164,14 @@ class CEADatabase:
 
     @property
     def names(self) -> list[str]:
-        """Return every strict CEA database name."""
+        """Return the all database names for this ``CEADatabase`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         if self._names_cache is None:
             self._names_cache = sorted(self._thermo_index.keys())
 
@@ -158,12 +179,26 @@ class CEADatabase:
 
     @property
     def species_names(self) -> list[str]:
-        """Alias-free list of every parsed CEA name."""
+        """Return the CEA species names for this ``CEADatabase`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.names
 
     @property
     def transport_names(self) -> list[str]:
-        """Return every strict CEA name with transport data."""
+        """Return the CEA transport species names for this ``CEADatabase`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         if self._transport_names_cache is None:
             self._transport_names_cache = sorted(self._transport_index.keys())
 
@@ -171,7 +206,14 @@ class CEADatabase:
 
     @property
     def product_names(self) -> list[str]:
-        """Return species with NASA polynomial thermo data."""
+        """Return the CEA product species names for this ``CEADatabase`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         if self._product_names_cache is None:
             self._product_names_cache = sorted(
                 name for name in self.names if self.has_thermo(name)
@@ -181,7 +223,14 @@ class CEADatabase:
 
     @property
     def reactant_names(self) -> list[str]:
-        """Return predefined CEA reactant cards."""
+        """Return the predefined CEA reactant names for this ``CEADatabase`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         if self._reactant_names_cache is None:
             self._reactant_names_cache = sorted(
                 name for name in self.names if self.is_reactant(name)
@@ -191,10 +240,24 @@ class CEADatabase:
 
     @property
     def product_species(self) -> list[str]:
+        """Return the all product species represented in the current equilibrium result for this ``CEADatabase`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self.product_names
 
     @property
     def gas_species(self) -> list[str]:
+        """Return the gas product species in the current equilibrium result for this ``CEADatabase`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         if self._gas_species_cache is None:
             self._gas_species_cache = sorted(
                 name for name in self.product_names if self.is_gas(name)
@@ -204,6 +267,13 @@ class CEADatabase:
 
     @property
     def condensed_species(self) -> list[str]:
+        """Return the condensed product species in the current equilibrium result for this ``CEADatabase`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         if self._condensed_species_cache is None:
             self._condensed_species_cache = sorted(
                 name for name in self.names
@@ -214,10 +284,24 @@ class CEADatabase:
 
     @property
     def predefined_reactants(self) -> list[str]:
+        """Return the predefined CEA reactant records for this ``CEADatabase`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self.reactant_names
 
     @property
     def all_elements(self) -> set[str]:
+        """Return the chemical elements present in the CEA database for this ``CEADatabase`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         if self._all_elements_cache is None:
             elements: set[str] = set()
 
@@ -229,10 +313,12 @@ class CEADatabase:
         return set(self._all_elements_cache)
 
     def find_species(self, text: str, *, case_sensitive: bool = False) -> list[str]:
-        """
-        Search available CEA names by substring.
+        """Execute the documented ``find_species`` operation for ``CEADatabase``.
 
-        This does not resolve aliases. It only helps inspect strict database names.
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
         """
         query = str(text)
 
@@ -243,6 +329,11 @@ class CEADatabase:
         return sorted(name for name in self.names if query in name.lower())
 
     def find_transport_species(self, text: str, *, case_sensitive: bool = False) -> list[str]:
+        """Search the CEA database for names containing the requested text.
+
+        Matching is case-insensitive and uses ThermoProp's normalized CEA name handling.
+        The returned list is intended for interactive discovery before calling strict
+        species lookup methods."""
         query = str(text)
 
         if case_sensitive:
@@ -252,17 +343,39 @@ class CEADatabase:
         return sorted(name for name in self.transport_names if query in name.lower())
 
     def has_species(self, name: str) -> bool:
+        """Return ``True`` when the requested ThermoProp capability is available.
+
+        This method performs the same name normalization and alias handling used by the
+        main wrapper/database calls, but converts lookup failures into ``False`` so it is
+        safe to use in validation logic and user interfaces."""
         return str(name).strip() in self._thermo_index
 
     def has_transport(self, name: str) -> bool:
+        """Return ``True`` when the requested ThermoProp capability is available.
+
+        This method performs the same name normalization and alias handling used by the
+        main wrapper/database calls, but converts lookup failures into ``False`` so it is
+        safe to use in validation logic and user interfaces."""
         name = self.resolve_name(name)
         return name in self._transport_index
 
     def index(self, name: str) -> int:
+        """Execute the public ``index`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         name = self.resolve_name(name)
         return int(self._thermo_index[name])
 
     def transport_index(self, name: str) -> int:
+        """Execute the public ``transport_index`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         raw = str(name).strip()
 
         if raw in self._transport_index:
@@ -276,12 +389,27 @@ class CEADatabase:
             raise TransportDataError(f"CEA transport data are not available for {name!r}")
 
     def raw(self, key: str, name: str) -> Any:
+        """Return a structured representation of the requested ThermoProp data.
+
+        The result is intended for inspection, reporting, testing, and advanced users who
+        need direct access to database-backed values.  Names are resolved through the
+        same canonicalization and alias rules used by the high-level wrappers."""
         return self._thermo[key][self.index(name)]
 
     def raw_by_index(self, key: str, index: int) -> Any:
+        """Return a structured representation of the requested ThermoProp data.
+
+        The result is intended for inspection, reporting, testing, and advanced users who
+        need direct access to database-backed values.  Names are resolved through the
+        same canonicalization and alias rules used by the high-level wrappers."""
         return self._thermo[key][int(index)]
 
     def species(self, name: str) -> CEASpecies:
+        """Return a structured representation of the requested ThermoProp data.
+
+        The result is intended for inspection, reporting, testing, and advanced users who
+        need direct access to database-backed values.  Names are resolved through the
+        same canonicalization and alias rules used by the high-level wrappers."""
         name = self.resolve_name(name)
         idx = self.index(name)
 
@@ -300,6 +428,11 @@ class CEADatabase:
         )
 
     def describe(self, name: str) -> dict[str, Any]:
+        """Return a structured representation of the requested ThermoProp data.
+
+        The result is intended for inspection, reporting, testing, and advanced users who
+        need direct access to database-backed values.  Names are resolved through the
+        same canonicalization and alias rules used by the high-level wrappers."""
         s = self.species(name)
 
         return {
@@ -317,16 +450,40 @@ class CEADatabase:
         }
 
     def molar_mass(self, name: str) -> float:
+        """Execute the public ``molar_mass`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return float(self.raw("mw", name)) / 1000.0
 
     def molecular_weight(self, name: str) -> float:
+        """Execute the public ``molecular_weight`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return float(self.raw("mw", name))
 
     def heat_of_formation_molar(self, name: str) -> float | None:
+        """Execute the public ``heat_of_formation_molar`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         value = float(self.raw("hf298", name))
         return value if np.isfinite(value) else None
 
     def elemental_composition(self, name: str) -> dict[str, float]:
+        """Execute the public ``elemental_composition`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         symbols = self.raw("element_symbols", name)
         counts = self.raw("element_counts", name)
 
@@ -343,9 +500,20 @@ class CEADatabase:
         return out
 
     def n_intervals(self, name: str) -> int:
+        """Execute the public ``n_intervals`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return int(self.raw("n_intervals", name))
 
     def has_thermo(self, name: str) -> bool:
+        """Return ``True`` when the requested ThermoProp capability is available.
+
+        This method performs the same name normalization and alias handling used by the
+        main wrapper/database calls, but converts lookup failures into ``False`` so it is
+        safe to use in validation logic and user interfaces."""
         idx = self.index(name)
         n = int(self._thermo["n_intervals"][idx])
 
@@ -356,6 +524,11 @@ class CEADatabase:
         return not bool(np.isnan(coeffs).all())
 
     def is_reactant(self, name: str) -> bool:
+        """Return ``True`` when the requested ThermoProp capability is available.
+
+        This method performs the same name normalization and alias handling used by the
+        main wrapper/database calls, but converts lookup failures into ``False`` so it is
+        safe to use in validation logic and user interfaces."""
         name = self.resolve_name(name)
 
         comment = self.reactant_comment(name).lower()
@@ -366,6 +539,12 @@ class CEADatabase:
         return not self.has_thermo(name)
             
     def reactant_comment(self, name: str) -> str:
+        """Execute the public ``reactant_comment`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         idx = self.index(name)
         return str(self._thermo["comments"][idx]).strip()
 
@@ -401,27 +580,60 @@ class CEADatabase:
         return label in known_labels
 
     def phase_label(self, name: str) -> str | None:
+        """Execute the public ``phase_label`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         name = self.resolve_name(name)
         return self._phase_label_from_name(name)
         
     def is_condensed_phase_name(self, name: str) -> bool:
+        """Return ``True`` when the requested ThermoProp capability is available.
+
+        This method performs the same name normalization and alias handling used by the
+        main wrapper/database calls, but converts lookup failures into ``False`` so it is
+        safe to use in validation logic and user interfaces."""
         name = self.resolve_name(name)
         return self._is_condensed_phase_label(
             self.phase_label(name)
         )
 
     def is_condensed(self, name: str) -> bool:
+        """Return ``True`` when the requested ThermoProp capability is available.
+
+        This method performs the same name normalization and alias handling used by the
+        main wrapper/database calls, but converts lookup failures into ``False`` so it is
+        safe to use in validation logic and user interfaces."""
         name = self.resolve_name(name)
         return self.is_condensed_phase_name(name)
 
     def is_gas(self, name: str) -> bool:
+        """Return ``True`` when the requested ThermoProp capability is available.
+
+        This method performs the same name normalization and alias handling used by the
+        main wrapper/database calls, but converts lookup failures into ``False`` so it is
+        safe to use in validation logic and user interfaces."""
         name = self.resolve_name(name)
         return not self.is_condensed(name)
 
     def element_set(self, name: str) -> set[str]:
+        """Execute the public ``element_set`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return set(self.elemental_composition(name).keys())
 
     def temperature_ranges(self, name: str) -> list[tuple[float, float]]:
+        """Execute the public ``temperature_ranges`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         idx = self.index(name)
         n = int(self._thermo["n_intervals"][idx])
 
@@ -437,6 +649,12 @@ class CEADatabase:
         ]
 
     def temperature_limits(self, names: str | list[str] | tuple[str, ...]) -> tuple[float, float]:
+        """Execute the public ``temperature_limits`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         if isinstance(names, str):
             names = [names]
 
@@ -461,6 +679,12 @@ class CEADatabase:
         *,
         extrapolation_margin: float = 50.0,
     ) -> int:
+        """Execute the public ``interval_index`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         name = self.resolve_name(name)
         idx = self.index(name)
         n = int(self._thermo["n_intervals"][idx])
@@ -502,6 +726,12 @@ class CEADatabase:
 
 
     def nasa9_coefficients(self, name: str, temperature: float) -> np.ndarray:
+        """Execute the public ``nasa9_coefficients`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         name = self.resolve_name(name)
 
         if not self.has_thermo(name):
@@ -515,6 +745,12 @@ class CEADatabase:
         return np.asarray(self._thermo["coeffs"][idx, j], dtype=float)
 
     def thermo_molar(self, name: str, temperature: float) -> tuple[float, float, float]:
+        """Execute the public ``thermo_molar`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         T = float(temperature)
         coeffs = self.nasa9_coefficients(name, T)
 
@@ -568,26 +804,68 @@ class CEADatabase:
         return float(cp), float(h), float(s0)
 
     def cp_molar(self, name: str, temperature: float) -> float:
+        """Execute the public ``cp_molar`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return self.thermo_molar(name, temperature)[0]
 
     def enthalpy_molar(self, name: str, temperature: float) -> float:
+        """Execute the public ``enthalpy_molar`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return self.thermo_molar(name, temperature)[1]
 
     def entropy_molar_standard(self, name: str, temperature: float) -> float:
+        """Execute the public ``entropy_molar_standard`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return self.thermo_molar(name, temperature)[2]
 
     def thermo_mass(self, name: str, temperature: float) -> tuple[float, float, float]:
+        """Execute the public ``thermo_mass`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         mw = self.molecular_weight(name)
         cp, h, s0 = self.thermo_molar(name, temperature)
         return cp / mw, h / mw, s0 / mw
 
     def cp_mass(self, name: str, temperature: float) -> float:
+        """Execute the public ``cp_mass`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return self.thermo_mass(name, temperature)[0]
 
     def enthalpy_mass(self, name: str, temperature: float) -> float:
+        """Execute the public ``enthalpy_mass`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return self.thermo_mass(name, temperature)[1]
 
     def entropy_mass_standard(self, name: str, temperature: float) -> float:
+        """Execute the public ``entropy_mass_standard`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         return self.thermo_mass(name, temperature)[2]
 
     def _require_transport_loaded(self) -> None:
@@ -599,6 +877,12 @@ class CEADatabase:
         
 
     def transport_key(self, name1: str, name2: str) -> str:
+        """Execute the public ``transport_key`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         name1 = self.resolve_name(name1)
         name2 = self.resolve_name(name2)
 
@@ -617,6 +901,11 @@ class CEADatabase:
         )
 
     def has_binary_transport(self, name1: str, name2: str) -> bool:
+        """Return ``True`` when the requested ThermoProp capability is available.
+
+        This method performs the same name normalization and alias handling used by the
+        main wrapper/database calls, but converts lookup failures into ``False`` so it is
+        safe to use in validation logic and user interfaces."""
         try:
             self.transport_key(name1, name2)
             return True
@@ -629,6 +918,12 @@ class CEADatabase:
         name2: str,
         temperature: float,
     ) -> float:
+        """Execute the public ``binary_transport_fit`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         key = self.transport_key(name1, name2)
         return self.transport_fit(key, temperature, "viscosity")
 
@@ -657,6 +952,12 @@ class CEADatabase:
         name: str,
         kind: str,
     ) -> list[tuple[float, float]]:
+        """Execute the public ``transport_temperature_ranges`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         self._require_transport_loaded()
 
         raw = str(name).strip()
@@ -686,6 +987,12 @@ class CEADatabase:
         *,
         extrapolation_margin: float = 50.0,
     ) -> int:
+        """Execute the public ``transport_interval_index`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         ranges = self.transport_temperature_ranges(name, kind)
 
         T = float(temperature)
@@ -711,6 +1018,12 @@ class CEADatabase:
     
     
     def transport_fit(self, name: str, temperature: float, kind: str) -> float:
+        """Execute the public ``transport_fit`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         self._require_transport_loaded()
 
         tidx = self.transport_index(name)
@@ -728,10 +1041,22 @@ class CEADatabase:
         return float(np.exp(A * np.log(T) + B / T + C / T**2 + D))
 
     def viscosity(self, name: str, temperature: float) -> float:
+        """Execute the public ``viscosity`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         mu_micro_poise = self.transport_fit(name, temperature, "viscosity")
         return mu_micro_poise * 1e-7
 
     def conductivity(self, name: str, temperature: float) -> float:
+        """Execute the public ``conductivity`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         k_micro_w_cm_k = self.transport_fit(name, temperature, "conductivity")
         return k_micro_w_cm_k * 1e-4
 
@@ -757,6 +1082,11 @@ class CEADatabase:
         species_names: list[str],
         mole_fractions: list[float] | np.ndarray,
     ) -> np.ndarray:
+        """Convert composition fractions between mole and mass bases.
+
+        The input fractions must be finite and nonnegative.  ThermoProp normalizes the
+        result to sum to one and uses backend molecular weights for the supplied species
+        or fluids.  The returned list preserves the input species order."""
         species_names = [self.resolve_name(name) for name in species_names]
         x = self._validate_fraction_vector(mole_fractions, "Mole fractions")
 
@@ -772,6 +1102,11 @@ class CEADatabase:
         species_names: list[str],
         mass_fractions: list[float] | np.ndarray,
     ) -> np.ndarray:
+        """Convert composition fractions between mole and mass bases.
+
+        The input fractions must be finite and nonnegative.  ThermoProp normalizes the
+        result to sum to one and uses backend molecular weights for the supplied species
+        or fluids.  The returned list preserves the input species order."""
         species_names = [self.resolve_name(name) for name in species_names]
         w = self._validate_fraction_vector(mass_fractions, "Mass fractions")
 
@@ -788,6 +1123,12 @@ class CEADatabase:
         species_names: list[str],
         mole_fractions: list[float] | np.ndarray,
     ) -> float:
+        """Execute the public ``mixture_molar_mass`` operation for ``CEADatabase``.
+
+        This method is part of the importable ThermoProp API rather than an internal
+        helper.  Arguments are validated and normalized before use, return values follow
+        ThermoProp's SI-unit and composition conventions, and lookup or state failures
+        are reported through ThermoProp exception types with contextual messages."""
         species_names = [self.resolve_name(name) for name in species_names]
         x = self._validate_fraction_vector(mole_fractions, "Mole fractions")
 
@@ -806,12 +1147,24 @@ class CEADatabase:
         return resolved, indices
 
     def molecular_weight_array(self, names: list[str] | tuple[str, ...]) -> np.ndarray:
-        """Return molecular weights for many CEA species [kg/kmol]."""
+        """Execute the documented ``molecular_weight_array`` operation for ``CEADatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         _, indices = self._indices_for_names(names)
         return np.asarray(self._thermo["mw"][indices], dtype=float)
 
     def molar_mass_array(self, names: list[str] | tuple[str, ...]) -> np.ndarray:
-        """Return molar masses for many CEA species [kg/mol]."""
+        """Execute the documented ``molar_mass_array`` operation for ``CEADatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         return self.molecular_weight_array(names) / 1000.0
 
     def _interval_indices_for_indices(
@@ -964,7 +1317,13 @@ class CEADatabase:
         *,
         on_error: str = "raise",
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Vectorized Cp, h, and s0 on a mass basis [J/kg, J/kg-K]."""
+        """Execute the documented ``thermo_mass_array`` operation for ``CEADatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         cp, h, s0, valid = self.thermo_molar_array(names, temperature, on_error=on_error)
         mw = self.molecular_weight_array(tuple(names))
         return cp / mw, h / mw, s0 / mw, valid
@@ -1021,7 +1380,13 @@ class CEADatabase:
         *,
         on_error: str = "raise",
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Vectorized CEA transport fit evaluation for many species or pairs."""
+        """Execute the documented ``transport_fit_array`` operation for ``CEADatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         self._require_transport_loaded()
         if on_error not in {"raise", "nan"}:
             raise ValueError("on_error must be 'raise' or 'nan'.")
@@ -1076,7 +1441,13 @@ class CEADatabase:
         *,
         on_error: str = "raise",
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Vectorized pure-species viscosities [Pa-s]."""
+        """Execute the documented ``viscosity_array`` operation for ``CEADatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         values, valid = self.transport_fit_array(
             names,
             temperature,
@@ -1092,7 +1463,13 @@ class CEADatabase:
         *,
         on_error: str = "raise",
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Vectorized pure-species frozen thermal conductivities [W/m-K]."""
+        """Execute the documented ``conductivity_array`` operation for ``CEADatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         values, valid = self.transport_fit_array(
             names,
             temperature,
@@ -1109,7 +1486,13 @@ class CEADatabase:
         pure_viscosities: np.ndarray | None = None,
         molecular_weights: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Return CEA eta_ij binary interaction matrix [Pa-s]."""
+        """Execute the documented ``binary_viscosity_interaction_matrix`` operation for ``CEADatabase``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         names = [self.resolve_name(name) for name in names]
         ns = len(names)
         if pure_viscosities is None:
@@ -1156,34 +1539,69 @@ class CEADatabase:
         return eta
 
     def show_species(self) -> list[str]:
+        """Print and return the available species.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         for name in self.names:
             print(name)
         return self.names
 
     def show_products(self) -> list[str]:
+        """Print and return the available products.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         for name in self.product_names:
             print(name)
         return self.product_names
 
     def show_product_species(self) -> list[str]:
+        """Print and return the available product species.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         return self.show_products()
 
     def show_gas_species(self) -> list[str]:
+        """Print and return the available gas species.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         for name in self.gas_species:
             print(name)
         return self.gas_species
 
     def show_condensed_species(self) -> list[str]:
+        """Print and return the available condensed species.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         for name in self.condensed_species:
             print(name)
         return self.condensed_species
 
     def show_reactants(self) -> list[str]:
+        """Print and return the available reactants.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         for name in self.reactant_names:
             print(name)
         return self.reactant_names
 
     def show_transport_species(self) -> list[str]:
+        """Print and return the available transport species.
+
+        The printed output is a convenience for interactive sessions and examples.  The
+        returned Python object contains the same information in a form suitable for
+        programmatic filtering, validation, or documentation generation."""
         for name in self.transport_names:
             print(name)
         return self.transport_names

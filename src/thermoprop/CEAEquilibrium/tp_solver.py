@@ -32,7 +32,15 @@ from .matrix import (
 
 @dataclass(slots=True)
 class TPSolverOptions:
-    """Numerical controls for fixed-temperature, fixed-pressure solves."""
+    """Represent the public ThermoProp ``TPSolverOptions`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     max_iterations: int = 80
     trace: float = 1e-300
     species_trace: float = 1e-12
@@ -47,7 +55,15 @@ class TPSolverOptions:
 
 @dataclass(slots=True)
 class TPSolverResult:
-    """Result bundle returned by the fixed-species TP solver."""
+    """Represent the public ThermoProp ``TPSolverResult`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     state: EquilibriumState
     success: bool
     message: str
@@ -297,6 +313,12 @@ def solve_tp_from_scratch(
     pressure: float,
     options: TPSolverOptions | None = None,
 ) -> TPSolverResult:
+    """Execute the public ``solve_tp_from_scratch`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if options is None:
         options = TPSolverOptions()
 

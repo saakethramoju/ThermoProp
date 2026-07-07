@@ -41,7 +41,15 @@ RU = 8.31446261815324
 
 @dataclass(slots=True)
 class TransportOptions:
-    """Options for CEA-style frozen/equilibrium transport evaluation."""
+    """Represent the public ThermoProp ``TransportOptions`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     trace: float = 1e-12
     max_species: int | None = None #50
     equilibrium_derivative_temperature_step: float = 1.0
@@ -50,7 +58,15 @@ class TransportOptions:
 
 @dataclass(slots=True)
 class TransportResult:
-    """Transport-property values returned by the equilibrium wrapper."""
+    """Represent the public ThermoProp ``TransportResult`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     cp_frozen: float | None
     viscosity_frozen: float | None
     conductivity_frozen: float | None
@@ -111,6 +127,12 @@ def make_combustion_gas_for_transport(
     *,
     options: TransportOptions | None = None,
 ) -> CombustionGas:
+    """Execute the public ``make_combustion_gas_for_transport`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if options is None:
         options = TransportOptions()
 
@@ -131,6 +153,12 @@ def make_combustion_gas_for_transport(
     )
 
 def gas_mass_fraction(state: EquilibriumState) -> float:
+    """Execute the public ``gas_mass_fraction`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     gas_mask = state.species.gas_mask
     n = state.n
     mw = state.species.molecular_weights * 1000.0  # kg/kmol
@@ -144,6 +172,12 @@ def gas_mass_fraction(state: EquilibriumState) -> float:
     return gas_mass / total_mass
 
 def gas_only_cp_frozen(state: EquilibriumState) -> float:
+    """Execute the public ``gas_only_cp_frozen`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     thermo = thermo_arrays_for_species_set(state.species, state.temperature)
     gas_mask = state.species.gas_mask
 
@@ -158,6 +192,12 @@ def gas_only_cp_reaction(
     *,
     options: TransportOptions | None = None,
 ) -> float:
+    """Execute the public ``gas_only_cp_reaction`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if options is None:
         options = TransportOptions()
 
@@ -299,7 +339,13 @@ def frozen_transport(
     *,
     options: TransportOptions | None = None,
 ) -> tuple[float | None, float | None, float | None]:
-    """Return frozen gas-mixture viscosity, conductivity, and Prandtl number."""
+    """Execute the documented ``frozen_transport`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
+    """
     if options is None:
         options = TransportOptions()
 
@@ -633,6 +679,12 @@ def build_transport_values(
     tp_neighbor_solver=None,
     options: TransportOptions | None = None,
 ) -> dict[str, float | None]:
+    """Execute the public ``build_transport_values`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     empty = {
         "cp_transport_frozen": None,
         "viscosity_frozen": None,

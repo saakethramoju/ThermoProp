@@ -50,7 +50,15 @@ Mode = Literal["tp", "hp", "sp"]
 
 @dataclass(slots=True)
 class CondensedOptions:
-    """Controls for CEA-style condensed-phase insertion/removal."""
+    """Represent the public ThermoProp ``CondensedOptions`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     enabled: bool = True
     max_outer_iterations: int = 30
 
@@ -66,7 +74,15 @@ class CondensedOptions:
 
 @dataclass(slots=True)
 class CondensedSolveResult:
-    """Outer-loop result for TP/HP solves with condensed phases."""
+    """Represent the public ThermoProp ``CondensedSolveResult`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     state: EquilibriumState
     success: bool
     message: str
@@ -190,6 +206,12 @@ def condensed_gibbs_test_values(
     element_potentials: np.ndarray | None = None,
 ) -> list[CondensedPhaseCandidate]:
 
+    """Execute the public ``condensed_gibbs_test_values`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     active_species = active_state.species
     T = active_state.temperature
 
@@ -274,6 +296,12 @@ def choose_condensed_species_to_insert(
     *,
     tolerance: float = -1e-8,
 ) -> CondensedPhaseCandidate | None:
+    """Execute the public ``choose_condensed_species_to_insert`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     for candidate in candidates:
         if candidate.gibbs_test_value < tolerance:
             return candidate
@@ -285,6 +313,12 @@ def condensed_species_to_remove(
     *,
     tolerance: float = 0.0,
 ) -> list[str]:
+    """Execute the public ``condensed_species_to_remove`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     condensed_idx = np.nonzero(state.species.condensed_mask)[0]
     remove: list[str] = []
 
@@ -301,6 +335,12 @@ def invalid_trace_species_to_remove(
     *,
     mole_tolerance: float = 1e-40,
 ) -> list[str]:
+    """Execute the public ``invalid_trace_species_to_remove`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     T = float(state.temperature)
     remove: list[str] = []
 
@@ -409,6 +449,12 @@ def solve_with_condensed_phases_tp(
     tp_options: TPSolverOptions | None = None,
     condensed_options: CondensedOptions | None = None,
 ) -> CondensedSolveResult:
+    """Execute the public ``solve_with_condensed_phases_tp`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if tp_options is None:
         tp_options = TPSolverOptions()
 
@@ -913,6 +959,12 @@ def solve_with_condensed_phases_hp(
     hp_options: HPSolverOptions | None = None,
     condensed_options: CondensedOptions | None = None,
 ) -> CondensedSolveResult:
+    """Execute the public ``solve_with_condensed_phases_hp`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if hp_options is None:
         hp_options = HPSolverOptions()
 
@@ -1677,6 +1729,12 @@ def solve_with_condensed_phases_sp_root(
     )
 
 def valid_condensed_phase_for_temperature(name: str, T: float) -> str | None:
+    """Execute the public ``valid_condensed_phase_for_temperature`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return _cea_preferred_condensed_phase(name, T)
 
 
@@ -1685,6 +1743,12 @@ def reconcile_condensed_phases(
     *,
     initial_new_moles: float = 1e-12,
 ) -> tuple[EquilibriumState, bool]:
+    """Execute the public ``reconcile_condensed_phases`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     T = float(state.temperature)
     species = state.species
     changed = False

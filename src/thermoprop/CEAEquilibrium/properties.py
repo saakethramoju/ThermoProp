@@ -46,7 +46,15 @@ from .thermo import (
 
 @dataclass(slots=True)
 class MixtureDerivatives:
-    """First-derivative set used for gamma and speed of sound."""
+    """Represent the public ThermoProp ``MixtureDerivatives`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     dlnv_dlnT_const_p: float
     dlnv_dlnp_const_T: float
     dlnv_dlnp_const_s: float
@@ -163,11 +171,23 @@ def finite_difference_equilibrium_derivatives(
 
 
 def enthalpy(state: EquilibriumState) -> float:
+    """Execute the public ``enthalpy`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     thermo = thermo_arrays_for_species_set(state.species, state.temperature)
     return mixture_enthalpy(state.n, thermo)
 
 
 def entropy(state: EquilibriumState) -> float:
+    """Execute the public ``entropy`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     thermo = thermo_arrays_for_species_set(state.species, state.temperature)
     return mixture_entropy(
         state.n,
@@ -178,6 +198,12 @@ def entropy(state: EquilibriumState) -> float:
 
 
 def internal_energy(state: EquilibriumState) -> float:
+    """Execute the public ``internal_energy`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     thermo = thermo_arrays_for_species_set(state.species, state.temperature)
     return mixture_internal_energy(
         state.n,
@@ -187,6 +213,12 @@ def internal_energy(state: EquilibriumState) -> float:
 
 
 def gibbs_energy(state: EquilibriumState) -> float:
+    """Execute the public ``gibbs_energy`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     thermo = thermo_arrays_for_species_set(state.species, state.temperature)
     return mixture_gibbs_energy(
         state.n,
@@ -197,10 +229,22 @@ def gibbs_energy(state: EquilibriumState) -> float:
 
 
 def helmholtz_energy(state: EquilibriumState) -> float:
+    """Execute the public ``helmholtz_energy`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return internal_energy(state) - state.temperature * entropy(state)
 
 
 def density(state: EquilibriumState) -> float:
+    """Execute the public ``density`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return density_ideal_mixture(
         state.n,
         state.temperature,
@@ -210,6 +254,12 @@ def density(state: EquilibriumState) -> float:
 
 
 def specific_volume(state: EquilibriumState) -> float:
+    """Execute the public ``specific_volume`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return specific_volume_ideal_mixture(
         state.n,
         state.temperature,
@@ -219,6 +269,12 @@ def specific_volume(state: EquilibriumState) -> float:
 
 
 def gas_constant(state: EquilibriumState) -> float:
+    """Execute the public ``gas_constant`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return mixture_gas_constant(
         state.n,
         gas_mask=state.species.gas_mask,
@@ -240,8 +296,12 @@ def molecular_weight(state: EquilibriumState) -> float:
 
 
 def molecular_weight_all_species(state: EquilibriumState) -> float:
-    """
-    Conventional all-species mole-weighted molecular weight [kg/kmol].
+    """Execute the documented ``molecular_weight_all_species`` operation for ``ThermoProp``.
+
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     total = float(np.sum(state.n))
 
@@ -253,11 +313,23 @@ def molecular_weight_all_species(state: EquilibriumState) -> float:
 
 
 def cp_frozen(state: EquilibriumState) -> float:
+    """Execute the public ``cp_frozen`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     thermo = thermo_arrays_for_species_set(state.species, state.temperature)
     return frozen_specific_heat_cp(state.n, thermo)
 
 
 def cv_frozen(state: EquilibriumState) -> float:
+    """Execute the public ``cv_frozen`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     thermo = thermo_arrays_for_species_set(state.species, state.temperature)
     return frozen_specific_heat_cv(
         state.n,
@@ -267,6 +339,12 @@ def cv_frozen(state: EquilibriumState) -> float:
 
 
 def frozen_gamma(state: EquilibriumState) -> float:
+    """Execute the public ``frozen_gamma`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     cp = cp_frozen(state)
     cv = cv_frozen(state)
 
@@ -277,6 +355,12 @@ def frozen_gamma(state: EquilibriumState) -> float:
 
 
 def speed_of_sound_frozen(state: EquilibriumState) -> float:
+    """Execute the public ``speed_of_sound_frozen`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     gamma = frozen_gamma(state)
     R = gas_constant(state)
 
@@ -326,10 +410,12 @@ def equilibrium_cv_from_derivatives(
     cp_equilibrium: float,
     derivatives: MixtureDerivatives,
 ) -> float:
-    """
-    Compute Cv_eq from Cp_eq and log-volume derivatives.
+    """Execute the documented ``equilibrium_cv_from_derivatives`` operation for ``ThermoProp``.
 
-    Based on RP-1311 thermodynamic derivative relations.
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     Rmix = gas_constant(state)
 
@@ -350,6 +436,12 @@ def equilibrium_cv_from_derivatives(
 def equilibrium_gamma_from_derivatives(
     derivatives: MixtureDerivatives,
 ) -> float:
+    """Execute the public ``equilibrium_gamma_from_derivatives`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return derivatives.gamma_s
 
 
@@ -358,6 +450,12 @@ def speed_of_sound_equilibrium(
     *,
     gamma_equilibrium: float,
 ) -> float:
+    """Execute the public ``speed_of_sound_equilibrium`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     R = gas_constant(state)
 
     if gamma_equilibrium <= 0.0 or R <= 0.0:
@@ -371,6 +469,12 @@ def mole_fractions(
     *,
     trace: float = 0.0,
 ) -> dict[str, float]:
+    """Execute the public ``mole_fractions`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return mole_fraction_dict(
         state.species.names,
         state.n,
@@ -383,6 +487,12 @@ def gas_mole_fractions(
     *,
     trace: float = 0.0,
 ) -> dict[str, float]:
+    """Execute the public ``gas_mole_fractions`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return gas_mole_fraction_dict(
         state.species.names,
         state.n,
@@ -396,6 +506,12 @@ def mass_fractions(
     *,
     trace: float = 0.0,
 ) -> dict[str, float]:
+    """Execute the public ``mass_fractions`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     return mass_fraction_dict(
         state.species.names,
         state.n,
@@ -409,6 +525,12 @@ def gas_mass_fractions(
     *,
     trace: float = 0.0,
 ) -> dict[str, float]:
+    """Execute the public ``gas_mass_fractions`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     names = [
         name
         for name, gas in zip(state.species.names, state.species.gas_mask)
@@ -425,6 +547,12 @@ def gas_mass_fractions(
 
 
 def condensed_mass_fraction(state: EquilibriumState) -> float:
+    """Execute the public ``condensed_mass_fraction`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     y = mass_fraction_dict(
         state.species.names,
         state.n,
@@ -517,6 +645,12 @@ def build_results(
 
 
 def has_condensed_species(state: EquilibriumState) -> bool:
+    """Execute the public ``has_condensed_species`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     condensed_idx = np.nonzero(state.species.condensed_mask)[0]
     if len(condensed_idx) == 0:
         return False

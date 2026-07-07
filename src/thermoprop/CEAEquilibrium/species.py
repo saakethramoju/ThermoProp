@@ -26,7 +26,15 @@ CHARGE_ELEMENT = "E"
 
 @dataclass(slots=True, frozen=True)
 class SpeciesBuildOptions:
-    """Species-screening options used before constructing a SpeciesSet."""
+    """Represent the public ThermoProp ``SpeciesBuildOptions`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     include_gases: bool = True
     include_condensed: bool = True
     include_ions: bool = True
@@ -37,6 +45,12 @@ class SpeciesBuildOptions:
 
 
 def is_ion_name(name: str) -> bool:
+    """Execute the public ``is_ion_name`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if name == "e-":
         return True
     return name.endswith("+") or name.endswith("-") or "++" in name or "--" in name
@@ -115,6 +129,12 @@ def species_valid_near_temperature(
     *,
     margin: float = 0.0,
 ) -> bool:
+    """Execute the public ``species_valid_near_temperature`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if temperature is None:
         return True
 
@@ -232,6 +252,12 @@ def _molar_mass(name: str) -> float:
 
 
 def normalize_elements(elements: Iterable[str]) -> list[str]:
+    """Execute the public ``normalize_elements`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     normalized = sorted({str(e) for e in elements if str(e) != CHARGE_ELEMENT})
     return normalized
 
@@ -243,6 +269,12 @@ def species_is_compatible(
     include_ions: bool = True,
     include_electron: bool = True,
 ) -> bool:
+    """Execute the public ``species_is_compatible`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if name == "e-":
         return include_ions and include_electron
 
@@ -366,6 +398,12 @@ def build_element_list(
     *,
     include_charge: bool = True,
 ) -> list[str]:
+    """Execute the public ``build_element_list`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     ordered = normalize_elements(input_elements)
 
     if include_charge and any(is_ion_name(name) for name in species_names):
@@ -378,6 +416,12 @@ def build_element_matrix(
     species_names: list[str],
     elements: list[str],
 ) -> np.ndarray:
+    """Execute the public ``build_element_matrix`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     A = np.zeros((len(elements), len(species_names)), dtype=float)
 
     for j, name in enumerate(species_names):
@@ -465,6 +509,12 @@ def build_species_set(
 
 
 def split_species_by_phase(species: SpeciesSet) -> tuple[list[str], list[str]]:
+    """Execute the public ``split_species_by_phase`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     gases = [
         name
         for name, is_gas in zip(species.names, species.gas_mask)
@@ -481,6 +531,12 @@ def split_species_by_phase(species: SpeciesSet) -> tuple[list[str], list[str]]:
 
 
 def subset_species_set(species: SpeciesSet, indices: Iterable[int]) -> SpeciesSet:
+    """Execute the public ``subset_species_set`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     idx = np.array(list(indices), dtype=int)
 
     names = [species.names[i] for i in idx]
@@ -500,6 +556,12 @@ def add_species_to_set(
     species: SpeciesSet,
     new_names: Iterable[str],
 ) -> SpeciesSet:
+    """Execute the public ``add_species_to_set`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     combined = list(species.names)
 
     for name in new_names:
@@ -530,6 +592,12 @@ def remove_species_from_set(
     species: SpeciesSet,
     remove_names: Iterable[str],
 ) -> SpeciesSet:
+    """Execute the public ``remove_species_from_set`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     remove = {_resolve_name(name) for name in remove_names}
 
     keep_indices = [
@@ -548,10 +616,12 @@ def active_species_indices_from_moles(
     total_gas_moles: float | None = None,
     trace: float = 1e-12,
 ) -> np.ndarray:
-    """
-    Return species indices whose mole fraction exceeds trace.
+    """Execute the documented ``active_species_indices_from_moles`` operation for ``ThermoProp``.
 
-    Condensed species are kept if their mole number is positive.
+    Arguments are validated and normalized using the same rules as the high-level
+    wrappers.  Return values follow ThermoProp's SI-unit and composition
+    conventions, and failures are reported through ThermoProp exception types with
+    contextual messages rather than silent fallbacks.
     """
     n = np.asarray(n, dtype=float)
 

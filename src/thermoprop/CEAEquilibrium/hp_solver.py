@@ -35,7 +35,15 @@ from .matrix import (
 
 @dataclass(slots=True)
 class HPSolverOptions:
-    """Numerical controls for fixed-enthalpy, fixed-pressure solves."""
+    """Represent the public ThermoProp ``HPSolverOptions`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     max_iterations: int = 120
     trace: float = 1e-300
     species_trace: float = 1e-12
@@ -55,7 +63,15 @@ class HPSolverOptions:
 
 @dataclass(slots=True)
 class HPSolverResult:
-    """Result bundle returned by the fixed-species HP solver."""
+    """Represent the public ThermoProp ``HPSolverResult`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
     state: EquilibriumState
     success: bool
     message: str
@@ -77,6 +93,12 @@ def initial_hp_state(
     total_gas_moles_guess: float | None = None,
     trace: float = 1e-300,
 ) -> EquilibriumState:
+    """Execute the public ``initial_hp_state`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     element_totals = np.asarray(element_totals, dtype=float)
 
     T = float(guess_temperature)
@@ -114,6 +136,12 @@ def solve_hp(
     target_enthalpy: float,
     options: HPSolverOptions | None = None,
 ) -> HPSolverResult:
+    """Execute the public ``solve_hp`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if options is None:
         options = HPSolverOptions()
 
@@ -375,6 +403,12 @@ def solve_hp_from_scratch(
     guess_temperature: float = 3800.0,
     options: HPSolverOptions | None = None,
 ) -> HPSolverResult:
+    """Execute the public ``solve_hp_from_scratch`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if options is None:
         options = HPSolverOptions()
 

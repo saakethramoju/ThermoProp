@@ -64,7 +64,15 @@ class SPSolverOptions:
 
 @dataclass(slots=True)
 class SPSolverResult:
-    """Result bundle returned by the fixed-species SP solver."""
+    """Represent the public ThermoProp ``SPSolverResult`` API object.
+
+    This class or dataclass is intentionally importable and documented for users who
+    need to build property models, inspect solver results, or interact with packaged
+    databases directly.  Values follow ThermoProp's SI-unit convention unless a
+    specific field or method documents that it is metadata.  Instances should be
+    created through the public constructor or returned by a public ThermoProp method
+    rather than assembled from private implementation details.
+    """
 
     state: EquilibriumState
     success: bool
@@ -406,6 +414,12 @@ def solve_sp_from_scratch(
     guess_temperature: float = 3800.0,
     options: SPSolverOptions | None = None,
 ) -> SPSolverResult:
+    """Execute the public ``solve_sp_from_scratch`` operation for ``ThermoProp``.
+
+    This method is part of the importable ThermoProp API rather than an internal
+    helper.  Arguments are validated and normalized before use, return values follow
+    ThermoProp's SI-unit and composition conventions, and lookup or state failures
+    are reported through ThermoProp exception types with contextual messages."""
     if options is None:
         options = SPSolverOptions()
 

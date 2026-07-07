@@ -1,9 +1,10 @@
 [project]
 name = "thermoprop"
-version = "1.0.2"
-description = "A Python thermophysical property and chemical-equilibrium library for fluids, gases, propellants, combustion products, and engineering materials."
+version = "2.0.0"
+description = "A documented Python thermophysical-property and chemical-equilibrium library for fluids, gases, propellants, combustion products, and engineering materials."
 readme = "README.md"
 license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 authors = [
     { name = "Saaketh Ramoju", email = "skramoju@gmail.com" }
 ]
@@ -66,7 +67,7 @@ cea_thermochemical_database = "Thermochemical and transport data adapted from NA
 
 [tool.uv.build-backend]
 module-name = "thermoprop"
-source-include = ["src/thermoprop/cea_data/**", "src/thermoprop/data/**"]
+source-include = ["CHANGELOG.md", "LICENSE", "THIRD_PARTY_LICENSES.md", "PUBLISHING.md", "examples/**", "src/thermoprop/cea_data/**", "src/thermoprop/data/**"]
 
 [build-system]
 requires = ["uv_build>=0.11.18,<0.12.0"]

@@ -215,6 +215,12 @@ class Equilibrium(PropertyIntrospectionMixin):
         verbose: bool = False,
         equilibrium_derivative_temperature_step: float = 1.0,
     ):
+        """Initialize and optionally solve a CEA-style chemical-equilibrium state.
+
+        ``reactants`` may be a ``Reactants`` object, a fixed ``CombustionGas`` composition, or a simple species-composition dictionary.  ``mode`` selects the assigned thermodynamic state: ``"hp"`` for enthalpy-pressure combustion, ``"tp"`` for specified temperature-pressure equilibrium, or ``"sp"`` for entropy-pressure equilibrium.  Pressure, temperature, entropy, and guess temperature use SI units.
+
+        The constructor stores solver options, candidate species controls, condensed-phase and ion options, transport settings, and combustion-gas filtering options.  By default it solves immediately; later calls to ``update(..., solve=False)`` can batch changes for network solvers before ``solve()`` is called explicitly.
+        """
         self._input = reactants
         self._mode = mode.lower().strip()
         self._temperature_input = None if temperature is None else float(temperature)
@@ -427,7 +433,14 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def is_stale(self) -> bool:
-        """Whether inputs have changed since the last completed solve."""
+        """Return the whether inputs have changed since the last solve for this ``Equilibrium`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
 
         return self._dirty
 
@@ -475,7 +488,13 @@ class Equilibrium(PropertyIntrospectionMixin):
         return ("object", type(value).__name__, id(value))
 
     def cache_key(self) -> tuple:
-        """Stable state fingerprint for FullFlow ``Lookup`` caching."""
+        """Execute the documented ``cache_key`` operation for ``Equilibrium``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
 
         try:
             species_state = tuple(
@@ -507,83 +526,207 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def backend(self) -> str:
+        """Return the backend used by this wrapper for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._BACKEND_NAME
 
     @property
     def name(self) -> str:
+        """Return the canonical ThermoProp display name for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return "Equilibrium combustion products"
 
     @property
     def mode(self) -> str:
+        """Return the equilibrium problem mode for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._mode
 
     @property
     def assigned_entropy(self) -> float | None:
-        """Assigned entropy input for SP solves [J/kg-K], if any."""
+        """Return the assigned entropy for this ``Equilibrium`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self._entropy_input
 
     @property
     def input(self):
+        """Return the public ``input`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._input
 
     @property
     def reactants(self):
+        """Return the public ``reactants`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._reactants
 
     @property
     def feed(self) -> FeedState:
+        """Return the public ``feed`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._feed
 
     @property
     def state(self) -> EquilibriumState:
+        """Return the public ``state`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._state
 
     @property
     def results(self) -> EquilibriumResults:
+        """Return the raw equilibrium result object for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._results
 
     @property
     def summary(self) -> EquilibriumSolveSummary:
+        """Return the public ``summary`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._summary
 
     @property
     def success(self) -> bool:
+        """Return the whether the last equilibrium solve converged for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._summary.success
 
     @property
     def message(self) -> str:
+        """Return the solver status message from the last equilibrium solve for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._summary.message
 
     @property
     def iterations(self) -> int:
+        """Return the number of nonlinear iterations in the last equilibrium solve for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._summary.iterations
 
     @property
     def outer_iterations(self) -> int:
+        """Return the public ``outer_iterations`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._summary.outer_iterations
 
     @property
     def inserted_condensed_species(self) -> list[str]:
+        """Return the public ``inserted_condensed_species`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return list(self._summary.inserted_condensed_species)
 
     @property
     def removed_condensed_species(self) -> list[str]:
+        """Return the public ``removed_condensed_species`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return list(self._summary.removed_condensed_species)
 
     @property
     def pressure(self) -> float:
+        """Return the thermodynamic pressure for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._state.pressure
 
     @pressure.setter
     def pressure(self, value: float) -> None:
+        """Set the thermodynamic pressure for this ``Equilibrium`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (Pa) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self.update(pressure=value, solve=True)
 
     @property
     def temperature(self) -> float:
+        """Return the thermodynamic temperature for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._state.temperature
 
     @temperature.setter
     def temperature(self, value: float) -> None:
+        """Set the thermodynamic temperature for this ``Equilibrium`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (K) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         if self._mode != "tp":
             raise ThermoPropStateError(
                 "temperature is a solved output in HP/SP mode. Use pressure_temperature or TP to switch to TP, or use guess_temperature for the solver guess."
@@ -592,26 +735,62 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def pressure_temperature(self) -> tuple[float, float]:
+        """Return the public ``pressure_temperature`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.pressure, self.temperature
 
     @pressure_temperature.setter
     def pressure_temperature(self, values: tuple[float, float]) -> None:
+        """Set the pressure temperature for this ``Equilibrium`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self.update(pressure=values[0], temperature=values[1], mode="tp", solve=True)
 
     @property
     def TP(self) -> tuple[float, float]:
+        """Return the public ``TP`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.temperature, self.pressure
 
     @TP.setter
     def TP(self, values: tuple[float, float]) -> None:
+        """Set the TP for this ``Equilibrium`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self.update(temperature=values[0], pressure=values[1], mode="tp", solve=True)
 
     @property
     def HP(self) -> tuple[float, float]:
+        """Return the public ``HP`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.enthalpy, self.pressure
 
     @HP.setter
     def HP(self, values: tuple[float, float]) -> None:
+        """Set the HP for this ``Equilibrium`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (see getter documentation) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         raise ThermoPropStateError(
             "HP equilibrium enthalpy is fixed by the reactants. "
             "Change reactants or pressure instead."
@@ -619,14 +798,35 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def species(self) -> list[str]:
+        """Return the canonical species name or names for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return list(self._state.species.names)
 
     @property
     def elements(self) -> list[str]:
+        """Return the chemical element names represented by the current object for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return list(self._state.species.elements)
 
     @property
     def gas_species(self) -> list[str]:
+        """Return the gas product species in the current equilibrium result for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return [
             name for name, mask in zip(self.species, self._state.species.gas_mask)
             if mask
@@ -634,6 +834,13 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def condensed_species(self) -> list[str]:
+        """Return the condensed product species in the current equilibrium result for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return [
             name for name, mask in zip(self.species, self._state.species.condensed_mask)
             if mask
@@ -641,6 +848,11 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def ion_species(self) -> list[str]:
+        """Return the public ``ion_species`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return [
             name for name, mask in zip(self.species, self._state.species.ion_mask)
             if mask
@@ -648,6 +860,11 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def species_moles(self) -> dict[str, float]:
+        """Return the public ``species_moles`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return {
             name: float(n)
             for name, n in zip(self._state.species.names, self._state.n)
@@ -655,6 +872,11 @@ class Equilibrium(PropertyIntrospectionMixin):
         
     @property
     def species_moles_trace(self) -> dict[str, float]:
+        """Return the public ``species_moles_trace`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return {
             name: float(n)
             for name, n in zip(self._state.species.names, self._state.n)
@@ -663,20 +885,42 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def moles(self) -> dict[str, float]:
+        """Return the public ``moles`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.species_moles
 
     @property
     def total_gas_moles(self) -> float:
+        """Return the public ``total_gas_moles`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return float(self._state.total_gas_moles)
 
     @property
     def mole_fractions(self) -> dict[str, float]:
+        """Return the mole-fraction composition dictionary for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return state_mole_fractions(
             self._state,
             trace=self._combustion_gas_trace,
         )
     @property
     def gas_mole_fractions(self) -> dict[str, float]:
+        """Return the public ``gas_mole_fractions`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return state_gas_mole_fractions(
             self._state,
             trace=self._combustion_gas_trace,
@@ -684,6 +928,13 @@ class Equilibrium(PropertyIntrospectionMixin):
     
     @property
     def mass_fractions(self) -> dict[str, float]:
+        """Return the mass-fraction composition dictionary for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return state_mass_fractions(
             self._state,
             trace=self._combustion_gas_trace,
@@ -702,6 +953,11 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def gas_mass_fractions(self) -> dict[str, float]:
+        """Return the public ``gas_mass_fractions`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return state_gas_mass_fractions(
             self._state,
             trace=self._combustion_gas_trace,
@@ -709,15 +965,36 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def gas_composition(self) -> dict[str, float]:
-        """Gas-only mass-fraction composition with strict CEA gas names."""
+        """Return the gas composition for this ``Equilibrium`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return dict(self.combustion_gas.mass_fractions)
 
     @property
     def normalized_mole_fractions(self) -> dict[str, float]:
+        """Return the mole fractions normalized for reporting for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self.combustion_gas_composition()
 
     @property
     def normalized_mass_fractions(self) -> dict[str, float]:
+        """Return the mass fractions normalized for reporting for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return dict(self.combustion_gas.mass_fractions)
 
     def combustion_gas_composition(
@@ -725,7 +1002,13 @@ class Equilibrium(PropertyIntrospectionMixin):
         trace: float | None = None,
         max_species: int | None = None,
     ) -> dict[str, float]:
-        """Return normalized gas-only mole fractions for `CombustionGas`."""
+        """Execute the documented ``combustion_gas_composition`` operation for ``Equilibrium``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         if trace is None:
             trace = self._combustion_gas_trace
         if max_species is None:
@@ -755,12 +1038,25 @@ class Equilibrium(PropertyIntrospectionMixin):
         trace: float | None = None,
         max_species: int | None = None,
     ) -> dict[str, float]:
-        """Backward-compatible alias for `combustion_gas_composition`."""
+        """Execute the documented ``CombustionGas_composition`` operation for ``Equilibrium``.
+
+        Arguments are validated and normalized using the same rules as the high-level
+        wrappers.  Return values follow ThermoProp's SI-unit and composition
+        conventions, and failures are reported through ThermoProp exception types with
+        contextual messages rather than silent fallbacks.
+        """
         return self.combustion_gas_composition(trace=trace, max_species=max_species)
 
     @property
     def combustion_gas(self) -> CombustionGas:
-        """Return a gas-only `CombustionGas` view of the equilibrium products."""
+        """Return the combustion gas for this ``Equilibrium`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         if self._gas_cache is None:
             self._gas_cache = CombustionGas(
                 self.combustion_gas_composition(),
@@ -772,194 +1068,493 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def CombustionGas(self) -> CombustionGas:
-        """Backward-compatible alias for `combustion_gas`."""
+        """Return the CombustionGas for this ``Equilibrium`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.combustion_gas
 
     @property
     def combustiongas(self) -> CombustionGas:
-        """Lowercase alias for ``combustion_gas``."""
+        """Return the combustion-gas identifier or composition supplied to the wrapper for this ``Equilibrium`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.combustion_gas
 
     @property
     def gas(self) -> CombustionGas:
+        """Return the gas identifier or composition supplied to the wrapper for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self.combustion_gas
 
     @property
     def fluid(self) -> dict[str, float]:
-        """Gas-only composition dictionary for fluid-property chaining."""
+        """Return the fluid identifier or composition supplied to the wrapper for this ``Equilibrium`` object.
+
+        This property exposes normalized public metadata or solver bookkeeping without
+        requiring direct access to private attributes.  Returned dictionaries and lists
+        are suitable for reporting, validation, and example code.  When a backend lookup
+        is required, ThermoProp applies the same alias and canonical-name rules used by
+        the constructors.
+        """
         return self.gas_composition
 
     @property
     def density(self) -> float:
+        """Return the mass density for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/m^3.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.density
 
     @density.setter
     def density(self, value: float) -> None:
+        """Set the mass density for this ``Equilibrium`` instance.
+
+        Assigning this value uses the same SI-unit convention as the corresponding
+        getter (kg/m^3) unless the getter documents a metadata value instead.  Setters
+        that define a thermodynamic state immediately re-evaluate the wrapper or mark the
+        state stale according to that wrapper's update policy, so subsequent property
+        access reflects the new input state."""
         self._pressure = float(value) * self.gas_constant * self.temperature
         self._solve()
 
     @property
     def specific_volume(self) -> float:
+        """Return the specific volume for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m^3/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return 1.0 / self.density
 
     @property
     def enthalpy(self) -> float:
+        """Return the mass-specific enthalpy for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.enthalpy
 
     @property
     def entropy(self) -> float:
+        """Return the mass-specific entropy for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.entropy
 
     @property
     def internal_energy(self) -> float:
+        """Return the mass-specific internal energy for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.internal_energy
 
     @property
     def gibbs_energy(self) -> float:
+        """Return the mass-specific Gibbs free energy for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return state_gibbs_energy(self._state)
 
     @property
     def helmholtz_energy(self) -> float:
+        """Return the mass-specific Helmholtz free energy for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return state_helmholtz_energy(self._state)
 
     @property
     def free_energy(self) -> float:
+        """Return the mass-specific Helmholtz free energy alias for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/kg.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.helmholtz_energy
 
     @property
     def gas_constant(self) -> float:
+        """Return the mass-specific gas constant for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return state_gas_constant(self._state)
 
     @property
     def universal_gas_constant(self) -> float:
+        """Return the universal molar gas constant for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(mol*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return 8.31446261815324
 
     @property
     def molecular_weight(self) -> float:
+        """Return the molecular weight for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/kmol, numerically equal to g/mol.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return molecular_weight_all_species(self._state)
         
     @property
     def molecular_weight_gas(self) -> float:
+        """Return the gas-phase molecular weight for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/kmol, numerically equal to g/mol.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return state_molecular_weight(self._state)
 
     @property
     def molecular_weight_all_species(self) -> float:
+        """Return the all-species molecular weight including condensed products for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/kmol, numerically equal to g/mol.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return molecular_weight_all_species(self._state)
         
     @property
     def moles_inverse(self) -> float:
+        """Return the inverse of total moles per kilogram for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return 8314.46261815324 / self.gas_constant
 
     @property
     def molar_mass(self) -> float:
+        """Return the molar mass for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/mol.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.molecular_weight / 1000.0
 
     @property
     def specific_heat_cp_frozen(self) -> float:
+        """Return the public ``specific_heat_cp_frozen`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._results.cp_frozen
 
     @property
     def specific_heat_cv_frozen(self) -> float:
+        """Return the public ``specific_heat_cv_frozen`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._results.cv_frozen
 
     @property
     def specific_heat_cp_equilibrium(self) -> float:
+        """Return the public ``specific_heat_cp_equilibrium`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._results.cp_equilibrium
 
     @property
     def specific_heat_cv_equilibrium(self) -> float:
+        """Return the public ``specific_heat_cv_equilibrium`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._results.cv_equilibrium
 
     @property
     def specific_heat_cp(self) -> float:
+        """Return the constant-pressure specific heat for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.specific_heat_cp_equilibrium
 
     @property
     def specific_heat_cv(self) -> float:
+        """Return the constant-volume specific heat for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.specific_heat_cv_equilibrium
 
     @property
     def specific_heat(self) -> float:
+        """Return the default specific heat alias, usually constant-pressure specific heat for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.specific_heat_cp
 
     @property
     def cp_frozen(self) -> float:
+        """Return the public ``cp_frozen`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.specific_heat_cp_frozen
 
     @property
     def cp_equilibrium(self) -> float:
+        """Return the public ``cp_equilibrium`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.specific_heat_cp_equilibrium
 
     @property
     def cp_reaction(self) -> float:
+        """Return the public ``cp_reaction`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.cp_equilibrium - self.cp_frozen
 
     @property
     def cv_frozen(self) -> float:
+        """Return the public ``cv_frozen`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.specific_heat_cv_frozen
 
     @property
     def cv_equilibrium(self) -> float:
+        """Return the public ``cv_equilibrium`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.specific_heat_cv_equilibrium
 
     @property
     def cp_transport_frozen(self) -> float | None:
+        """Return the public ``cp_transport_frozen`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._results.cp_transport_frozen
 
     @property
     def cp_transport_equilibrium(self) -> float | None:
+        """Return the public ``cp_transport_equilibrium`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._results.cp_transport_equilibrium
 
     @property
     def gamma_frozen(self) -> float:
+        """Return the public ``gamma_frozen`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._results.gamma_frozen
 
     @property
     def gamma_equilibrium(self) -> float:
+        """Return the public ``gamma_equilibrium`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self._results.gamma_equilibrium
 
     @property
     def specific_heat_ratio_frozen(self) -> float:
+        """Return the public ``specific_heat_ratio_frozen`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.gamma_frozen
 
     @property
     def specific_heat_ratio_equilibrium(self) -> float:
+        """Return the public ``specific_heat_ratio_equilibrium`` value for this ``Equilibrium`` object.
+
+        The value is computed from the current wrapper state and follows ThermoProp's SI
+        unit convention unless this property is explicitly metadata.  Unsupported values
+        raise a ThermoProp exception with context about the selected backend and state."""
         return self.gamma_equilibrium
 
     @property
     def specific_heat_ratio(self) -> float:
+        """Return the specific heat ratio cp/cv for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.gamma_equilibrium
 
     @property
     def gamma(self) -> float:
+        """Return the specific heat ratio alias for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.gamma_equilibrium
 
     @property
     def dynamic_viscosity_frozen(self) -> float | None:
+        """Return the frozen-composition dynamic viscosity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa*s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.viscosity_frozen
 
     @property
     def dynamic_viscosity_equilibrium(self) -> float | None:
+        """Return the equilibrium-composition dynamic viscosity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa*s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.viscosity_equilibrium
 
     @property
     def dynamic_viscosity(self) -> float | None:
+        """Return the dynamic viscosity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa*s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.dynamic_viscosity_equilibrium
 
     @property
     def viscosity_frozen(self) -> float | None:
+        """Return the frozen-composition dynamic viscosity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa*s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.dynamic_viscosity_frozen
 
     @property
     def viscosity_equilibrium(self) -> float | None:
+        """Return the equilibrium-composition dynamic viscosity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa*s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.dynamic_viscosity_equilibrium
 
     @property
     def viscosity(self) -> float | None:
+        """Return the dynamic viscosity alias for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are Pa*s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.dynamic_viscosity
 
     @property
     def kinematic_viscosity(self) -> float | None:
+        """Return the kinematic viscosity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m^2/s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         mu = self.dynamic_viscosity
         if mu is None:
             return None
@@ -967,54 +1562,145 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def thermal_conductivity_frozen(self) -> float | None:
+        """Return the frozen thermal conductivity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.conductivity_frozen
 
     @property
     def thermal_conductivity_equilibrium(self) -> float | None:
+        """Return the equilibrium thermal conductivity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.conductivity_equilibrium
 
     @property
     def thermal_conductivity(self) -> float | None:
+        """Return the thermal conductivity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.thermal_conductivity_equilibrium
 
     @property
     def conductivity_frozen(self) -> float | None:
+        """Return the frozen thermal conductivity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.thermal_conductivity_frozen
 
     @property
     def conductivity_equilibrium(self) -> float | None:
+        """Return the equilibrium thermal conductivity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.thermal_conductivity_equilibrium
 
     @property
     def conductivity(self) -> float | None:
+        """Return the thermal conductivity alias for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.thermal_conductivity
         
     @property
     def conductivity_reaction(self) -> float | None:
+        """Return the reaction contribution to equilibrium thermal conductivity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.conductivity_reaction
         
     @property
     def thermal_conductivity_reaction(self) -> float | None:
+        """Return the reaction contribution to equilibrium thermal conductivity for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are W/(m*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.conductivity_reaction
 
     @property
     def prandtl_frozen(self) -> float | None:
+        """Return the frozen-composition Prandtl number for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.prandtl_frozen
 
     @property
     def prandtl_equilibrium(self) -> float | None:
+        """Return the equilibrium-composition Prandtl number for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self._results.prandtl_equilibrium
 
     @property
     def prandtl(self) -> float | None:
+        """Return the Prandtl number for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.prandtl_equilibrium
 
     @property
     def speed_of_sound_frozen(self) -> float:
+        """Return the frozen-composition speed of sound for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m/s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return speed_of_sound_frozen(self._state)
 
     @property
     def speed_of_sound_equilibrium(self) -> float:
+        """Return the equilibrium speed of sound for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m/s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return speed_of_sound_equilibrium(
             self._state,
             gamma_equilibrium=self.gamma_equilibrium,
@@ -1022,91 +1708,241 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def speed_of_sound(self) -> float:
+        """Return the speed of sound for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are m/s.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.speed_of_sound_equilibrium
 
     @property
     def phase(self) -> str:
+        """Return the human-readable phase label for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are string.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         if self.condensed_species:
             return "Equilibrium Gas + Condensed"
         return "Equilibrium Gas"
 
     @property
     def compressibility(self) -> float:
+        """Return the compressibility factor Z for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are dimensionless.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return 1.0
 
     @property
     def is_mixture(self) -> bool:
+        """Return the whether the object represents a mixture for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return True
 
     @property
     def element_matrix(self) -> np.ndarray:
+        """Return the equilibrium element matrix for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._state.species.A.copy()
 
     @property
     def element_vector(self) -> np.ndarray:
+        """Return the equilibrium element vector for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._state.element_totals.copy()
 
     @property
     def element_moles(self) -> np.ndarray:
+        """Return the element mole totals for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._state.species.A @ self._state.n
 
     @property
     def element_error(self) -> np.ndarray:
+        """Return the element conservation residual vector for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self.element_moles - self.element_vector
 
     @property
     def max_element_error(self) -> float:
+        """Return the maximum absolute element conservation error for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return float(np.max(np.abs(self.element_error)))
 
     @property
     def max_element_relative_error(self) -> float:
+        """Return the maximum relative element conservation error for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         scale = np.maximum(np.abs(self.element_vector), 1e-300)
         return float(np.max(np.abs(self.element_error / scale)))
 
     @property
     def enthalpy_error(self) -> float | None:
+        """Return the equilibrium enthalpy residual for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._summary.enthalpy_error
 
     @property
     def residual_norm(self) -> float | None:
+        """Return the nonlinear residual norm for this ``Equilibrium`` object.
+
+        This metadata is normalized by ThermoProp so user code can inspect the active
+        backend, canonical names, composition basis, or solver bookkeeping without
+        reaching into private attributes.  Returned mappings and sequences are copies or
+        read-only views where practical, so callers can use them for reporting and model
+        setup without mutating the wrapper accidentally."""
         return self._summary.residual_norm
 
     @property
     def thermal_expansion_coefficient(self) -> float:
+        """Return the isobaric thermal expansion coefficient for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are 1/K.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return 1.0 / self.temperature
 
     @property
     def isothermal_compressibility(self) -> float:
+        """Return the isothermal compressibility for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are 1/Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return 1.0 / self.pressure
 
     def partial_derivative(self, of: str, with_respect_to: str, constant: str) -> float:
+        """Evaluate or update the requested value using the current ``Equilibrium`` state.
+
+        Inputs use ThermoProp's public SI-unit convention.  The method validates names
+        and state information before returning data, and raises a ThermoProp exception
+        when the selected backend or material record cannot provide the requested value."""
         return self.combustion_gas.partial_derivative(of, with_respect_to, constant)
 
     @property
     def dhdT_const_p(self) -> float:
+        """Return the partial derivative of enthalpy with respect to temperature at constant pressure for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.specific_heat_cp_equilibrium
 
     @property
     def dhdp_const_T(self) -> float:
+        """Return the partial derivative of enthalpy with respect to pressure at constant temperature for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are J/(kg*Pa).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("Hmass", "P", "T")
 
     @property
     def drhodT_const_p(self) -> float:
+        """Return the partial derivative of density with respect to temperature at constant pressure for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/(m^3*K).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("Dmass", "T", "P")
 
     @property
     def drhodp_const_T(self) -> float:
+        """Return the partial derivative of density with respect to pressure at constant temperature for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are kg/(m^3*Pa).  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("Dmass", "P", "T")
 
     @property
     def dTdp_const_h(self) -> float:
+        """Return the Joule-Thomson style dT/dp derivative at constant enthalpy for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K/Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.partial_derivative("T", "P", "Hmass")
 
     @property
     def joule_thomson_coefficient(self) -> float:
+        """Return the Joule-Thomson coefficient for this ``Equilibrium`` state.
+
+        The value is evaluated from the active backend and the current state variables.
+        Units are K/Pa.  If the selected species, material, phase, or thermodynamic
+        state does not support this property, ThermoProp raises a descriptive
+        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
+        silently returning an invalid value."""
         return self.dTdp_const_h
 
     def as_dict(self, trace: float = 1e-12) -> dict[str, Any]:
+        """Return a structured representation of the requested ThermoProp data.
+
+        The result is intended for inspection, reporting, testing, and advanced users who
+        need direct access to database-backed values.  Names are resolved through the
+        same canonicalization and alias rules used by the high-level wrappers."""
         return {
             "mode": self.mode,
             "backend": self.backend,
@@ -1268,16 +2104,40 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @classmethod
     def available_flash_inputs(cls) -> list[str]:
+        """Return the flash inputs supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return ["enthalpy-pressure", "pressure-temperature"]
 
     @classmethod
     def supported_flash_inputs(cls) -> list[str]:
+        """Return the flash inputs supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return cls.available_flash_inputs()
 
     @classmethod
     def available_flash_pairs(cls) -> list[str]:
+        """Return the flash pairs supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return cls.available_flash_inputs()
 
     @classmethod
     def supported_flash_pairs(cls) -> list[str]:
+        """Return the flash pairs supported by this ThermoProp API.
+
+        Use this helper to discover valid names, properties, or flash inputs before
+        constructing a model.  The returned list is sorted or normalized where practical
+        so it can be displayed directly in examples, command-line tools, or user
+        interfaces."""
         return cls.available_flash_pairs()
