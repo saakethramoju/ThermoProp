@@ -34,8 +34,6 @@ ThermoProp integrates several thermodynamic and engineering-property sources beh
 pip3 install thermoprop
 ```
 
-ThermoProp requires Python 3.11 or newer.
-
 ---
 
 ## Why ThermoProp?
@@ -260,6 +258,14 @@ print(eq.mole_fractions)
 print(eq.specific_heat_cp)
 print(eq.speed_of_sound)
 ```
+
+`Reactants` can also include optional inert streams and igniter streams. These
+streams contribute mass, elemental composition, enthalpy, internal energy, and
+entropy to the equilibrium feed just like the main fuel and oxidizer streams.
+
+`Equilibrium` can also re-equilibrate an existing `CombustionGas` composition.
+This is useful when a frozen product-gas composition should be allowed to reach
+equilibrium again at a new pressure, temperature, enthalpy, or entropy state.
 
 ---
 
@@ -862,11 +868,21 @@ For RocketProps-backed species, liquid states are generally evaluated using Rock
 
 ## `Reactants`
 
-`Reactants` defines CEA-style reactant mixtures for equilibrium calculations.
+`Reactants` defines a CEA-style feed mixture for equilibrium calculations.
 
-Inputs are `Propellant` objects grouped into fuels and oxidizers.
+It groups the incoming streams into:
 
-Optional weights inside each group are treated as mass weights, similar to CEA weight-percent behavior.
+* `fuels`,
+* `oxidizers`,
+* optional `inerts`,
+* optional `igniters`.
+
+Each stream can be a `Propellant`, a `CombustionGas`, or a weighted collection
+of either. Raw strings are intentionally not accepted because temperature,
+pressure, composition, and reference basis should be explicit.
+
+Optional weights inside a stream group are treated as mass weights, similar to
+CEA weight-percent behavior.
 
 ### Constructor
 
@@ -875,16 +891,31 @@ Reactants(
     fuels,
     oxidizers,
     mixture_ratio,
+    inerts=None,
+    inert_fraction=0.0,
+    igniters=None,
+    igniter_fraction=0.0,
 )
 ```
 
-The total basis is:
+The base propellant mass basis is:
 
 ```text
 fuel mass = 1 kg
 oxidizer mass = O/F kg
-total mass = 1 + O/F kg
+propellant mass = 1 + O/F kg
 ```
+
+Optional inert and igniter streams are added relative to that propellant mass:
+
+```text
+inert mass = inert_fraction * propellant mass
+igniter mass = igniter_fraction * propellant mass
+```
+
+For example, if `mixture_ratio=2.5`, the base propellant mass is `3.5 kg`.
+Then `inert_fraction=0.10` adds `0.35 kg` of inert stream, and
+`igniter_fraction=0.02` adds `0.07 kg` of igniter stream.
 
 ### Single-fuel / single-oxidizer example
 
@@ -896,8 +927,8 @@ fuel = Propellant("RP-1", temperature=298.15, pressure=2.0e6)
 oxidizer = Propellant("LOX", temperature=90.17, pressure=2.0e6)
 
 reactants = Reactants(
-    fuels=[fuel],
-    oxidizers=[oxidizer],
+    fuels=fuel,
+    oxidizers=oxidizer,
     mixture_ratio=2.5,
 )
 
@@ -922,8 +953,200 @@ reactants = Reactants(
         (fuel_a, 0.8),
         (fuel_b, 0.2),
     ],
-    oxidizers=[oxidizer],
+    oxidizers=oxidizer,
     mixture_ratio=2.7,
+)
+```
+
+The weights inside `fuels=[...]` split the fuel-side mass. The oxidizer side
+still receives `mixture_ratio` kilograms of oxidizer per kilogram of total fuel.
+
+### Inert streams
+
+Use `inerts` for purge gas, pressurant carryover, residual gas, dilution gas,
+or any stream that should be included in the element and enthalpy balance but is
+not part of the nominal fuel/oxidizer ratio.
+
+```python
+from thermoprop import CombustionGas
+from thermoprop import Propellant
+from thermoprop import Reactants
+
+P = 2.0e6
+
+fuel = Propellant("RP-1", temperature=298.15, pressure=P)
+oxidizer = Propellant("LOX", temperature=90.17, pressure=P)
+
+nitrogen_purge = CombustionGas(
+    "N2",
+    pressure=P,
+    temperature=300.0,
+)
+
+reactants = Reactants(
+    fuels=fuel,
+    oxidizers=oxidizer,
+    mixture_ratio=2.5,
+    inerts=nitrogen_purge,
+    inert_fraction=0.05,
+)
+```
+
+Here, `inert_fraction=0.05` adds inert mass equal to 5 percent of the base
+fuel-plus-oxidizer propellant mass.
+
+`inert` means the stream is outside the fuel/oxidizer ratio. The species still
+contribute elements, mass, enthalpy, internal energy, and entropy to the
+calculation. They are not removed from the equilibrium chemistry.
+
+### Weighted inert streams
+
+A multi-species inert stream can be supplied as a `CombustionGas` mixture:
+
+```python
+from thermoprop import CombustionGas
+
+inert_mix = CombustionGas(
+    {"N2": 0.8, "Ar": 0.2},
+    basis="mass",
+    pressure=2.0e6,
+    temperature=300.0,
+)
+```
+
+or as weighted streams:
+
+```python
+from thermoprop import CombustionGas
+from thermoprop import Reactants
+
+P = 2.0e6
+
+nitrogen = CombustionGas("N2", pressure=P, temperature=300.0)
+argon = CombustionGas("Ar", pressure=P, temperature=300.0)
+
+reactants = Reactants(
+    fuels=fuel,
+    oxidizers=oxidizer,
+    mixture_ratio=2.5,
+    inerts=[
+        (nitrogen, 0.8),
+        (argon, 0.2),
+    ],
+    inert_fraction=0.10,
+)
+```
+
+The weights distribute the inert-stream mass. In this example, 80 percent of
+the inert stream is nitrogen and 20 percent is argon by mass.
+
+### Igniter streams
+
+Use `igniters` for small startup, torch, pilot, or hot-gas streams that should
+be included in the feed mixture.
+
+```python
+from thermoprop import CombustionGas
+from thermoprop import Reactants
+
+P = 2.0e6
+
+igniter_gas = CombustionGas(
+    {"H2": 0.70, "O2": 0.30},
+    basis="mass",
+    pressure=P,
+    temperature=900.0,
+)
+
+reactants = Reactants(
+    fuels=fuel,
+    oxidizers=oxidizer,
+    mixture_ratio=2.5,
+    igniters=igniter_gas,
+    igniter_fraction=0.02,
+)
+```
+
+Here, `igniter_fraction=0.02` adds igniter mass equal to 2 percent of the base
+fuel-plus-oxidizer propellant mass.
+
+Igniter streams can be useful when modeling startup, preburner carryover,
+external torch products, or any extra stream whose composition and enthalpy
+should affect the equilibrium result.
+
+### Inerts and igniters together
+
+```python
+reactants = Reactants(
+    fuels=fuel,
+    oxidizers=oxidizer,
+    mixture_ratio=2.5,
+    inerts=nitrogen_purge,
+    inert_fraction=0.05,
+    igniters=igniter_gas,
+    igniter_fraction=0.02,
+)
+```
+
+The total equilibrium feed includes all four groups:
+
+```text
+complete feed = fuels + oxidizers + inerts + igniters
+```
+
+### CombustionGas objects as reactant streams
+
+`Reactants` can use `CombustionGas` objects in any stream group. This is useful
+for gas-generator products, torch-igniter products, purge gases, pressurant
+carryover, or a mixed stream entering a downstream equilibrium calculation.
+
+```python
+from thermoprop import CombustionGas
+from thermoprop import Reactants
+
+hot_products = CombustionGas(
+    {
+        "CO2": 0.25,
+        "H2O": 0.45,
+        "CO": 0.10,
+        "H2": 0.05,
+        "N2": 0.15,
+    },
+    basis="mole",
+    pressure=2.0e6,
+    temperature=3200.0,
+)
+
+reactants = Reactants(
+    fuels=hot_products,
+    oxidizers=oxidizer,
+    mixture_ratio=0.2,
+)
+```
+
+When a `CombustionGas` is used as a reactant stream, ThermoProp expands the gas
+mixture into its CEA species internally and uses the gas state to evaluate its
+enthalpy, internal energy, and entropy contribution.
+
+### Updating reactants
+
+`Reactants` can be updated in place, which is useful inside model sweeps or
+network solves.
+
+```python
+reactants.update(
+    mixture_ratio=2.8,
+    inert_fraction=0.03,
+    igniter_fraction=0.01,
+)
+```
+
+You can also update stream weights:
+
+```python
+reactants.update(
+    fuel_weights=[0.9, 0.1],
+    inert_weights=[0.7, 0.3],
 )
 ```
 
@@ -949,12 +1172,18 @@ print(reactants.reactant_internal_energy)
 
 ## `Equilibrium`
 
-`Equilibrium` performs CEA-style chemical-equilibrium calculations using Gibbs free-energy minimization and NASA CEA thermochemical data.
+`Equilibrium` performs CEA-style chemical-equilibrium calculations using Gibbs
+free-energy minimization and NASA CEA thermochemical data.
 
 It can solve from:
 
-* `Reactants`
-* `CombustionGas`
+* `Reactants`,
+* `CombustionGas`,
+* a plain species-composition dictionary.
+
+Most combustion examples use `Reactants`, but `CombustionGas` is also a valid
+feed. This is important when a frozen product-gas composition should be allowed
+to re-equilibrate at a downstream state.
 
 ### Constructor
 
@@ -965,22 +1194,35 @@ Equilibrium(
     temperature=None,
     pressure=None,
     entropy=None,
-    guess_temperature=3500.0,
+    basis="mass",
+    guess_temperature=3800.0,
     candidates=None,
-    include_all_valid_gases=True,
+    include_condensed=True,
+    include_ions=False,
+    include_electron=False,
+    combustion_gas_trace=1e-12,
+    combustion_gas_max_species=None,
+    max_iterations=120,
+    max_outer_iterations=30,
     verbose=False,
-    element_tol=1e-8,
-    enthalpy_tol=1e-3,
-    correction_tol=1e-8,
-    max_iterations=200,
-    trace_moles=1e-300,
-    min_temperature=200.0,
-    max_temperature=20000.0,
-    combustion_gas_trace=1e-8,
-    combustion_gas_max_species=25,
     equilibrium_derivative_temperature_step=1.0,
 )
 ```
+
+Supported equilibrium modes are:
+
+| Mode | Meaning | Required state inputs |
+| --- | --- | --- |
+| `"hp"` | Enthalpy-pressure equilibrium | `pressure`; feed enthalpy from `Reactants`, `CombustionGas`, or a temperature-defined dictionary feed |
+| `"tp"` | Temperature-pressure equilibrium | `temperature`, `pressure` |
+| `"sp"` | Entropy-pressure equilibrium | `entropy`, `pressure`, and a good `guess_temperature` |
+
+For HP and SP calculations, temperature is a solved output. However, the feed
+still needs a thermodynamic state so ThermoProp can evaluate feed enthalpy or
+entropy. If the feed is an existing `CombustionGas`, create that gas with a
+valid temperature before passing it into `Equilibrium`. If the feed is a plain
+composition dictionary, provide a temperature to the `Equilibrium` constructor so
+the feed enthalpy can be evaluated.
 
 ### HP equilibrium
 
@@ -991,7 +1233,6 @@ eq = Equilibrium(
     reactants,
     mode="hp",
     pressure=2.0e6,
-    guess_temperature=3500.0,
 )
 
 print(eq.temperature)
@@ -1032,7 +1273,6 @@ station = Equilibrium(
     mode="sp",
     pressure=1.0e6,
     entropy=chamber.entropy,
-    guess_temperature=chamber.temperature,
 )
 
 print(station.temperature)
@@ -1045,22 +1285,116 @@ use the same active-set insertion/removal loop as TP and HP.
 
 ### Equilibrium from an existing combustion gas
 
+`CombustionGas` is normally a frozen-composition gas-property wrapper, but the
+same gas can be used as the feed to `Equilibrium`. In that case, ThermoProp uses
+the gas composition and state as the incoming feed and solves a new equilibrium
+composition.
+
+This is useful for:
+
+* re-equilibrating frozen chamber products,
+* downstream nozzle stations,
+* shock or mixing calculations,
+* gas-generator or torch products entering another equilibrium zone.
+
+#### TP equilibrium from a CombustionGas
+
+TP is the most direct case: the gas composition is used as the feed, and the
+new equilibrium state is assigned by pressure and temperature.
+
 ```python
 from thermoprop import CombustionGas
 from thermoprop import Equilibrium
 
 gas = CombustionGas(
-    {"CO2": 0.4, "H2O": 0.6},
+    {
+        "CO2": 0.25,
+        "H2O": 0.45,
+        "CO": 0.10,
+        "H2": 0.05,
+        "N2": 0.15,
+    },
     basis="mole",
     pressure=2.0e6,
-    temperature=3000.0,
+    temperature=3200.0,
 )
 
 eq = Equilibrium(
     gas,
     mode="tp",
-    pressure=2.0e6,
+    pressure=1.5e6,
     temperature=3000.0,
+)
+
+print(eq.mole_fractions)
+print(eq.temperature)
+```
+
+#### HP equilibrium from a CombustionGas
+
+For HP, the target pressure is supplied to `Equilibrium`, but the feed enthalpy
+comes from the input `CombustionGas`. Therefore, the input gas must have a valid
+temperature-defined state.
+
+```python
+gas = CombustionGas(
+    {"CO2": 0.25, "H2O": 0.45, "CO": 0.10, "H2": 0.05, "N2": 0.15},
+    basis="mole",
+    pressure=2.0e6,
+    temperature=3200.0,
+)
+
+eq = Equilibrium(
+    gas,
+    mode="hp",
+    pressure=1.0e6,
+)
+
+print(eq.temperature)
+print(eq.enthalpy)
+```
+
+#### SP equilibrium from a CombustionGas
+
+For SP, provide the target pressure and entropy. For an isentropic downstream
+station, the entropy often comes from the upstream gas.
+
+```python
+upstream = CombustionGas(
+    {"CO2": 0.25, "H2O": 0.45, "CO": 0.10, "H2": 0.05, "N2": 0.15},
+    basis="mole",
+    pressure=2.0e6,
+    temperature=3200.0,
+)
+
+station = Equilibrium(
+    upstream,
+    mode="sp",
+    pressure=5.0e5,
+    entropy=upstream.entropy,
+)
+
+print(station.temperature)
+print(station.entropy)
+print(station.mole_fractions)
+```
+
+The important point is that the `CombustionGas` feed must have a temperature so
+its enthalpy and entropy are well defined. HP uses the gas enthalpy as the feed
+enthalpy. SP uses the supplied entropy target.
+
+#### Dictionary composition feeds
+
+A plain composition dictionary can also be passed directly. For HP-style use,
+provide `temperature` so ThermoProp can evaluate the feed enthalpy.
+
+```python
+eq = Equilibrium(
+    {"CO2": 0.25, "H2O": 0.45, "CO": 0.10, "H2": 0.05, "N2": 0.15},
+    basis="mole",
+    mode="hp",
+    pressure=1.0e6,
+    temperature=3200.0,
 )
 ```
 
