@@ -2013,6 +2013,18 @@ Limitations include:
 * No plasticity model.
 * Property values are interpolated from stored curves or constants.
 
+### Material Database
+
+The built-in material database is intended for engineering calculations rather than serving as a comprehensive materials handbook.
+
+Material property coverage varies depending on the available published data. Some materials include temperature-dependent correlations over a defined temperature range, while others only provide constant or weakly temperature-dependent properties. In particular, properties such as thermal conductivity, specific heat, thermal expansion, elastic modulus, emissivity, and other engineering properties may not have temperature-dependent correlations available for every material.
+
+When a temperature-dependent correlation is available, it is generally valid only over the published temperature range from which it was derived. Outside that range, users may choose to extrapolate the correlation if appropriate for their application, but ThermoProp does not guarantee the accuracy of extrapolated values.
+
+If no temperature dependence is available for a particular property, ThermoProp returns the best available constant value from the underlying data sources. This provides a reasonable engineering approximation for many preliminary analyses, but users should verify that the available data are appropriate for their operating conditions, particularly for cryogenic or high-temperature applications.
+
+The material database will continue to expand in future releases as additional property correlations and reference data become available.
+
 ---
 
 # Documentation
