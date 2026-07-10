@@ -31,85 +31,10 @@ ThermoProp integrates several thermodynamic and engineering-property sources beh
 ## Installation
 
 ```bash
-pip install thermoprop
+pip3 install thermoprop
 ```
 
 ThermoProp requires Python 3.11 or newer.
-
-Because ThermoProp combines compiled and scientific Python dependencies, install it into a clean virtual environment when possible:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install thermoprop
-```
-
-## Repository status for 2.0.0
-
-ThermoProp 2.0.0 is prepared as a documentation-first public release. The package does not yet have a separate formal documentation site generated from the source tree, so the repository documents are intentionally detailed:
-
-* `README.md` is the primary user guide. It covers installation, wrapper selection, quick starts, detailed wrapper examples, units, reference states, limitations, data provenance, and discovery helpers.
-* `CHANGELOG.md` records release-level behavior changes and explicitly calls out documentation, packaging, and solver notes.
-* `THIRD_PARTY_LICENSES.md` explains dependency and included-data provenance.
-* `PUBLISHING.md` records the 2.0.0 build, inspection, smoke-test, and upload checklist.
-* Public classes, methods, properties, and helper functions include docstrings so `help(thermoprop.Fluid)`, IDE inspection, and generated API documentation are useful immediately.
-
-## 2.0.0 release focus
-
-ThermoProp 2.0.0 formalizes the public package surface for publishing. It keeps the main wrapper model simple while making the README and in-code API documentation detailed enough to serve as the first public documentation set. The major user-facing classes are:
-
-* `Fluid` for CoolProp-backed real fluids and CoolProp mixtures.
-* `IdealGas` for PYroMat-backed ideal gases with ThermoProp transport support.
-* `Propellant` for RocketProps and CEA-backed propellant states.
-* `CombustionGas` for fixed-composition CEA gas mixtures.
-* `Reactants` for CEA-style fuel/oxidizer mixtures.
-* `Equilibrium` for TP, HP, and SP chemical-equilibrium solves.
-* `Material` for temperature-dependent isotropic engineering material properties.
-* `CEA`, `SpeciesDatabase`, and `MaterialDatabase` for direct data discovery and advanced workflows.
-
-The 2.0.0 release does not intentionally change the equilibrium solver equations, CEA thermodynamic data evaluation, CEA transport formulas, CoolProp/PYroMat/RocketProps backend behavior, or material interpolation behavior relative to the current package implementation.
-
-## 1.0.2 release focus
-
-ThermoProp 1.0.2 added a consistent mutable-state API for iterative solvers such as transient and steady-state network models. Public wrappers support batched `update()` calls while preserving the existing simple property setters.
-
-Example:
-
-```python
-from thermoprop import Propellant, Reactants, Equilibrium
-
-fuel = Propellant("rp-1", temperature=298.15, pressure=2.0e6)
-ox = Propellant("lox", temperature=90.17, pressure=2.0e6)
-reactants = Reactants(fuels=fuel, oxidizers=ox, mixture_ratio=2.2)
-
-eq = Equilibrium(reactants, pressure=2.0e6)
-
-# Later, inside a network iteration:
-fuel.update(pressure=2.1e6)
-ox.update(pressure=2.1e6)
-reactants.update(mixture_ratio=2.4)
-eq.update(reactants=reactants, pressure=2.1e6, solve=False)
-eq.solve()
-```
-
-For backward compatibility, direct setters such as `eq.pressure = ...`, `gas.temperature = ...`, and `propellant.pressure_temperature = (...)` still update immediately.
-
-This release does not change equilibrium solver math, condensed-phase selection rules, convergence behavior, transport equations, or CEA thermodynamic data evaluation.
-
-## 1.0.1 release focus
-
-ThermoProp 1.0.1 is a cleanup, API-stability, and low-risk performance release. It keeps the 1.0.0 solver equations and property-model behavior intact while reducing repeated helper code, adding missing wrapper introspection support to `Equilibrium`, clarifying internal CEA-equilibrium documentation, adding snake_case `Equilibrium.combustion_gas` aliases, moving large registry data into packaged JSON files, vectorizing CEA thermo/transport helper paths, preserving class-based top-level imports, and cleaning the release source tree.
-
-Use these wrapper-level inspection helpers consistently across the public API:
-
-```python
-from thermoprop import Fluid, IdealGas, CombustionGas, Propellant, Material, Equilibrium
-
-print(Fluid.supported_properties())
-print(CombustionGas.supported_flash_inputs())
-print(Equilibrium.supports_property("temperature"))
-```
 
 ---
 
@@ -375,6 +300,8 @@ Fluid(
     quality=None,
     density=None,
     internal_energy=None,
+    entropy=None,
+    set_reference=None,
 )
 ```
 
@@ -409,6 +336,12 @@ Supported pairs include:
 * `temperature` + `density`
 * `density` + `enthalpy`
 * `temperature` + `enthalpy`
+* `pressure` + `entropy`
+* `temperature` + `entropy`
+* `enthalpy` + `entropy`
+* `internal_energy` + `entropy`
+* `density` + `entropy`
+* `quality` + `entropy`
 
 You can inspect supported inputs programmatically:
 
@@ -476,6 +409,14 @@ print(water.dhdT_const_p)
 water.pressure_temperature = (2.0e5, 350.0)
 water.pressure_enthalpy = (2.0e5, 1.5e6)
 water.pressure_quality = (101325, 0.5)
+
+s = water.entropy
+water.update(pressure=2.0e5, entropy=s)
+water.update(temperature=350.0, entropy=s)
+water.update(enthalpy=water.enthalpy, entropy=s)
+water.update(internal_energy=water.internal_energy, entropy=s)
+water.update(density=water.density, entropy=s)
+water.update(quality=0.5, entropy=s)
 ```
 
 ### Mixture composition updates
@@ -511,8 +452,10 @@ IdealGas(
     enthalpy=None,
     temperature=None,
     internal_energy=None,
+    entropy=None,
     density=None,
     quality=None,
+    set_reference=None,
 )
 ```
 
@@ -545,7 +488,7 @@ gas = IdealGas(
 * `enthalpy`
 * `internal_energy`
 
-It also supports density closure using:
+It also supports pressure-, density-, and entropy-based closures:
 
 * `pressure` + `density`
 * `pressure` + `temperature`
@@ -554,6 +497,11 @@ It also supports density closure using:
 * `density` + `temperature`
 * `density` + `enthalpy`
 * `density` + `internal_energy`
+* `pressure` + `entropy`
+* `temperature` + `entropy`
+* `enthalpy` + `entropy`
+* `internal_energy` + `entropy`
+* `density` + `entropy`
 
 Example:
 
@@ -610,6 +558,13 @@ gas.pressure_temperature = (101325, 300)
 gas.pressure_enthalpy = (101325, gas.enthalpy)
 gas.pressure_internal_energy = (101325, gas.internal_energy)
 gas.pressure_density = (101325, 1.2)
+
+s = gas.entropy
+gas.pressure_entropy = (101325, s)
+gas.temperature_entropy = (300, s)
+gas.enthalpy_entropy = (gas.enthalpy, s)
+gas.internal_energy_entropy = (gas.internal_energy, s)
+gas.density_entropy = (gas.density, s)
 ```
 
 Backward-compatible aliases are also available:
@@ -655,8 +610,10 @@ CombustionGas(
     enthalpy=None,
     temperature=None,
     internal_energy=None,
+    entropy=None,
     density=None,
     quality=None,
+    set_reference=None,
 )
 ```
 
@@ -702,6 +659,11 @@ gas = CombustionGas(
 * `density` + `temperature`
 * `density` + `enthalpy`
 * `density` + `internal_energy`
+* `pressure` + `entropy`
+* `temperature` + `entropy`
+* `enthalpy` + `entropy`
+* `internal_energy` + `entropy`
+* `density` + `entropy`
 
 Example:
 
@@ -711,6 +673,13 @@ gas = CombustionGas(
     basis="mole",
     pressure=2.0e6,
     enthalpy=-8.0e6,
+)
+
+same_entropy_state = CombustionGas(
+    {"CO2": 0.4, "H2O": 0.6},
+    basis="mole",
+    pressure=1.0e6,
+    entropy=gas.entropy,
 )
 ```
 
@@ -737,6 +706,23 @@ print(gas.prandtl)
 print(gas.speed_of_sound)
 print(gas.mole_fractions)
 print(gas.mass_fractions)
+```
+
+
+### State updates
+
+```python
+gas.pressure_temperature = (2.0e6, 3000.0)
+gas.pressure_enthalpy = (2.0e6, gas.enthalpy)
+gas.pressure_internal_energy = (2.0e6, gas.internal_energy)
+gas.pressure_density = (2.0e6, gas.density)
+
+s = gas.entropy
+gas.pressure_entropy = (2.0e6, s)
+gas.temperature_entropy = (3000.0, s)
+gas.enthalpy_entropy = (gas.enthalpy, s)
+gas.internal_energy_entropy = (gas.internal_energy, s)
+gas.density_entropy = (gas.density, s)
 ```
 
 ### Composition updates
