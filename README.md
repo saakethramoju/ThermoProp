@@ -1215,7 +1215,7 @@ Supported equilibrium modes are:
 | --- | --- | --- |
 | `"hp"` | Enthalpy-pressure equilibrium | `pressure`; feed enthalpy from `Reactants`, `CombustionGas`, or a temperature-defined dictionary feed |
 | `"tp"` | Temperature-pressure equilibrium | `temperature`, `pressure` |
-| `"sp"` | Entropy-pressure equilibrium | `entropy`, `pressure`, and a good `guess_temperature` |
+| `"sp"` | Entropy-pressure equilibrium | `entropy`, `pressure`, and optionally, a good `guess_temperature` |
 
 For HP and SP calculations, temperature is a solved output. However, the feed
 still needs a thermodynamic state so ThermoProp can evaluate feed enthalpy or
