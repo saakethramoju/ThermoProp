@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.1
+
+### Changed
+
+- Fixed `Propellant.minimum_pressure` and `maximum_pressure` so RocketProps saturation-table limits are no longer reported as general compressed-liquid pressure limits.
+- Added `saturation_pressure_range`, `minimum_saturation_pressure`, and `maximum_saturation_pressure` to `Propellant`.
+- Added compressed-liquid pressure correction to the direct CEA enthalpy path when a RocketProps liquid model is available.
+- Fixed `Fluid.minimum_pressure` to use CoolProp minimum-pressure metadata instead of substituting triple-point pressure.
+- Added wrapper regression tests for pressure limits and RP-1 compressed-liquid enthalpy.
+
 ## 2.0.0
 
 ### Added

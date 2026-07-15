@@ -1856,7 +1856,42 @@ class Propellant(PropertyIntrospectionMixin):
 
         value = self._cea_call("enthalpy_mass", self.temperature, default=None)
         if value is not None and self.has_cea_thermo:
-            return self._from_raw_basis("enthalpy", self._cache_set("enthalpy", self._source("enthalpy", value, "CEA")))
+            source = "CEA"
+
+            # CEA condensed-species enthalpy is evaluated on its standard-state
+            # pressure basis.  When RocketProps supplies a compressed-liquid
+            # density model, add the exact liquid pressure correction
+            #
+            #     (dh/dP)_T = v - T (dv/dT)_P
+            #
+            # from the CEA reference pressure to the requested pressure.
+            if (
+                self._active_is_liquid_model
+                and self._backend is not None
+                and self.pressure is not None
+                and np.isfinite(self.pressure)
+                and self.pressure > 0.0
+                and not np.isclose(self.pressure, self._P0_CEA)
+            ):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", IntegrationWarning)
+                    pressure_correction, _ = quad(
+                        lambda P: self._dh_dp_liquid(self.temperature, P),
+                        self._P0_CEA,
+                        self.pressure,
+                    )
+                value = float(value + pressure_correction)
+                source = "CEA + RocketProps pressure correction"
+
+            correction = self.enthalpy_correction
+            if correction is not None and correction != 0.0:
+                value += correction
+                source += " + CoolProp Δh"
+
+            return self._from_raw_basis(
+                "enthalpy",
+                self._cache_set("enthalpy", self._source("enthalpy", float(value), source)),
+            )
 
         if not self._active_is_liquid_model or self._backend is None:
             return self._from_raw_basis("enthalpy", self._cache_set("enthalpy", None))
@@ -2590,46 +2625,62 @@ class Propellant(PropertyIntrospectionMixin):
         return self._source("boiling_temperature", self._K_from_degR(value), "RocketProps")
 
     @property
-    def minimum_pressure(self) -> float:
-        """Return the minimum backend-supported pressure for this ``Propellant`` state.
+    def saturation_pressure_range(self) -> tuple[float, float] | None:
+        """Pressure range represented by the RocketProps saturation table.
 
-        The value is evaluated from the active backend and the current state variables.
-        Units are Pa.  If the selected species, material, phase, or thermodynamic
-        state does not support this property, ThermoProp raises a descriptive
-        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
-        silently returning an invalid value."""
+        This is *not* a general compressed-liquid validity range.  In
+        particular, the upper endpoint is usually near the critical pressure
+        and must not be interpreted as a maximum allowable state pressure.
+        Values are returned in Pa.
+        """
         data_range = getattr(self._backend, "P_data_range", None) if self._backend is not None else None
-
         if data_range is None:
-            return 0.0
-
+            return None
         try:
-            value = self._real_or_none(data_range()[0])
-            if value is not None:
-                return self._source("minimum_pressure", self._Pa_from_psia(value), "RocketProps")
+            low, high = data_range()
+            low = self._real_or_none(low)
+            high = self._real_or_none(high)
+            if low is None or high is None:
+                return None
+            return (self._Pa_from_psia(low), self._Pa_from_psia(high))
         except Exception:
-            return 0.0
+            return None
+
+    @property
+    def minimum_saturation_pressure(self) -> float | None:
+        """Lower pressure endpoint of the RocketProps saturation table, in Pa."""
+        values = self.saturation_pressure_range
+        if values is None:
+            return None
+        return self._source("minimum_saturation_pressure", values[0], "RocketProps")
+
+    @property
+    def maximum_saturation_pressure(self) -> float | None:
+        """Upper pressure endpoint of the RocketProps saturation table, in Pa."""
+        values = self.saturation_pressure_range
+        if values is None:
+            return None
+        return self._source("maximum_saturation_pressure", values[1], "RocketProps")
+
+    @property
+    def minimum_pressure(self) -> float:
+        """General lower pressure bound reported by the wrapper, in Pa.
+
+        RocketProps does not publish one universal compressed-liquid pressure
+        validity interval.  Its ``P_data_range()`` describes saturation data,
+        so it is exposed separately through ``saturation_pressure_range``.
+        """
+        return 0.0
 
     @property
     def maximum_pressure(self) -> float:
-        """Return the maximum backend-supported pressure for this ``Propellant`` state.
+        """General upper pressure bound reported by the wrapper, in Pa.
 
-        The value is evaluated from the active backend and the current state variables.
-        Units are Pa.  If the selected species, material, phase, or thermodynamic
-        state does not support this property, ThermoProp raises a descriptive
-        ``PropertyUnavailableError`` or backend-specific ThermoProp exception instead of
-        silently returning an invalid value."""
-        data_range = getattr(self._backend, "P_data_range", None) if self._backend is not None else None
-
-        if data_range is None:
-            return float("inf")
-
-        try:
-            value = self._real_or_none(data_range()[1])
-            if value is not None:
-                return self._source("maximum_pressure", self._Pa_from_psia(value), "RocketProps")
-        except Exception:
-            return float("inf")
+        No finite universal compressed-liquid maximum is supplied by
+        RocketProps.  The saturation-table endpoint is therefore not used as a
+        state limit.
+        """
+        return float("inf")
 
     @property
     def is_mixture(self) -> bool:

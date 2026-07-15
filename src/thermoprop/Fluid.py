@@ -1635,10 +1635,25 @@ class Fluid(PropertyIntrospectionMixin):
         Pa.  Unsupported species, phases, materials, or state points raise a
         ThermoProp exception with context about the backend and requested property.
         """
+        # Prefer CoolProp's actual backend minimum-pressure metadata.  Triple
+        # pressure is a phase landmark, not a general lower validity bound.
         try:
-            return float(self._backend.p_triple())
+            pmin = getattr(self._backend, "pmin", None)
+            if callable(pmin):
+                return float(pmin())
         except Exception:
-            return self._trivial_output(CP.iP_triple)
+            pass
+
+        index = getattr(CP, "iP_min", None)
+        if index is not None:
+            try:
+                return self._trivial_output(index)
+            except Exception:
+                pass
+
+        # CoolProp does not expose a universal finite lower pressure for every
+        # backend/fluid combination.  Do not substitute triple pressure.
+        return 0.0
 
     @property
     def minimum_temperature(self) -> float:
