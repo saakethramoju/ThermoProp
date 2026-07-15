@@ -1,6 +1,6 @@
 [project]
 name = "thermoprop"
-version = "2.0.1"
+version = "2.0.2"
 description = "A documented Python thermophysical-property and chemical-equilibrium library for fluids, gases, propellants, combustion products, and engineering materials."
 readme = "README.md"
 license = "GPL-3.0-only"

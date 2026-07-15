@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.2
+
+- 'prantdl' added to 'Propellant'.
+
 ## 2.0.1
 
 ### Fixed
