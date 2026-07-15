@@ -2,7 +2,7 @@
 
 ## 2.0.1
 
-### Changed
+### Fixed
 
 - Fixed `Propellant.minimum_pressure` and `maximum_pressure` so RocketProps saturation-table limits are no longer reported as general compressed-liquid pressure limits.
 - Added `saturation_pressure_range`, `minimum_saturation_pressure`, and `maximum_saturation_pressure` to `Propellant`.
