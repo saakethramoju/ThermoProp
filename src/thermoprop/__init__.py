@@ -3,7 +3,7 @@
 ThermoProp exposes its main engineering-property wrappers directly at package
 level so users can write concise imports such as::
 
-    from thermoprop import Fluid, Propellant, Reactants, Equilibrium
+    from thermoprop import Fluid, Propellant, Reactants, Equilibrium, Rocket
 
 The package-level helpers are intentionally small discovery and alias-management
 functions.  They delegate to :class:`SpeciesDatabase` and :class:`MaterialDatabase`
@@ -13,7 +13,7 @@ can discover supported names without constructing property objects first.
 
 from __future__ import annotations
 
-__version__ = "2.0.2"
+__version__ = "2.1.0"
 
 from .Fluid import Fluid
 from .IdealGas import IdealGas
@@ -22,6 +22,7 @@ from .CombustionGas import CombustionGas
 from .Material import Material
 from .Reactants import Reactants
 from .Equilibrium import Equilibrium
+from .Rocket import Rocket, RocketStation
 
 from .CEADatabase import CEA
 from .SpeciesDatabase import SpeciesDatabase
@@ -181,6 +182,8 @@ __all__ = [
     "CombustionGas",
     "Reactants",
     "Equilibrium",
+    "Rocket",
+    "RocketStation",
     "Material",
     "CEA",
     "SpeciesDatabase",

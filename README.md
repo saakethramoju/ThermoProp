@@ -94,6 +94,7 @@ The same general style is used across real fluids, ideal gases, propellants, com
 | Combustion-product gas mixtures       | `CombustionGas`    |
 | Reactant mixture setup                | `Reactants`        |
 | Chemical equilibrium                  | `Equilibrium`      |
+| CEA-style rocket performance          | `Rocket`           |
 | Frozen combustion-gas properties      | `CombustionGas`    |
 | Equilibrium combustion-gas properties | `Equilibrium`      |
 | Engineering material properties       | `Material`         |
@@ -112,6 +113,7 @@ from thermoprop import Propellant
 from thermoprop import CombustionGas
 from thermoprop import Reactants
 from thermoprop import Equilibrium
+from thermoprop import Rocket
 from thermoprop import Material
 
 from thermoprop import CEA
@@ -266,6 +268,35 @@ entropy to the equilibrium feed just like the main fuel and oxidizer streams.
 `Equilibrium` can also re-equilibrate an existing `CombustionGas` composition.
 This is useful when a frozen product-gas composition should be allowed to reach
 equilibrium again at a new pressure, temperature, enthalpy, or entropy state.
+
+---
+
+## Rocket Performance
+
+`Rocket` takes the existing `Reactants` object and adds only the chamber, throat,
+and nozzle-flow closures. Propellant identities, temperatures, pressures, blend
+fractions, mixture ratio, inerts, and igniters remain defined by `Reactants`.
+
+```python
+from thermoprop import Rocket
+
+rocket = Rocket(
+    reactants,
+    chamber_pressure=2.0e6,
+    exit_pressures=1.0e5,
+    subsonic_area_ratios=[1.5, 1.2],
+    supersonic_area_ratios=[5.0, 10.0, 40.0],
+)
+
+print(rocket.chamber.temperature)
+print(rocket.throat.mach)
+print(rocket.exit.isp_vac)
+print(rocket.report())
+```
+
+Supplying `contraction_ratio` automatically selects the finite-area combustor
+model. `frozen_at` may be `None`, `"chamber"`, `"throat"`, or a numeric
+supersonic `A/At` value.
 
 ---
 
@@ -1481,6 +1512,159 @@ This is useful for propulsion and nozzle calculations where frozen and shifting-
 
 ---
 
+## `Rocket`
+
+`Rocket` is a thin CEA-style rocket-problem wrapper around `Reactants`,
+`Equilibrium`, and `CombustionGas`. It solves HP combustion, the choked throat,
+requested pressure stations, requested subsonic and supersonic area-ratio
+stations, optional frozen expansion, and the finite-area combustor closure.
+
+### Constructor
+
+```python
+Rocket(
+    reactants,
+    chamber_pressure,
+    exit_pressures=None,
+    subsonic_area_ratios=None,
+    supersonic_area_ratios=None,
+    frozen_at=None,
+    contraction_ratio=None,
+)
+```
+
+Each station input may be a scalar or an iterable. Without
+`contraction_ratio`, `chamber_pressure` is the infinite-area chamber pressure.
+With `contraction_ratio`, the FAC model is selected and the assigned pressure is
+the injector-face pressure, matching CEA's finite-area rocket input convention.
+The solved combustor-end pressure is available as `rocket.chamber.pressure`.
+
+### Infinite-area chamber example
+
+```python
+rocket = Rocket(
+    reactants,
+    chamber_pressure=300.0 * 6894.757293168,
+    exit_pressures=10.0 * 6894.757293168,
+    subsonic_area_ratios=[1.5, 1.2],
+    supersonic_area_ratios=[5.0, 10.0, 40.0],
+)
+```
+
+### Finite-area combustor example
+
+```python
+rocket = Rocket(
+    reactants,
+    chamber_pressure=300.0 * 6894.757293168,
+    contraction_ratio=4.0,
+    supersonic_area_ratios=40.0,
+)
+
+print(rocket.injector.pressure)
+print(rocket.chamber.pressure)
+print(rocket.chamber.mach)
+```
+
+### Frozen expansion
+
+```python
+rocket = Rocket(
+    reactants,
+    chamber_pressure=2.0e6,
+    supersonic_area_ratios=40.0,
+    frozen_at="throat",
+)
+```
+
+`frozen_at="chamber"` freezes composition immediately after combustion for an
+IAC problem. `frozen_at="throat"` keeps the chamber-to-throat path in
+equilibrium and freezes downstream supersonic stations. FAC currently supports
+equilibrium expansion or freezing at the throat; chamber-frozen FAC requires a
+different coupled closure and is rejected explicitly.
+
+You can also freeze at any supersonic nozzle area ratio by supplying a number:
+
+```python
+rocket = Rocket(
+    reactants,
+    chamber_pressure=2.0e6,
+    supersonic_area_ratios=[2.0, 10.0, 40.0],
+    frozen_at=5.0,
+)
+
+print(rocket.freeze_station.area_ratio)       # 5.0
+print(rocket.freeze_station.chemistry)        # "equilibrium"
+print(rocket.at_area_ratio(2.0).chemistry)    # "equilibrium"
+print(rocket.at_area_ratio(10.0).chemistry)   # "frozen"
+```
+
+The freeze station is solved automatically even when its area ratio is not in
+`supersonic_area_ratios`. `frozen_at=1.0` is equivalent to freezing at the
+throat. The freeze station remains the final equilibrium state; its composition
+is held fixed at every downstream station.
+
+### Station access
+
+```python
+print(rocket.chamber.temperature)
+print(rocket.throat.pressure)
+print(rocket.throat.mach)
+
+exit_40 = rocket.at_area_ratio(40.0, branch="supersonic")
+station_10_psia = rocket.at_pressure(10.0 * 6894.757293168)
+
+print(exit_40.velocity)
+print(exit_40.mass_fractions)
+print(exit_40.cf)
+print(exit_40.isp_vac)
+```
+
+Station thermodynamic properties delegate to the underlying `Equilibrium` or
+`CombustionGas` object. Rocket-flow additions include:
+
+```python
+station.velocity
+station.mach
+station.mass_flux
+station.area_ratio
+station.pressure_ratio
+station.cf
+station.cf_vac
+station.isp
+station.isp_vac
+station.chemistry
+```
+
+Grouped station access is available through:
+
+```python
+rocket.pressure_stations
+rocket.subsonic_stations
+rocket.supersonic_stations
+rocket.exits
+rocket.stations
+rocket.all_stations
+```
+
+### Full report
+
+```python
+print(rocket)
+
+text = rocket.report(
+    fractions="mole",
+    trace=1e-5,
+    max_species=30,
+)
+```
+
+The report includes reactant summaries, IAC/FAC settings, characteristic
+velocity, throat mass flux, station thermodynamic and flow properties, thrust
+coefficients, specific impulse, and station compositions.
+
+---
+
 ## `Material`
 
 `Material` provides temperature-dependent isotropic engineering material properties from ThermoProp's built-in material database.
@@ -1994,6 +2178,20 @@ Limitations include:
 * Results depend on the selected candidate product species.
 * HP equilibrium uses the reactant enthalpy basis supplied by the input reactants.
 * Condensed product phases are not currently treated as full equilibrium products in the gas-product solver.
+
+---
+
+## `Rocket`
+
+`Rocket` calculates idealized one-dimensional theoretical performance.
+
+Limitations include:
+
+* Complete, adiabatic combustion is assumed.
+* No finite-rate chemistry, mixing loss, boundary-layer loss, divergence loss, or nozzle shock model is included.
+* No ambient pressure is required; station `isp` is matched-pressure momentum specific impulse and `isp_vac` includes the zero-ambient pressure-thrust term.
+* Frozen expansion currently requires a gas-only freeze composition.
+* FAC with `frozen_at="chamber"` is not currently supported because the frozen throat mass flux must be coupled into the FAC geometry closure.
 
 ---
 

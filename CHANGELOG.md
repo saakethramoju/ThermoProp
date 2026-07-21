@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+
+- Added `Rocket`, a thin CEA-style theoretical rocket-performance wrapper around `Reactants`, `Equilibrium`, and `CombustionGas`.
+- Added infinite-area chamber and automatic finite-area combustor selection through `contraction_ratio`.
+- Added absolute-pressure, subsonic-area-ratio, and supersonic-area-ratio nozzle stations.
+- Added equilibrium expansion, frozen-at-chamber IAC expansion, and frozen-at-throat expansion.
+- Added numeric `frozen_at=A/At` support for freezing composition at any supersonic nozzle area ratio, including automatic freeze-station solving and `rocket.freeze_station` access.
+- Added direct chamber, injector, throat, exit, grouped-station, pressure lookup, and area-ratio lookup interfaces.
+- Added characteristic velocity, mass flux, Mach number, area ratio, pressure ratio, thrust coefficient, matched-pressure specific impulse, and vacuum specific impulse outputs.
+- Added a complete CEA-style text report with reactants, station properties, performance, and composition tables.
+
 ## 2.0.2
 
 - 'prantdl' added to 'Propellant'.
