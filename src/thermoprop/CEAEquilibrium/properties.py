@@ -433,35 +433,58 @@ def equilibrium_cv_from_derivatives(
     return float(cv)
 
 
+def equilibrium_gamma_from_heat_capacities(
+    cp_equilibrium: float,
+    cv_equilibrium: float,
+) -> float:
+    """Return the equilibrium heat-capacity ratio ``Cp_eq / Cv_eq``.
+
+    This is CEA's ``gamma = Cp/Cv`` for equilibrium thermodynamic derivatives.
+    It is distinct from the equilibrium isentropic exponent ``gamma_s`` whenever
+    composition changes with pressure along the local thermodynamic path.
+    """
+    if cv_equilibrium <= 0.0:
+        return np.nan
+    return float(cp_equilibrium / cv_equilibrium)
+
+
 def equilibrium_gamma_from_derivatives(
     derivatives: MixtureDerivatives,
+    *,
+    cp_equilibrium: float | None = None,
+    cv_equilibrium: float | None = None,
 ) -> float:
-    """Execute the public ``equilibrium_gamma_from_derivatives`` operation for ``ThermoProp``.
+    """Return the equilibrium heat-capacity ratio ``Cp_eq / Cv_eq``.
 
-    This method is part of the importable ThermoProp API rather than an internal
-    helper.  Arguments are validated and normalized before use, return values follow
-    ThermoProp's SI-unit and composition conventions, and lookup or state failures
-    are reported through ThermoProp exception types with contextual messages."""
-    return derivatives.gamma_s
+    ``derivatives`` is retained in the signature for source compatibility with the
+    previous public helper.  The old implementation incorrectly returned
+    ``derivatives.gamma_s``.  Callers should provide ``cp_equilibrium`` and
+    ``cv_equilibrium``; if omitted, the ratio is reconstructed from CEA relation
+    2.73 using ``gamma_s`` and ``(d ln V / d ln P)_T``.
+    """
+    if cp_equilibrium is not None and cv_equilibrium is not None:
+        return equilibrium_gamma_from_heat_capacities(cp_equilibrium, cv_equilibrium)
+    return float(-derivatives.gamma_s * derivatives.dlnv_dlnp_const_T)
 
 
 def speed_of_sound_equilibrium(
     state: EquilibriumState,
     *,
-    gamma_equilibrium: float,
+    gamma_s: float,
 ) -> float:
-    """Execute the public ``speed_of_sound_equilibrium`` operation for ``ThermoProp``.
+    """Return equilibrium speed of sound from the CEA isentropic exponent.
 
-    This method is part of the importable ThermoProp API rather than an internal
-    helper.  Arguments are validated and normalized before use, return values follow
-    ThermoProp's SI-unit and composition conventions, and lookup or state failures
-    are reported through ThermoProp exception types with contextual messages."""
+    For a reacting equilibrium mixture, ``a^2 = gamma_s * P/rho``.  Because the
+    CEA ideal-mixture equation of state gives ``P/rho = R_mix*T``, this is also
+    ``a = sqrt(gamma_s * R_mix * T)``.  ``gamma_s`` must not be replaced with
+    the equilibrium heat-capacity ratio ``Cp_eq/Cv_eq``.
+    """
     R = gas_constant(state)
 
-    if gamma_equilibrium <= 0.0 or R <= 0.0:
+    if gamma_s <= 0.0 or R <= 0.0:
         return np.nan
 
-    return float(np.sqrt(gamma_equilibrium * R * state.temperature))
+    return float(np.sqrt(gamma_s * R * state.temperature))
 
 
 def mole_fractions(
@@ -612,11 +635,14 @@ def build_results(
             cp_equilibrium=cpe,
             derivatives=derivs,
         )
-        gammae = equilibrium_gamma_from_derivatives(derivs)
+        gammae = equilibrium_gamma_from_heat_capacities(cpe, cve)
+        gamma_s = derivs.gamma_s
     else:
         cpe = cpf
         cve = cvf
         gammae = gammaf
+        derivs = frozen_mixture_derivatives(state)
+        gamma_s = derivs.gamma_s
 
     transport_values = transport_values or {}
 
@@ -632,6 +658,10 @@ def build_results(
         cv_equilibrium=cve,
         gamma_frozen=gammaf,
         gamma_equilibrium=gammae,
+        gamma_s=gamma_s,
+        dlnv_dlnT_const_p=derivs.dlnv_dlnT_const_p,
+        dlnv_dlnp_const_T=derivs.dlnv_dlnp_const_T,
+        dlnv_dlnp_const_s=derivs.dlnv_dlnp_const_s,
         cp_transport_frozen=transport_values.get("cp_transport_frozen"),
         cp_transport_equilibrium=transport_values.get("cp_transport_equilibrium"),
         viscosity_frozen=transport_values.get("viscosity_frozen"),

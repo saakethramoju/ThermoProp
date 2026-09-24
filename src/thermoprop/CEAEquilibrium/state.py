@@ -415,6 +415,11 @@ class EquilibriumResults:
 
     gamma_frozen: float
     gamma_equilibrium: float
+    gamma_s: float
+
+    dlnv_dlnT_const_p: float
+    dlnv_dlnp_const_T: float
+    dlnv_dlnp_const_s: float
 
     cp_transport_frozen: float | None = None
     cp_transport_equilibrium: float | None = None

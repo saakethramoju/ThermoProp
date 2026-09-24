@@ -13,7 +13,7 @@ can discover supported names without constructing property objects first.
 
 from __future__ import annotations
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 from .Fluid import Fluid
 from .IdealGas import IdealGas

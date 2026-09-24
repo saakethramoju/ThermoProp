@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.1
+
+### Fixed
+
+- Corrected `Equilibrium.gamma_equilibrium` and `specific_heat_ratio_equilibrium` to return the actual equilibrium heat-capacity ratio `Cp_eq / Cv_eq`. Previous 2.1.0 behavior incorrectly exposed CEA's isentropic exponent under the equilibrium-gamma name.
+- Preserved equilibrium speed-of-sound behavior by explicitly using the CEA isentropic exponent `gamma_s`, where `a^2 = gamma_s P/rho`.
+- Corrected the generic `Equilibrium.gamma` and `specific_heat_ratio` aliases so they now mean the actual equilibrium heat-capacity ratio.
+
+### Added
+
+- Added `Equilibrium.gamma_s` and `Equilibrium.isentropic_exponent` for CEA's equilibrium isentropic exponent.
+- Added `Equilibrium.dlnv_dlnp_const_t`, `dlnv_dlnt_const_p`, and `dlnv_dlnp_const_s` for the CEA-style logarithmic volume derivatives.
+- Added the equilibrium/frozen gamma distinction and the logarithmic derivatives to `Equilibrium.__str__()` and `as_dict()`.
+- Added `RocketStation.gamma_s` / `isentropic_exponent` and report output so equilibrium rocket stations expose the CEA isentropic exponent separately from `Cp/Cv`.
+
 ## 2.1.0
 
 ### Added

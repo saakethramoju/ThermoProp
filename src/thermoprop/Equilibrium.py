@@ -1424,21 +1424,53 @@ class Equilibrium(PropertyIntrospectionMixin):
 
     @property
     def gamma_frozen(self) -> float:
-        """Return the public ``gamma_frozen`` value for this ``Equilibrium`` object.
+        """Return the frozen-composition heat-capacity ratio ``Cp_fr / Cv_fr``.
 
-        The value is computed from the current wrapper state and follows ThermoProp's SI
-        unit convention unless this property is explicitly metadata.  Unsupported values
-        raise a ThermoProp exception with context about the selected backend and state."""
+        For the ideal-gas frozen composition used by CEA, this is also equal to the
+        frozen isentropic exponent.
+        """
         return self._results.gamma_frozen
 
     @property
     def gamma_equilibrium(self) -> float:
-        """Return the public ``gamma_equilibrium`` value for this ``Equilibrium`` object.
+        """Return the equilibrium heat-capacity ratio ``Cp_eq / Cv_eq``.
 
-        The value is computed from the current wrapper state and follows ThermoProp's SI
-        unit convention unless this property is explicitly metadata.  Unsupported values
-        raise a ThermoProp exception with context about the selected backend and state."""
+        This is not generally equal to CEA's equilibrium isentropic exponent
+        :attr:`gamma_s` because equilibrium composition changes with the local
+        thermodynamic perturbation.
+        """
         return self._results.gamma_equilibrium
+
+    @property
+    def gamma_s(self) -> float:
+        """Return CEA's equilibrium isentropic exponent ``gamma_s``.
+
+        ``gamma_s = -(d ln P / d ln V)_s`` and is the exponent required by the
+        local equilibrium sound-speed relation ``a^2 = gamma_s * P / rho``.
+        It is generally different from ``gamma_equilibrium = Cp_eq/Cv_eq`` and
+        becomes equal to ``gamma_frozen`` when composition is frozen.
+        """
+        return self._results.gamma_s
+
+    @property
+    def isentropic_exponent(self) -> float:
+        """Readable alias for :attr:`gamma_s`."""
+        return self.gamma_s
+
+    @property
+    def dlnv_dlnp_const_t(self) -> float:
+        """Return ``(d ln V / d ln P)_T`` for the equilibrium mixture."""
+        return self._results.dlnv_dlnp_const_T
+
+    @property
+    def dlnv_dlnt_const_p(self) -> float:
+        """Return ``(d ln V / d ln T)_P`` for the equilibrium mixture."""
+        return self._results.dlnv_dlnT_const_p
+
+    @property
+    def dlnv_dlnp_const_s(self) -> float:
+        """Return ``(d ln V / d ln P)_s`` for the equilibrium mixture."""
+        return self._results.dlnv_dlnp_const_s
 
     @property
     def specific_heat_ratio_frozen(self) -> float:
@@ -1703,7 +1735,7 @@ class Equilibrium(PropertyIntrospectionMixin):
         silently returning an invalid value."""
         return speed_of_sound_equilibrium(
             self._state,
-            gamma_equilibrium=self.gamma_equilibrium,
+            gamma_s=self.gamma_s,
         )
 
     @property
@@ -1968,6 +2000,14 @@ class Equilibrium(PropertyIntrospectionMixin):
             "specific_heat_ratio": self.specific_heat_ratio,
             "specific_heat_ratio_frozen": self.specific_heat_ratio_frozen,
             "specific_heat_ratio_equilibrium": self.specific_heat_ratio_equilibrium,
+            "gamma": self.gamma,
+            "gamma_frozen": self.gamma_frozen,
+            "gamma_equilibrium": self.gamma_equilibrium,
+            "gamma_s": self.gamma_s,
+            "isentropic_exponent": self.isentropic_exponent,
+            "dlnv_dlnp_const_t": self.dlnv_dlnp_const_t,
+            "dlnv_dlnt_const_p": self.dlnv_dlnt_const_p,
+            "dlnv_dlnp_const_s": self.dlnv_dlnp_const_s,
             "gas_constant": self.gas_constant,
             "molecular_weight": self.molecular_weight,
             "molecular_weight_all_species": self.molecular_weight_all_species,
@@ -2027,8 +2067,11 @@ class Equilibrium(PropertyIntrospectionMixin):
             ("Cp transport frozen [J/kg-K]", self._safe(self.cp_transport_frozen, ".6g")),
             ("Cv eq [J/kg-K]", self._safe(self.specific_heat_cv_equilibrium, ".6g")),
             ("Cv frozen [J/kg-K]", self._safe(self.specific_heat_cv_frozen, ".6g")),
-            ("Gamma eq", self._safe(self.gamma_equilibrium, ".6g")),
-            ("Gamma frozen", self._safe(self.gamma_frozen, ".6g")),
+            ("Gamma eq = Cp_eq/Cv_eq", self._safe(self.gamma_equilibrium, ".6g")),
+            ("Gamma frozen = Cp_fr/Cv_fr", self._safe(self.gamma_frozen, ".6g")),
+            ("Gamma_s (isentropic exponent)", self._safe(self.gamma_s, ".6g")),
+            ("(dLV/dLP)t", self._safe(self.dlnv_dlnp_const_t, ".6g")),
+            ("(dLV/dLT)p", self._safe(self.dlnv_dlnt_const_p, ".6g")),
             ("Gas constant [J/kg-K]", self._safe(self.gas_constant, ".6g")),
             ("M, (1/n) [kg/kmol]", self._safe(self.moles_inverse, ".6g")),
             ("Molecular weight [kg/kmol]", self._safe(self.molecular_weight, ".6g")),

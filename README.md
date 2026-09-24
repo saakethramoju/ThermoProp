@@ -1456,6 +1456,14 @@ print(eq.specific_heat_cp_equilibrium)
 print(eq.specific_heat_ratio)
 print(eq.specific_heat_ratio_frozen)
 print(eq.specific_heat_ratio_equilibrium)
+print(eq.gamma_frozen)
+print(eq.gamma_equilibrium)
+print(eq.gamma_s)
+print(eq.isentropic_exponent)
+
+print(eq.dlnv_dlnp_const_t)
+print(eq.dlnv_dlnt_const_p)
+print(eq.dlnv_dlnp_const_s)
 
 print(eq.speed_of_sound)
 print(eq.speed_of_sound_frozen)
@@ -1487,28 +1495,139 @@ composition = eq.combustion_gas_composition(
 )
 ```
 
-### Frozen vs equilibrium properties
+### Equilibrium, frozen, and isentropic gamma definitions
 
-`Equilibrium` distinguishes between frozen-composition and equilibrium-composition properties.
+`Equilibrium` distinguishes three quantities that are identical for a simple
+fixed-composition calorically perfect gas but are **not** generally identical
+for a reacting equilibrium mixture.
 
-Examples:
+The equilibrium heat capacities are thermodynamic derivatives in which the
+composition is allowed to re-equilibrate during the perturbation:
+
+\[
+C_{p,eq}=\left(\frac{\partial h}{\partial T}\right)_{P,eq}
+\]
+
+and
+
+\[
+C_{v,eq}=\left(\frac{\partial u}{\partial T}\right)_{V,eq}.
+\]
+
+CEA's general equilibrium relation for `Cv eq` is
+
+\[
+C_{v,eq}=C_{p,eq}+R_{mix}
+\frac{\left[(\partial\ln V/\partial\ln T)_P\right]^2}
+{(\partial\ln V/\partial\ln P)_T},
+\]
+
+where
+
+\[
+R_{mix}=\frac{PV}{T}=nR_u.
+\]
+
+Therefore, for a reacting equilibrium mixture, `Cp eq - Cv eq` is not in
+general equal to `R_mix`. The equilibrium heat-capacity ratio is
+
+\[
+\boxed{\gamma_{eq}=\frac{C_{p,eq}}{C_{v,eq}}}.
+\]
+
+ThermoProp exposes this as both `gamma_equilibrium` and
+`specific_heat_ratio_equilibrium`. The generic `gamma` and
+`specific_heat_ratio` properties on `Equilibrium` also refer to this actual
+heat-capacity ratio.
+
+For frozen composition, chemistry does not change during the perturbation. For
+CEA's ideal-gas mixture this restores
+
+\[
+C_{v,fr}=C_{p,fr}-R_{mix}
+\]
+
+and
+
+\[
+\boxed{\gamma_{fr}=\frac{C_{p,fr}}{C_{v,fr}}}.
+\]
+
+ThermoProp exposes this as `gamma_frozen` and
+`specific_heat_ratio_frozen`.
+
+CEA also defines the **isentropic exponent**
+
+\[
+\boxed{\gamma_s=-\left(\frac{\partial\ln P}{\partial\ln V}\right)_s}
+=\left(\frac{\partial\ln P}{\partial\ln\rho}\right)_s.
+\]
+
+For equilibrium chemistry it is related to the equilibrium heat-capacity ratio
+by
+
+\[
+\boxed{\gamma_s=-\frac{\gamma_{eq}}
+{(\partial\ln V/\partial\ln P)_T}}.
+\]
+
+Thus `gamma_s` is generally **not** equal to `gamma_equilibrium`. It is the
+quantity used for the local equilibrium speed of sound:
+
+\[
+\boxed{a_{eq}^2=\gamma_s\frac{P}{\rho}=\gamma_s R_{mix}T}.
+\]
+
+This makes `gamma_s` important for local sound speed, Mach number, choking, and
+throat calculations. It should not be substituted blindly into constant-gamma
+perfect-gas stagnation or area-Mach formulas for an equilibrium reacting flow;
+those formulas assume fixed composition and constant thermodynamic properties.
+
+When composition is frozen,
+
+\[
+(\partial\ln V/\partial\ln P)_T=-1,
+\]
+
+so the distinction collapses and
+
+\[
+\boxed{\gamma_s=\gamma_{fr}}.
+\]
+
+The CEA-style logarithmic volume derivatives are also available directly:
 
 ```python
-print(eq.specific_heat_cp_frozen)
-print(eq.specific_heat_cp_equilibrium)
-
-print(eq.specific_heat_ratio_frozen)
-print(eq.specific_heat_ratio_equilibrium)
-
-print(eq.speed_of_sound_frozen)
-print(eq.speed_of_sound_equilibrium)
-
-print(eq.conductivity_frozen)
-print(eq.conductivity_reaction)
-print(eq.conductivity_equilibrium)
+print(eq.dlnv_dlnp_const_t)  # (d ln V / d ln P)_T
+print(eq.dlnv_dlnt_const_p)  # (d ln V / d ln T)_P
+print(eq.dlnv_dlnp_const_s)  # (d ln V / d ln P)_s
 ```
 
-This is useful for propulsion and nozzle calculations where frozen and shifting-equilibrium assumptions may give different results.
+The main gamma and heat-capacity properties are:
+
+```python
+print(eq.specific_heat_cp_equilibrium)
+print(eq.specific_heat_cv_equilibrium)
+print(eq.gamma_equilibrium)       # Cp_eq / Cv_eq
+
+print(eq.specific_heat_cp_frozen)
+print(eq.specific_heat_cv_frozen)
+print(eq.gamma_frozen)            # Cp_fr / Cv_fr
+
+print(eq.gamma_s)                 # equilibrium isentropic exponent
+print(eq.isentropic_exponent)     # readable alias for gamma_s
+
+print(eq.speed_of_sound_equilibrium)  # uses gamma_s
+print(eq.speed_of_sound_frozen)       # uses gamma_frozen
+```
+
+Transport `Cp` values are kept separate because CEA's transport-property
+mixture calculation can use a restricted gas set. They should not be confused
+with the thermodynamic `Cp eq` and `Cp frozen` quantities above.
+
+These distinctions matter in propulsion and nozzle calculations: equilibrium
+chemistry changes the composition as the state moves, while a frozen expansion
+holds composition fixed.
 
 ---
 

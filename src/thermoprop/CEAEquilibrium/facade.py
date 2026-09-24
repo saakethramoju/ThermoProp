@@ -639,7 +639,8 @@ def _apply_extended_range_warning_adjustment(
     results.internal_energy = results.enthalpy - float(config.pressure) / results.density
     results.entropy = (results.enthalpy - product_gibbs) / float(state.temperature)
 
-    results.gamma_equilibrium = 1.0
+    results.gamma_equilibrium = float("nan")
+    results.gamma_s = 1.0
     results.gamma_frozen = 1.0
     results.cp_equilibrium = float("nan")
 

@@ -206,6 +206,24 @@ class RocketStation:
         return self.name
 
     @property
+    def gamma_s(self) -> float:
+        """Return the station isentropic exponent.
+
+        Equilibrium stations use :class:`Equilibrium` ``gamma_s``. Frozen
+        ``CombustionGas`` stations use their fixed-composition heat-capacity
+        ratio, for which the ideal-gas isentropic exponent is identical.
+        """
+        value = getattr(self.thermo, "gamma_s", None)
+        if value is not None:
+            return float(value)
+        return float(self.specific_heat_ratio)
+
+    @property
+    def isentropic_exponent(self) -> float:
+        """Readable alias for :attr:`gamma_s`."""
+        return self.gamma_s
+
+    @property
     def area_per_mass_flow(self) -> float | None:
         """Area per unit mass flow, in m²/(kg/s)."""
         if self.mass_flux <= 0.0:
@@ -295,6 +313,8 @@ class RocketStation:
                 "specific_heat_cp": self.specific_heat_cp,
                 "specific_heat_cv": self.specific_heat_cv,
                 "specific_heat_ratio": self.specific_heat_ratio,
+                "gamma_s": self.gamma_s,
+                "isentropic_exponent": self.isentropic_exponent,
                 "speed_of_sound": self.speed_of_sound,
                 "mole_fractions": {
                     name: value
@@ -1693,7 +1713,8 @@ class Rocket:
                     ("Enthalpy [J/kg]", lambda s: s.enthalpy),
                     ("Entropy [J/kg-K]", lambda s: s.entropy),
                     ("Molecular weight [kg/kmol]", lambda s: s.molecular_weight),
-                    ("Specific heat ratio", lambda s: s.specific_heat_ratio),
+                    ("Specific heat ratio Cp/Cv", lambda s: s.specific_heat_ratio),
+                    ("Isentropic exponent gamma_s", lambda s: s.gamma_s),
                     ("Speed of sound [m/s]", lambda s: s.speed_of_sound),
                     ("Velocity [m/s]", lambda s: s.velocity),
                     ("Mach number", lambda s: s.mach),
