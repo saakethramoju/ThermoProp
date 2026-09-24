@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.2
+
+### Fixed
+
+- README formatting
+
 ## 2.1.1
 
 ### Fixed
